@@ -234,3 +234,10 @@
 - Fixed: Banner loi OAuth cu khong con bam theo URL qua moi lan refresh; channel row khong con nguy co tran viewport khi co action xoa.
 - Affected files: `backend/app/templates/user_dashboard.html`, `backend/app/static/js/user_dashboard.js`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`
 - Impact/Risk: Thap; chi anh huong layout/hanh vi dashboard user, backend contract xoa channel giu nguyen.
+
+### 2026-03-26 21:25 - Push current code and audit VPS sync
+- Added: Commit `768cc1a` tren `main` da duoc push len GitHub.
+- Changed: Co them bao cao doi chieu hash de danh gia muc do dong bo giua local, GitHub, host va 2 worker VPS.
+- Fixed: Loai bo nghi van “da push chua” bang cach xac nhan `origin/main` trung local HEAD; dong thoi chi ro file nao tren VPS con lech de sync co chu dich.
+- Affected files: `docs/WORKLOG.md`, `docs/CHANGELOG.md`
+- Impact/Risk: Thap; khong doi runtime, chi cap nhat git state va ket qua audit dong bo deployment.

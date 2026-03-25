@@ -124,3 +124,5 @@
 - [x] Verify sau fix: `systemctl is-active youtube-upload-web.service` = `active`, `ss -ltnp` co listener `0.0.0.0:8000`, `curl http://127.0.0.1:8000/api/health` = `{\"status\":\"ok\"}`, `curl https://ytb.jazzrelaxation.com/api/health` = `{\"status\":\"ok\"}`.
 - [x] Sua user channel card ve layout row on dinh: dua status vao trong block noi dung, doi nut xoa thanh icon action o cuoi hang, va verify local `DELETE /api/user/channels/{id}` tra `200`.
 - [x] Them co che client-side de tu xoa `notice` va `notice_level` khoi URL sau khi user dashboard render xong, rollout `user_dashboard.js` len host va verify public health van `ok`.
+- [x] Commit local workspace thanh `768cc1a Add YouTube upload pipeline and harden host runtime` va push len `origin/main`; xac nhan `git ls-remote origin refs/heads/main` trung commit moi.
+- [x] Audit dong bo code giua local/GitHub/VPS bang hash file: host lech `backend/app/store.py` va `backend/app/routers/api_user.py`; `worker-01` khop toan bo file da doi chieu; `worker-02` lech `workers/agent/config.py`, `workers/agent/control_plane.py`, `workers/agent/job_runner.py`, `scripts/bootstrap_worker.sh`.
