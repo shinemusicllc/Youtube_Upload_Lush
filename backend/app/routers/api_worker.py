@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
+from fastapi.responses import FileResponse
 
 from ..schemas import (
     WorkerAuthPayload,
@@ -90,3 +91,47 @@ async def fail_worker_job(job_id: str, payload: WorkerJobFailPayload):
         raise HTTPException(status_code=404, detail="Không tìm thấy job.") from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/workers/jobs/{job_id}/assets/{slot}")
+async def download_worker_job_asset(
+    job_id: str,
+    slot: str,
+    x_worker_id: str = Header(...),
+    x_worker_secret: str = Header(...),
+):
+    try:
+        asset_file = store.get_worker_job_asset_file(
+            job_id=job_id,
+            slot=slot,
+            worker_id=x_worker_id,
+            shared_secret=x_worker_secret,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Không tìm thấy file asset.") from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Không tìm thấy job hoặc slot asset.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    return FileResponse(path=asset_file["path"], filename=asset_file["file_name"])
+
+
+@router.get("/workers/jobs/{job_id}/youtube-target")
+async def get_worker_job_youtube_target(
+    job_id: str,
+    x_worker_id: str = Header(...),
+    x_worker_secret: str = Header(...),
+):
+    try:
+        payload = store.get_worker_job_youtube_target(
+            job_id=job_id,
+            worker_id=x_worker_id,
+            shared_secret=x_worker_secret,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Không tìm thấy job hoặc channel.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    return payload.model_dump(mode="json")

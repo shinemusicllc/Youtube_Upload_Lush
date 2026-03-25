@@ -1,0 +1,62 @@
+from __future__ import annotations
+
+import os
+import socket
+from dataclasses import dataclass
+from pathlib import Path
+
+
+def _env(name: str, default: str = "") -> str:
+    value = os.getenv(name, default).strip()
+    if not value:
+        raise RuntimeError(f"Missing required env: {name}")
+    return value
+
+
+@dataclass
+class WorkerConfig:
+    control_plane_url: str
+    shared_secret: str
+    worker_id: str
+    worker_name: str
+    manager_name: str
+    group: str
+    capacity: int
+    threads: int
+    heartbeat_seconds: int
+    poll_seconds: int
+    simulate_jobs: bool
+    execute_jobs: bool
+    simulate_step_seconds: float
+    work_root: Path
+    keep_job_dirs: bool
+    ffmpeg_bin: str
+    ffprobe_bin: str
+    youtube_upload_enabled: bool
+    youtube_upload_chunk_bytes: int
+
+
+def load_config() -> WorkerConfig:
+    hostname = socket.gethostname().split(".")[0]
+    work_root = Path(os.getenv("WORKER_DATA_DIR", "/opt/youtube-upload-lush/worker-data")).expanduser()
+    return WorkerConfig(
+        control_plane_url=_env("CONTROL_PLANE_URL").rstrip("/"),
+        shared_secret=_env("WORKER_SHARED_SECRET"),
+        worker_id=os.getenv("WORKER_ID", hostname).strip() or hostname,
+        worker_name=os.getenv("WORKER_NAME", hostname).strip() or hostname,
+        manager_name=os.getenv("WORKER_MANAGER", "system").strip() or "system",
+        group=os.getenv("WORKER_GROUP", "workers").strip() or "workers",
+        capacity=int(os.getenv("WORKER_CAPACITY", "1")),
+        threads=int(os.getenv("WORKER_THREADS", "1")),
+        heartbeat_seconds=int(os.getenv("WORKER_HEARTBEAT_SECONDS", "15")),
+        poll_seconds=int(os.getenv("WORKER_POLL_SECONDS", "5")),
+        simulate_jobs=os.getenv("WORKER_SIMULATE_JOBS", "false").strip().lower() in {"1", "true", "yes", "on"},
+        execute_jobs=os.getenv("WORKER_EXECUTE_JOBS", "false").strip().lower() in {"1", "true", "yes", "on"},
+        simulate_step_seconds=float(os.getenv("WORKER_SIMULATE_STEP_SECONDS", "2.5")),
+        work_root=work_root,
+        keep_job_dirs=os.getenv("WORKER_KEEP_JOB_DIRS", "false").strip().lower() in {"1", "true", "yes", "on"},
+        ffmpeg_bin=os.getenv("FFMPEG_BIN", "ffmpeg").strip() or "ffmpeg",
+        ffprobe_bin=os.getenv("FFPROBE_BIN", "ffprobe").strip() or "ffprobe",
+        youtube_upload_enabled=os.getenv("WORKER_UPLOAD_TO_YOUTUBE", "false").strip().lower() in {"1", "true", "yes", "on"},
+        youtube_upload_chunk_bytes=int(os.getenv("YOUTUBE_UPLOAD_CHUNK_BYTES", "8388608")),
+    )

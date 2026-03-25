@@ -1,15 +1,15 @@
 [Unit]
-Description=Youtube Upload Lush Worker Agent
+Description=Youtube Upload Lush Web App
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 WorkingDirectory=/opt/youtube-upload-lush
-EnvironmentFile=/etc/youtube-upload-worker.env
-ExecStart=/opt/youtube-upload-lush/.venv/bin/python -m workers.agent.main
+ExecStart=/opt/youtube-upload-lush/.venv/bin/python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
 Restart=always
 RestartSec=5
+Environment=PYTHONUNBUFFERED=1
 User=root
 
 [Install]

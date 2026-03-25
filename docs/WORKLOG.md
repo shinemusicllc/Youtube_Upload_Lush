@@ -99,3 +99,28 @@
 - [x] Them site block `ytb.jazzrelaxation.com` vao `/opt/spoticheck/app/deploy/Caddyfile`, reverse proxy sang `172.17.0.1:8000`, validate va reload Caddy ma khong anh huong domain khac.
 - [x] Cap nhat `/opt/youtube-upload-lush/.env` tren host sang `APP_BASE_URL=https://ytb.jazzrelaxation.com`, `APP_DOMAIN=ytb.jazzrelaxation.com`, `GOOGLE_REDIRECT_URI=https://ytb.jazzrelaxation.com/auth/google/callback`, roi restart app.
 - [x] Verify server-side bang `curl --resolve`: route HTTP da redirect sang HTTPS dung domain moi; HTTPS cert chua cap duoc vi DNS public `ytb.jazzrelaxation.com` hien chua ton tai.
+- [x] Xac nhan `ytb.jazzrelaxation.com` da tro DNS dung va Caddy da issue cert Let's Encrypt thanh cong; HTTPS handshake that da hoat dong.
+- [x] Mo khoa backend contract cho worker media: luu them `asset_id` tren `JobAsset`, them route `GET /api/workers/jobs/{job_id}/assets/{slot}`, va smoke test `worker_asset_contract_ok` bang TestClient.
+- [x] Tach worker Python thanh `config / control_plane / downloader / ffmpeg_pipeline / job_runner`, ho tro local asset download, Google Drive/HTTP download, va FFmpeg fast-path `copy/remux`.
+- [x] Them safety gate `WORKER_EXECUTE_JOBS=false` mac dinh, cap nhat `systemd` service sang `python -m workers.agent.main`, va redeploy host + 2 worker VPS; verify host health = 200 va `worker-01`, `worker-02` heartbeat lai thanh `online`.
+- [x] Audit queue song tren host, xoa job demo `job-379e626e` dang chan `worker-01`, va reindex lai queue `pending/queueing`.
+- [x] Bat `WORKER_EXECUTE_JOBS=true` chi tren `worker-01`, restart service, va verify worker process `python -m workers.agent.main` van `active`.
+- [x] Xac nhan tu host rang `worker-01` tiep tuc heartbeat `online`, khong an nham job nao, trong khi `worker-02` van giu execution gate tat.
+- [x] Trace job Drive that `job-54798817` bi fail voi loi `Asset video_loop không có video stream`, xac dinh nguyen nhan la ca `video_loop` va `audio_loop` deu bi tai ve cung ten tam `view` doi voi Google Drive link dang `/file/d/.../view`.
+- [x] Sua `workers/agent/downloader.py` de moi asset luon tai vao thu muc rieng theo `slot`, rollout ban va len `worker-01` va `worker-02`, restart service va verify compile tren worker.
+- [x] Tao lai job Drive that `job-40a682dd` voi 2 link Google Drive user cung cap, theo doi live qua control plane, va xac nhan `worker-01` render fast-path thanh cong file output 60 giay.
+- [x] Them route control plane de worker lay YouTube upload target theo job/channel, va them worker module `youtube_uploader.py` dung `refresh token -> resumable upload API`.
+- [x] Compile va smoke test local cho contract YouTube upload target va uploader chunked; xac nhan `upload_video()` tra `watch_url` dung trong fake resumable flow.
+- [x] Rollout code moi len host, `worker-01`, `worker-02`; restart dung process/service cua app nay ma khong dung vao reverse proxy hay app khac tren host shared.
+- [x] Bat gap regression sau deploy do bo sot `workers/agent/downloader.py` tren worker, sua rollout, redeploy file nay len ca 2 worker va xac nhan worker service quay lai `active`.
+- [x] Khoa ro rang `WORKER_UPLOAD_TO_YOUTUBE=false` + `YOUTUBE_UPLOAD_CHUNK_BYTES=8388608` trong `/etc/youtube-upload-worker.env` cua `worker-01` va `worker-02`.
+- [x] Verify hau deploy bang job Drive that `job-e667631b`, xac nhan `worker-01` van render thanh cong va tra `worker://...` output khi upload gate dang tat.
+- [x] Trich logo inline SVG tu sidebar user/admin thanh brand asset that, tao file `SVG` va `PNG 120x120` de dung cho Google OAuth consent screen.
+- [x] Doi chieu yeu cau `Application home page / Privacy policy / Terms / Authorized domains` voi docs chinh thuc cua Google de chot cach dien cho domain `ytb.jazzrelaxation.com`.
+- [x] Sua bộ scope OAuth trong backend de them `youtube.readonly`, compile local va rollout `backend/app/store.py` len host de flow connect Google xin du scope doc channel.
+- [x] Noi hanh dong xoa that cho card `My Channel`: them API `DELETE /api/user/channels/{channel_id}`, rang buoc quyen theo user hien tai, va bat nut `Xóa` tren UI user dashboard.
+- [x] Xu ly su co `502` tren `ytb.jazzrelaxation.com`: xac nhan Caddy/Cloudflare van on, origin `172.17.0.1:8000` bi `connection refused` do host app mat process `uvicorn`.
+- [x] Tao `infra/systemd/youtube-upload-web.service`, cap nhat `scripts/bootstrap_host.sh` ho tro `DEPLOY_MODE=systemd`, rollout service file len host va `systemctl enable --now youtube-upload-web.service`.
+- [x] Verify sau fix: `systemctl is-active youtube-upload-web.service` = `active`, `ss -ltnp` co listener `0.0.0.0:8000`, `curl http://127.0.0.1:8000/api/health` = `{\"status\":\"ok\"}`, `curl https://ytb.jazzrelaxation.com/api/health` = `{\"status\":\"ok\"}`.
+- [x] Sua user channel card ve layout row on dinh: dua status vao trong block noi dung, doi nut xoa thanh icon action o cuoi hang, va verify local `DELETE /api/user/channels/{id}` tra `200`.
+- [x] Them co che client-side de tu xoa `notice` va `notice_level` khoi URL sau khi user dashboard render xong, rollout `user_dashboard.js` len host va verify public health van `ok`.

@@ -59,15 +59,6 @@
       pointer-events: none;
     }
 
-    .channel-row:hover .channel-status {
-      opacity: 0;
-    }
-
-    .channel-row:hover .channel-remove {
-      opacity: 1;
-      pointer-events: auto;
-    }
-
     .flatpickr-calendar {
       border: 1px solid rgb(226 232 240);
       box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
@@ -673,16 +664,20 @@
 
                 <div class="space-y-3 flex-1 overflow-y-auto pr-1">
                     {% for channel in dashboard.connected_channels %}
-                    <div class="channel-row group flex items-center gap-3 p-3 border border-slate-200/70 bg-white rounded-xl hover:border-emerald-200 hover:shadow-sm transition-all">
+                    <div class="channel-row flex items-center gap-3 min-w-0 p-3 border border-slate-200/70 bg-white rounded-xl hover:border-emerald-200 hover:shadow-sm transition-all" data-channel-id="{{ channel.id | e }}">
                         <div class="w-10 h-10 {{ channel.avatar_class | e }} rounded-md flex justify-center items-center text-xs font-bold shrink-0{% if channel.avatar_small %} text-[10px]{% else %} text-white{% endif %}">{{ channel.avatar | e }}</div>
-                        <div class="flex-1 overflow-hidden">
+                        <div class="flex-1 min-w-0 overflow-hidden">
                             <h4 class="text-[13px] font-bold text-slate-900 truncate">{{ channel.title | e }}</h4>
                             <p class="text-[10px] text-slate-500 truncate font-mono mt-0.5">{{ channel.meta | replace('worker', 'BOT') | e }}</p>
+                            <div class="mt-1 inline-flex max-w-full items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700">
+                                <i data-lucide="badge-check" class="w-3.5 h-3.5 shrink-0"></i>
+                                <span class="truncate">Đã kết nối</span>
+                            </div>
                         </div>
-                        <div class="relative shrink-0 min-w-[90px]">
-                            <div class="channel-status flex items-center justify-end gap-1.5 text-[10px] font-semibold text-emerald-700 whitespace-nowrap transition-opacity"><i data-lucide="badge-check" class="w-3.5 h-3.5"></i>Đã kết nối</div>
-                            <button type="button" class="channel-remove absolute inset-y-0 right-0 inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600 hover:text-rose-700 opacity-0 pointer-events-none transition-opacity"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i>Xóa</button>
-                        </div>
+                        <button type="button" data-channel-action="delete" data-channel-id="{{ channel.id | e }}" data-channel-title="{{ channel.title | e }}" class="shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-lg border border-transparent text-slate-400 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 focus:outline-none focus:ring-2 focus:ring-rose-200" title="Xóa kênh">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            <span class="sr-only">Xóa kênh</span>
+                        </button>
                     </div>
                     {% endfor %}
                 </div>

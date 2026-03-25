@@ -177,3 +177,14 @@ async def delete_user_job(job_id: str):
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Không tìm thấy job.") from exc
     return {"status": "deleted", "job_id": job_id}
+
+
+@router.delete("/user/channels/{channel_id}")
+async def delete_user_channel(channel_id: str):
+    try:
+        store.delete_user_connected_channel(channel_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Không tìm thấy kênh.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    return {"status": "deleted", "channel_id": channel_id}

@@ -180,3 +180,57 @@
 - Fixed: Xac nhan reverse proxy noi bo tu Caddy container ve app Python qua `172.17.0.1:8000` hoat dong dung.
 - Affected files: `/opt/spoticheck/app/deploy/Caddyfile`, `/opt/youtube-upload-lush/.env`, `docs/PROJECT_CONTEXT.md`, `docs/DECISIONS.md`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`
 - Impact/Risk: Domain da san sang o phia server nhung van chua public/HTTPS that cho den khi DNS `ytb.jazzrelaxation.com` tro ve `82.197.71.6`.
+### 2026-03-26 01:40 - unlock_worker_media_pipeline_scaffold
+- Added: Worker-authenticated local asset download route, worker modules `config/control_plane/downloader/ffmpeg_pipeline/job_runner`, va safety gate `WORKER_EXECUTE_JOBS`.
+- Changed: Worker service chay qua `python -m workers.agent.main`, worker requirements co them `gdown`, va host/worker deploy da duoc cap nhat len code moi.
+- Fixed: Domain `ytb.jazzrelaxation.com` da len cert Let's Encrypt that; worker deploy khong con bi nuot queue demo vi execution mac dinh dang khoa.
+- Affected files: `backend/app/schemas.py`, `backend/app/store.py`, `backend/app/routers/api_worker.py`, `workers/agent/*`, `workers/__init__.py`, `infra/systemd/youtube-upload-worker.service`, `scripts/bootstrap_worker.sh`, `docs/PROJECT_CONTEXT.md`, `docs/DECISIONS.md`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`
+- Impact/Risk: Pipeline render that da co code va da len VPS, nhung chua duoc bat thuc thi thuc te cho queue; buoc tiep theo can bat `WORKER_EXECUTE_JOBS=true` co chu dich va noi phan YouTube OAuth upload.
+### 2026-03-26 01:40 - enable_worker01_execution_gate
+- Added: Rollout that cho `worker-01` bang `WORKER_EXECUTE_JOBS=true` sau khi don queue demo cua worker nay.
+- Changed: Queue tren host da duoc don job demo `job-379e626e`; `worker-01` chuyen sang che do san sang xu ly that, `worker-02` van giu che do an toan.
+- Fixed: Loai bo rui ro `worker-01` an nham job Drive placeholder ngay luc bat execution.
+- Affected files: `docs/PROJECT_CONTEXT.md`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`
+- Impact/Risk: He thong hien dang co 1 worker that (`worker-01`) va 1 worker standby (`worker-02`); buoc tiep theo nen tao 1 job test that de theo doi luong `download -> render`.
+
+### 2026-03-26 02:00 - Fix Google Drive asset name collision on worker
+- Added: Verify that pipeline with real Drive links now completes end-to-end on `worker-01` after downloader fix.
+- Changed: Worker downloader now stores each asset in its own slot directory instead of reusing one flat temporary filename.
+- Fixed: Google Drive links ending in `/view` no longer cause `audio_loop` to overwrite `video_loop`, eliminating false `Asset video_loop không có video stream` failures.
+- Affected files: `workers/agent/downloader.py`, `docs/PROJECT_CONTEXT.md`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`
+- Impact/Risk: Trung binh-thap; fixes a real production blocker for Drive sources and has been validated with a successful 60-second output on `worker-01`.
+
+### 2026-03-26 20:15 - Add gated YouTube OAuth upload stage
+- Added: Worker-authenticated control plane route for YouTube upload target and new worker module `youtube_uploader.py` using refresh-token exchange plus resumable chunk upload.
+- Changed: Worker config now supports `WORKER_UPLOAD_TO_YOUTUBE` and `YOUTUBE_UPLOAD_CHUNK_BYTES`; rollout was applied to host and both workers with upload gate explicitly kept off.
+- Fixed: Post-deploy regression caused by missing redeploy of `downloader.py` was corrected, and render smoke `job-e667631b` completed successfully afterward.
+- Affected files: `backend/app/routers/api_worker.py`, `backend/app/schemas.py`, `backend/app/store.py`, `workers/agent/config.py`, `workers/agent/control_plane.py`, `workers/agent/job_runner.py`, `workers/agent/youtube_uploader.py`, `workers/agent/downloader.py`, `scripts/bootstrap_worker.sh`, `docs/PROJECT_CONTEXT.md`, `docs/DECISIONS.md`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`
+- Impact/Risk: Trung binh; code path upload YouTube da san sang de bat sau khi co OAuth that, con render pipeline hien tai van giu an toan nho gate `WORKER_UPLOAD_TO_YOUTUBE=false`.
+
+### 2026-03-26 20:25 - Create OAuth branding logo asset
+- Added: New square brand assets for Google OAuth consent screen in both `SVG` and `PNG 120x120` formats.
+- Changed: Reused the exact sidebar mark and adapted it to a neutral square canvas for better visibility on OAuth consent UI.
+- Fixed: Branding setup now has a ready-to-upload logo file instead of relying on inline SVG embedded in templates.
+- Affected files: `backend/app/static/brand/youtube-upload-lush-oauth-logo.svg`, `backend/app/static/brand/youtube-upload-lush-oauth-logo-preview.html`, `backend/app/static/brand/youtube-upload-lush-oauth-logo.png`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`
+- Impact/Risk: Thap; only adds branding assets and setup guidance, no runtime behavior change.
+
+### 2026-03-26 20:40 - Add real delete action for user channels
+- Added: User-facing delete API for connected channels and frontend action binding on the `My Channel` cards.
+- Changed: OAuth scope request now includes `youtube.readonly` in addition to `youtube.upload` so channel lookup can succeed after reconnect.
+- Fixed: The existing hidden `Xóa` affordance on channel cards now performs a real delete instead of being a dead UI element.
+- Affected files: `backend/app/store.py`, `backend/app/routers/api_user.py`, `backend/app/templates/user_dashboard.html`, `backend/app/static/js/user_dashboard.js`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`
+- Impact/Risk: Trung binh-thap; deleting a connected channel will also remove jobs attached to that channel, and users must reconnect Google once to refresh scopes.
+
+### 2026-03-26 21:05 - Harden host web runtime with systemd
+- Added: `infra/systemd/youtube-upload-web.service` de quan ly web app bang `systemd` tren shared host.
+- Changed: `scripts/bootstrap_host.sh` ho tro `DEPLOY_MODE=systemd` va cai host web service thay cho chi start process tam.
+- Fixed: `ytb.jazzrelaxation.com` het loi `502` do origin `:8000` duoc supervisor giu song va tu restart.
+- Affected files: `infra/systemd/youtube-upload-web.service`, `scripts/bootstrap_host.sh`, `infra/AGENTS.md`, `docs/PROJECT_CONTEXT.md`, `docs/DECISIONS.md`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`
+- Impact/Risk: Thap-trung binh; host app on dinh hon sau deploy/reboot, nhung cac lan deploy toi can dong bo service file nay cung code va `.venv` tren `/opt/youtube-upload-lush`.
+
+### 2026-03-26 21:15 - Clean user channel row and transient OAuth notice
+- Added: Client-side cleanup cho `notice` va `notice_level` trong URL sau khi user dashboard render xong.
+- Changed: Channel card ben user duoc sap lai theo row action dung visual system, bo kieu nut xoa chen layout o mep phai.
+- Fixed: Banner loi OAuth cu khong con bam theo URL qua moi lan refresh; channel row khong con nguy co tran viewport khi co action xoa.
+- Affected files: `backend/app/templates/user_dashboard.html`, `backend/app/static/js/user_dashboard.js`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`
+- Impact/Risk: Thap; chi anh huong layout/hanh vi dashboard user, backend contract xoa channel giu nguyen.

@@ -96,6 +96,7 @@ class JobAsset(BaseModel):
     slot: Literal["intro", "video_loop", "audio_loop", "outro"]
     label: str
     source_mode: SourceMode
+    asset_id: str | None = None
     url: str | None = None
     file_name: str | None = None
 
@@ -272,3 +273,16 @@ class WorkerJobFailPayload(BaseModel):
     worker_id: str
     shared_secret: str
     message: str
+
+
+class WorkerYouTubeUploadTarget(BaseModel):
+    job_id: str
+    channel_id: str
+    channel_name: str
+    title: str
+    description: str | None = None
+    privacy_status: Literal["private", "public", "unlisted"] = "private"
+    client_id: str
+    client_secret: str
+    refresh_token: str
+    token_uri: str = "https://oauth2.googleapis.com/token"

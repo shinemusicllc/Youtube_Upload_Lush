@@ -36,6 +36,7 @@ from .schemas import (
     WorkerHeartbeatPayload,
     WorkerRegisterPayload,
     WorkerRecord,
+    WorkerYouTubeUploadTarget,
 )
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
@@ -253,7 +254,7 @@ class AppStore:
 
     @staticmethod
     def _google_oauth_scope() -> str:
-        return "https://www.googleapis.com/auth/youtube.upload openid email profile"
+        return "https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.upload openid email profile"
 
     @staticmethod
     def _oauth_callback_path() -> str:
@@ -1050,6 +1051,12 @@ class AppStore:
         queue_order = max([job.queue_order or 0 for job in self.jobs], default=0) + 1
         created_at = datetime.now().replace(second=0, microsecond=0)
 
+        resolved_asset_ids = {
+            "intro": payload.intro_asset_id,
+            "video_loop": payload.video_loop_asset_id,
+            "audio_loop": payload.audio_loop_asset_id,
+            "outro": payload.outro_asset_id,
+        }
         resolved_file_names = {
             "intro": source_file_names.get("intro") or self.consume_uploaded_asset(payload.intro_asset_id),
             "video_loop": source_file_names.get("video_loop") or self.consume_uploaded_asset(payload.video_loop_asset_id),
@@ -1062,6 +1069,7 @@ class AppStore:
                 slot="intro",
                 label="Intro",
                 source_mode="local" if resolved_file_names.get("intro") else "drive",
+                asset_id=resolved_asset_ids.get("intro"),
                 url=payload.intro_url,
                 file_name=resolved_file_names.get("intro"),
             ),
@@ -1069,6 +1077,7 @@ class AppStore:
                 slot="video_loop",
                 label="Video loop",
                 source_mode="local" if resolved_file_names.get("video_loop") else "drive",
+                asset_id=resolved_asset_ids.get("video_loop"),
                 url=payload.video_loop_url,
                 file_name=resolved_file_names.get("video_loop"),
             ),
@@ -1076,6 +1085,7 @@ class AppStore:
                 slot="audio_loop",
                 label="Audio loop",
                 source_mode="local" if resolved_file_names.get("audio_loop") else "drive",
+                asset_id=resolved_asset_ids.get("audio_loop"),
                 url=payload.audio_loop_url,
                 file_name=resolved_file_names.get("audio_loop"),
             ),
@@ -1083,6 +1093,7 @@ class AppStore:
                 slot="outro",
                 label="Outro",
                 source_mode="local" if resolved_file_names.get("outro") else "drive",
+                asset_id=resolved_asset_ids.get("outro"),
                 url=payload.outro_url,
                 file_name=resolved_file_names.get("outro"),
             ),
@@ -2180,6 +2191,17 @@ class AppStore:
         self.jobs = [job for job in self.jobs if job.channel_id != channel_id]
         self._save_state()
 
+    def delete_user_connected_channel(self, channel_id: str) -> None:
+        channel = self._find_channel(channel_id)
+        current_user = self._current_app_user()
+        has_access = any(
+            link["channel_id"] == channel.id and link["user_id"] == current_user.id
+            for link in self.channel_user_links
+        )
+        if not has_access:
+            raise ValueError("Bạn không có quyền xóa kênh này.")
+        self.delete_channel(channel.id)
+
     def get_channel_export_rows(self) -> list[dict[str, Any]]:
         rows = []
         for channel in self.channels:
@@ -2649,6 +2671,65 @@ class AppStore:
             raise ValueError("Uploaded asset không hợp lệ hoặc chưa hoàn tất.")
         return session.stored_file_name
 
+    def _find_job_asset(self, job: RenderJobRecord, slot: str) -> JobAsset:
+        for asset in job.assets:
+            if asset.slot == slot:
+                return asset
+        raise KeyError(slot)
+
+    def get_worker_job_asset_file(
+        self,
+        *,
+        job_id: str,
+        slot: str,
+        worker_id: str,
+        shared_secret: str,
+    ) -> dict[str, Any]:
+        self._authenticate_worker(worker_id, shared_secret)
+        job = self._find_claimed_job(job_id, worker_id)
+        asset = self._find_job_asset(job, slot)
+        if asset.source_mode != "local" or not asset.file_name:
+            raise ValueError("Asset này không phải local upload.")
+
+        file_path = self.upload_asset_dir / asset.file_name
+        if not file_path.exists():
+            raise FileNotFoundError(asset.file_name)
+
+        return {
+            "path": file_path,
+            "file_name": asset.file_name,
+        }
+
+    def get_worker_job_youtube_target(
+        self,
+        *,
+        job_id: str,
+        worker_id: str,
+        shared_secret: str,
+    ) -> WorkerYouTubeUploadTarget:
+        self._authenticate_worker(worker_id, shared_secret)
+        job = self._find_claimed_job(job_id, worker_id)
+        channel = self._find_channel(job.channel_id)
+        refresh_token = str(channel.oauth_refresh_token or "").strip()
+        client_id = str(os.getenv("GOOGLE_CLIENT_ID", "")).strip()
+        client_secret = str(os.getenv("GOOGLE_CLIENT_SECRET", "")).strip()
+        if not refresh_token:
+            raise ValueError("Kênh chưa có refresh token OAuth thật. Hãy kết nối lại Google/YouTube.")
+        if not client_id or not client_secret:
+            raise ValueError("Thiếu GOOGLE_CLIENT_ID hoặc GOOGLE_CLIENT_SECRET trên control plane.")
+        privacy_status = job.visibility if job.visibility in {"private", "public", "unlisted"} else "private"
+        return WorkerYouTubeUploadTarget(
+            job_id=job.id,
+            channel_id=channel.channel_id,
+            channel_name=channel.name,
+            title=job.title,
+            description=job.description,
+            privacy_status=privacy_status,
+            client_id=client_id,
+            client_secret=client_secret,
+            refresh_token=refresh_token,
+        )
+
     def abort_upload_session(self, session_id: str) -> None:
         session = self._find_upload_session(session_id)
         temp_path = self._absolute_upload_path(session.temp_path)
@@ -2656,12 +2737,7 @@ class AppStore:
             temp_path.unlink(missing_ok=True)
         self.upload_sessions = [item for item in self.upload_sessions if item.session_id != session_id]
         self._save_state()
-        return {
-            "channel_id": channel.id,
-            "channel_name": channel.name,
-            "youtube_channel_id": channel.channel_id,
-            "oauth_email": channel.oauth_email or "",
-        }
+        return None
 
 
 store = AppStore()

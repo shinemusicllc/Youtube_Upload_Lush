@@ -483,6 +483,34 @@
     });
   };
 
+  const initChannelActions = () => {
+    document.querySelectorAll("[data-channel-action='delete']").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const channelId = button.dataset.channelId;
+        const channelTitle = button.dataset.channelTitle || "kênh này";
+        if (!channelId) return;
+
+        const confirmed = window.confirm(`Xóa ${channelTitle}? Toàn bộ job gắn với kênh này cũng sẽ bị xóa.`);
+        if (!confirmed) return;
+
+        button.disabled = true;
+        try {
+          const response = await fetch(`/api/user/channels/${channelId}`, {
+            method: "DELETE",
+          });
+          const payload = await response.json();
+          if (!response.ok) {
+            throw new Error(payload.detail || "Không thể xóa kênh.");
+          }
+          window.location.reload();
+        } catch (error) {
+          window.alert(error.message || "Không thể xóa kênh.");
+          button.disabled = false;
+        }
+      });
+    });
+  };
+
   const initSearch = () => {
     const input = document.getElementById("jobSearchInput");
     if (!input || !renderTableBody) return;
@@ -495,6 +523,21 @@
         row.classList.toggle("hidden", !visible);
       });
     });
+  };
+
+  const clearTransientNoticeParams = () => {
+    const url = new URL(window.location.href);
+    let changed = false;
+    ["notice", "notice_level"].forEach((key) => {
+      if (url.searchParams.has(key)) {
+        url.searchParams.delete(key);
+        changed = true;
+      }
+    });
+    if (!changed) return;
+    const search = url.searchParams.toString();
+    const nextUrl = `${url.pathname}${search ? `?${search}` : ""}${url.hash}`;
+    window.history.replaceState({}, document.title, nextUrl);
   };
 
   if (window.lucide) {
@@ -514,5 +557,7 @@
   initForm();
   initOAuthButton();
   initJobActions();
+  initChannelActions();
   initSearch();
+  clearTransientNoticeParams();
 })();
