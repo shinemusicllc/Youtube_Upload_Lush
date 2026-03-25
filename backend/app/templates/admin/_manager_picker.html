@@ -1,0 +1,47 @@
+<div class="manager-picker" data-manager-picker data-placeholder="Tất cả manager">
+    <button type="button" class="manager-picker-trigger" data-manager-trigger aria-expanded="false">
+        <span class="manager-picker-trigger-body">
+            <span class="manager-picker-placeholder" data-manager-placeholder>Tất cả manager</span>
+            <span class="manager-picker-tags" data-manager-tags></span>
+        </span>
+        <i data-lucide="chevron-down" class="h-4 w-4 text-slate-400"></i>
+    </button>
+    <div class="manager-picker-panel" data-manager-panel hidden>
+        <div class="manager-picker-search-shell">
+            <i data-lucide="search" class="h-4 w-4 text-slate-400"></i>
+            <input
+                type="text"
+                class="manager-picker-search"
+                data-manager-search
+                placeholder="Tìm manager..."
+                autocomplete="off"
+            >
+        </div>
+        <div class="manager-picker-list" data-manager-list>
+            {% for manager in dashboard.manager_options %}
+            <label class="manager-picker-option" data-manager-option data-search="{{ manager.username | lower }} {{ manager.display_name | lower }}">
+                <input
+                    type="checkbox"
+                    class="manager-picker-checkbox"
+                    value="{{ manager.id }}"
+                    {% if manager.selected %}checked{% endif %}
+                >
+                <span class="manager-picker-avatar {{ manager.avatar_class }}">{{ manager.initials }}</span>
+                <span class="min-w-0">
+                    <span class="manager-picker-name">{{ manager.username }}</span>
+                    {% if manager.display_name != manager.username %}
+                    <span class="manager-picker-meta">{{ manager.display_name }}</span>
+                    {% endif %}
+                </span>
+            </label>
+            {% endfor %}
+        </div>
+        <div class="manager-picker-footer">
+            <button type="button" class="action-btn action-btn-slate px-3 py-1.5 text-[11px]" data-manager-clear>
+                Xóa tất cả
+            </button>
+            <span class="manager-picker-count" data-manager-count></span>
+        </div>
+    </div>
+    <div data-manager-hidden-inputs></div>
+</div>

@@ -4,11 +4,17 @@ from copy import deepcopy
 from datetime import datetime, timedelta
 import json
 import os
+import re
 from pathlib import Path
+import shutil
 import sqlite3
 from typing import Any
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 from uuid import uuid4
+
+from dotenv import load_dotenv
 
 from .schemas import (
     AdminDashboardResponse,
@@ -20,11 +26,19 @@ from .schemas import (
     OAuthSummary,
     RenderJobRecord,
     UploadCapabilities,
+    UploadSessionCreateRequest,
+    UploadSessionRecord,
+    UploadSessionResponse,
     UserBootstrapResponse,
     UserJobsResponse,
     UserSummary,
+    WorkerControlResponse,
+    WorkerHeartbeatPayload,
+    WorkerRegisterPayload,
     WorkerRecord,
 )
+
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 
 class AppStore:
@@ -34,7 +48,12 @@ class AppStore:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.upload_dir = self.data_dir / "uploads"
         self.upload_dir.mkdir(parents=True, exist_ok=True)
+        self.upload_tmp_dir = self.upload_dir / "tmp"
+        self.upload_tmp_dir.mkdir(parents=True, exist_ok=True)
+        self.upload_asset_dir = self.upload_dir / "assets"
+        self.upload_asset_dir.mkdir(parents=True, exist_ok=True)
         self.state_db_path = self.data_dir / "app_state.db"
+        self.upload_sessions: list[UploadSessionRecord] = []
 
         self.users = [
             UserSummary(id="admin-1", username="admin", display_name="Admin", role="admin"),
@@ -219,6 +238,27 @@ class AppStore:
     def get_session_secret(self) -> str:
         return os.getenv("SESSION_SECRET", "dev-control-plane-session-secret")
 
+    def get_worker_shared_secret(self) -> str:
+        return os.getenv("WORKER_SHARED_SECRET", "dev-worker-shared-secret")
+
+    def get_upload_capabilities(self) -> UploadCapabilities:
+        max_local_upload_bytes = int(os.getenv("MAX_LOCAL_UPLOAD_BYTES", "8589934592"))
+        resumable_chunk_bytes = int(os.getenv("UPLOAD_CHUNK_BYTES", "8388608"))
+        return UploadCapabilities(
+            allow_local_upload=True,
+            allow_resumable_upload=True,
+            resumable_chunk_bytes=resumable_chunk_bytes,
+            max_local_upload_bytes=max_local_upload_bytes,
+        )
+
+    @staticmethod
+    def _google_oauth_scope() -> str:
+        return "https://www.googleapis.com/auth/youtube.upload openid email profile"
+
+    @staticmethod
+    def _oauth_callback_path() -> str:
+        return "/auth/google/callback"
+
     def _ensure_state_db(self) -> None:
         with sqlite3.connect(self.state_db_path) as connection:
             connection.execute(
@@ -261,6 +301,7 @@ class AppStore:
             "channels": [channel.model_dump(mode="json") for channel in self.channels],
             "channel_user_links": deepcopy(self.channel_user_links),
             "jobs": [job.model_dump(mode="json") for job in self.jobs],
+            "upload_sessions": [session.model_dump(mode="json") for session in self.upload_sessions],
             "render_delete_meta": self._serialize_value(self.render_delete_meta),
         }
 
@@ -278,6 +319,7 @@ class AppStore:
         self.channels = [ChannelRecord.model_validate(item) for item in payload.get("channels", [])]
         self.channel_user_links = list(payload.get("channel_user_links") or [])
         self.jobs = [RenderJobRecord.model_validate(item) for item in payload.get("jobs", [])]
+        self.upload_sessions = [UploadSessionRecord.model_validate(item) for item in payload.get("upload_sessions", [])]
 
         render_meta = payload.get("render_delete_meta") or {}
         self.render_delete_meta = {
@@ -364,6 +406,24 @@ class AppStore:
         return value[:1].upper() if value else "?"
 
     @staticmethod
+    def _avatar_palette(label: str) -> str:
+        palettes = [
+            "bg-rose-500 text-white",
+            "bg-emerald-500 text-white",
+            "bg-violet-500 text-white",
+            "bg-sky-500 text-white",
+            "bg-amber-500 text-white",
+            "bg-fuchsia-500 text-white",
+            "bg-cyan-500 text-white",
+            "bg-orange-500 text-white",
+            "bg-indigo-500 text-white",
+            "bg-teal-500 text-white",
+        ]
+        normalized = (label or "?").strip()
+        index = sum(ord(char) for char in normalized) % len(palettes)
+        return palettes[index]
+
+    @staticmethod
     def _job_status_label(status: str) -> str:
         mapping = {
             "pending": "Chờ tạo hàng đợi",
@@ -403,11 +463,228 @@ class AppStore:
                 return worker
         raise KeyError(worker_id)
 
+    def _authenticate_worker(self, worker_id: str, shared_secret: str) -> WorkerRecord:
+        if shared_secret != self.get_worker_shared_secret():
+            raise ValueError("Worker shared secret không hợp lệ.")
+        return self._find_worker(worker_id)
+
+    def _refresh_queue_positions(self) -> None:
+        queued_jobs = sorted(
+            [
+                job
+                for job in self.jobs
+                if job.status in {"pending", "queueing"} and (job.scheduled_at is None or job.scheduled_at <= datetime.now())
+            ],
+            key=lambda item: (item.queue_order or 10_000, item.created_at),
+        )
+        for index, job in enumerate(queued_jobs, start=1):
+            job.queue_order = index
+        for job in self.jobs:
+            if job.status in {"completed", "cancelled", "error"}:
+                job.queue_order = None
+
+    def register_worker(self, payload: WorkerRegisterPayload) -> WorkerControlResponse:
+        if payload.shared_secret != self.get_worker_shared_secret():
+            raise ValueError("Worker shared secret không hợp lệ.")
+
+        now = datetime.now().replace(second=0, microsecond=0)
+        existing = next((worker for worker in self.workers if worker.id == payload.worker_id), None)
+        manager = next((user for user in self.users if user.username == payload.manager_name and user.role == "manager"), None)
+        if existing is None:
+            worker = WorkerRecord(
+                id=payload.worker_id,
+                name=payload.name,
+                manager_id=manager.id if manager else None,
+                manager_name=payload.manager_name,
+                group=payload.group or payload.manager_name,
+                status="online",
+                capacity=payload.capacity,
+                load_percent=0,
+                bandwidth_kbps=0,
+                disk_used_gb=0,
+                disk_total_gb=payload.disk_total_gb,
+                threads=payload.threads,
+                last_seen_at=now,
+            )
+            self.workers.append(worker)
+        else:
+            existing.name = payload.name
+            existing.manager_id = manager.id if manager else existing.manager_id
+            existing.manager_name = payload.manager_name
+            existing.group = payload.group or payload.manager_name
+            existing.capacity = payload.capacity
+            existing.threads = payload.threads
+            existing.disk_total_gb = payload.disk_total_gb or existing.disk_total_gb
+            existing.status = "online"
+            existing.last_seen_at = now
+            worker = existing
+
+        self._save_state()
+        return WorkerControlResponse(ok=True, worker=deepcopy(worker))
+
+    def heartbeat_worker(self, payload: WorkerHeartbeatPayload) -> WorkerControlResponse:
+        worker = self._authenticate_worker(payload.worker_id, payload.shared_secret)
+        worker.status = payload.status
+        worker.load_percent = payload.load_percent
+        worker.bandwidth_kbps = payload.bandwidth_kbps
+        worker.disk_used_gb = payload.disk_used_gb
+        worker.disk_total_gb = payload.disk_total_gb or worker.disk_total_gb
+        worker.threads = payload.threads
+        worker.last_seen_at = datetime.now().replace(second=0, microsecond=0)
+        self._save_state()
+        return WorkerControlResponse(ok=True, worker=deepcopy(worker))
+
+    def claim_next_job(self, worker_id: str, shared_secret: str) -> tuple[WorkerRecord, RenderJobRecord | None]:
+        worker = self._authenticate_worker(worker_id, shared_secret)
+        now = datetime.now().replace(second=0, microsecond=0)
+
+        for job in self.jobs:
+            if job.claimed_by_worker_id == worker_id and job.status in {"queueing", "downloading", "rendering", "uploading"}:
+                job.lease_expires_at = now + timedelta(minutes=5)
+                self._save_state()
+                worker.status = "busy"
+                return deepcopy(worker), deepcopy(job)
+
+        candidates = [
+            job
+            for job in self.jobs
+            if job.worker_name in {worker.id, worker.name}
+            and job.status in {"pending", "queueing"}
+            and (job.scheduled_at is None or job.scheduled_at <= now)
+            and (job.claimed_by_worker_id is None or (job.lease_expires_at and job.lease_expires_at <= now))
+        ]
+        candidates.sort(key=lambda item: (item.queue_order or 10_000, item.created_at))
+
+        if not candidates:
+            worker.status = "online"
+            self._save_state()
+            return deepcopy(worker), None
+
+        job = candidates[0]
+        job.status = "queueing"
+        job.claimed_by_worker_id = worker_id
+        job.claimed_at = now
+        job.lease_expires_at = now + timedelta(minutes=5)
+        job.started_at = job.started_at or now
+        worker.status = "busy"
+        self._refresh_queue_positions()
+        self._save_state()
+        return deepcopy(worker), deepcopy(job)
+
+    def _find_claimed_job(self, job_id: str, worker_id: str) -> RenderJobRecord:
+        for job in self.jobs:
+            if job.id == job_id:
+                if job.claimed_by_worker_id not in {None, worker_id} and job.status not in {"completed", "cancelled", "error"}:
+                    raise ValueError("Job đang thuộc worker khác.")
+                return job
+        raise KeyError(job_id)
+
+    def update_worker_job_progress(
+        self,
+        *,
+        job_id: str,
+        worker_id: str,
+        shared_secret: str,
+        status: str,
+        progress: int,
+        message: str | None = None,
+    ) -> RenderJobRecord:
+        worker = self._authenticate_worker(worker_id, shared_secret)
+        job = self._find_claimed_job(job_id, worker_id)
+        now = datetime.now().replace(second=0, microsecond=0)
+
+        job.claimed_by_worker_id = worker_id
+        job.claimed_at = job.claimed_at or now
+        job.lease_expires_at = now + timedelta(minutes=5)
+        job.started_at = job.started_at or now
+        job.status = status  # type: ignore[assignment]
+        job.progress = max(0, min(100, progress))
+        if message:
+            job.error_message = message
+        if status == "downloading" and job.download_started_at is None:
+            job.download_started_at = now
+        if status == "uploading" and job.upload_started_at is None:
+            job.upload_started_at = now
+        if status in {"downloading", "rendering", "uploading"}:
+            worker.status = "busy"
+
+        self._save_state()
+        return deepcopy(job)
+
+    def complete_worker_job(
+        self,
+        *,
+        job_id: str,
+        worker_id: str,
+        shared_secret: str,
+        output_url: str | None = None,
+        message: str | None = None,
+    ) -> RenderJobRecord:
+        worker = self._authenticate_worker(worker_id, shared_secret)
+        job = self._find_claimed_job(job_id, worker_id)
+        now = datetime.now().replace(second=0, microsecond=0)
+
+        job.status = "completed"
+        job.progress = 100
+        job.completed_at = now
+        job.can_cancel = False
+        job.output_url = output_url
+        job.error_message = message
+        job.lease_expires_at = None
+        worker.status = "online"
+        self._refresh_queue_positions()
+        self._save_state()
+        return deepcopy(job)
+
+    def fail_worker_job(self, *, job_id: str, worker_id: str, shared_secret: str, message: str) -> RenderJobRecord:
+        worker = self._authenticate_worker(worker_id, shared_secret)
+        job = self._find_claimed_job(job_id, worker_id)
+        now = datetime.now().replace(second=0, microsecond=0)
+
+        job.status = "error"
+        job.completed_at = now
+        job.can_cancel = False
+        job.error_message = message
+        job.lease_expires_at = None
+        worker.status = "online"
+        self._refresh_queue_positions()
+        self._save_state()
+        return deepcopy(job)
+
     def _find_channel(self, channel_id: str) -> ChannelRecord:
         for channel in self.channels:
             if channel.id == channel_id:
                 return channel
         raise KeyError(channel_id)
+
+    def _current_app_user(self) -> UserSummary:
+        for user in self.users:
+            if user.role == "user":
+                return user
+        return self.users[-1]
+
+    def _pick_worker_for_user(self, user: UserSummary) -> WorkerRecord:
+        linked_worker_ids = [link["worker_id"] for link in self.user_worker_links if link["user_id"] == user.id]
+        if linked_worker_ids:
+            return self._find_worker(linked_worker_ids[0])
+        if self.workers:
+            return self.workers[0]
+        raise ValueError("Chua co BOT nao de gan cho kenh OAuth.")
+
+    def _ensure_channel_user_link(self, *, channel_id: str, user_id: str) -> None:
+        exists = next(
+            (
+                link
+                for link in self.channel_user_links
+                if link["channel_id"] == channel_id and link["user_id"] == user_id
+            ),
+            None,
+        )
+        if exists:
+            return
+
+        next_id = max([item["id"] for item in self.channel_user_links], default=0) + 1
+        self.channel_user_links.append({"id": next_id, "channel_id": channel_id, "user_id": user_id})
 
     def _user_meta_record(self, user_id: str) -> dict[str, Any]:
         return self.user_meta.setdefault(
@@ -449,7 +726,14 @@ class AppStore:
     def _manager_options(self, selected_ids: list[str] | None = None) -> list[dict[str, str | bool]]:
         selected_set = set(selected_ids or [user.id for user in self.users if user.role == "manager"])
         return [
-            {"id": user.id, "username": user.username, "selected": user.id in selected_set}
+            {
+                "id": user.id,
+                "username": user.username,
+                "display_name": user.display_name,
+                "initials": self._initials(user.display_name or user.username),
+                "avatar_class": self._avatar_palette(user.display_name or user.username),
+                "selected": user.id in selected_set,
+            }
             for user in self.users
             if user.role == "manager"
         ]
@@ -527,13 +811,74 @@ class AppStore:
 
     def _summary_strip(self) -> list[dict[str, str]]:
         summary = self.get_admin_dashboard().summary
+        uploading_count = len([job for job in self.jobs if job.status == "uploading"])
         return [
-            {"value": str(summary.channels_connected), "label": "Tổng Số Kênh", "bar_color": "#10b981"},
-            {"value": f"{summary.workers_online}/{summary.total_workers}", "label": "BOT Đang Chạy", "bar_color": "#6366f1"},
-            {"value": str(summary.total_users), "label": "Tổng User", "bar_color": "#0ea5e9"},
-            {"value": str(summary.running_jobs), "label": "Đang Render", "bar_color": "#5d67df"},
-            {"value": str(len([job for job in self.jobs if job.status == "uploading"])), "label": "Đang Upload", "bar_color": "#0284c7"},
-            {"value": str(summary.queued_jobs), "label": "Job Đang Chờ", "bar_color": "#f59e0b"},
+            {
+                "value": str(summary.channels_connected),
+                "label": "Tổng Số Kênh",
+                "icon": "radio",
+                "icon_class": "text-emerald-500",
+                "accent": "Online",
+                "accent_class": "text-emerald-600",
+                "accent_badge_class": "border-emerald-200 bg-emerald-50 text-emerald-700",
+                "value_class": "text-emerald-600",
+                "bar_color": "#10b981",
+            },
+            {
+                "value": f"{summary.workers_online}/{summary.total_workers}",
+                "label": "BOT Đang Chạy",
+                "icon": "server",
+                "icon_class": "text-brand-500",
+                "accent": "Active",
+                "accent_class": "text-brand-600",
+                "accent_badge_class": "border-brand-100 bg-brand-50 text-brand-700",
+                "value_class": "text-brand-600",
+                "bar_color": "#6366f1",
+            },
+            {
+                "value": str(summary.total_users),
+                "label": "Tổng User",
+                "icon": "users",
+                "icon_class": "text-rose-500",
+                "accent": "Accounts",
+                "accent_class": "text-rose-500",
+                "accent_badge_class": "border-rose-200 bg-rose-50 text-rose-700",
+                "value_class": "text-slate-900",
+                "bar_color": "#f43f5e",
+            },
+            {
+                "value": str(summary.running_jobs),
+                "label": "Đang Render",
+                "icon": "loader",
+                "icon_class": "text-brand-500",
+                "accent": "Render",
+                "accent_class": "text-brand-600",
+                "accent_badge_class": "border-indigo-200 bg-indigo-50 text-indigo-700",
+                "value_class": "text-brand-600",
+                "bar_color": "#5d67df",
+            },
+            {
+                "value": str(uploading_count),
+                "label": "Đang Upload",
+                "icon": "cloud-upload",
+                "icon_class": "text-sky-500",
+                "accent": "Upload",
+                "accent_class": "text-sky-500",
+                "accent_badge_class": "border-sky-200 bg-sky-50 text-sky-700",
+                "value_class": "text-slate-900" if uploading_count == 0 else "text-sky-500",
+                "bar_color": "#0284c7",
+            },
+            {
+                "value": str(summary.queued_jobs),
+                "label": "Job Đang Chờ",
+                "icon": "layers",
+                "icon_class": "text-amber-500",
+                "accent": "Queue",
+                "accent_class": "text-amber-600",
+                "accent_badge_class": "border-amber-200 bg-amber-50 text-amber-700",
+                "value_class": "text-amber-600",
+                "bar_color": "#f59e0b",
+            },
         ]
 
     def _user_worker_count(self, user: UserSummary) -> int:
@@ -581,7 +926,12 @@ class AppStore:
                 pass
         return "demo-user"
 
-    def get_user_dashboard_view(self) -> dict[str, Any]:
+    def get_user_dashboard_view(
+        self,
+        *,
+        notice: str | None = None,
+        notice_level: str = "success",
+    ) -> dict[str, Any]:
         bootstrap = self.get_user_bootstrap()
         jobs_response = self.get_user_jobs()
         now = datetime.now().replace(second=0, microsecond=0)
@@ -651,17 +1001,20 @@ class AppStore:
             )
 
         return {
-            "page_title": "Điều phối job render - YouTube",
-            "app_name": "Upload YouTube",
+            "page_title": "Youtube Upload Lush",
+            "app_name": "Youtube Upload Lush",
             "workspace_label": "User workspace",
             "user_name": bootstrap.user.display_name,
             "user_role": bootstrap.user.manager_name or bootstrap.user.role,
+            "upload_capabilities": bootstrap.upload_capabilities.model_dump(mode="json"),
+            "notice": notice,
+            "notice_level": notice_level,
             "kpis": [
-                {"label": "Kênh đã thêm", "icon": "radio", "icon_class": "text-emerald-500", "value": bootstrap.oauth.connected_count, "accent": "Online", "accent_class": "text-emerald-600", "bar_class": "bg-emerald-500"},
-                {"label": "Đang chờ xử lý", "icon": "layers", "icon_class": "text-amber-500", "value": len(queued_jobs), "accent": "Chờ", "accent_class": "text-amber-600", "bar_class": "bg-amber-500"},
-                {"label": "Đang render", "icon": "loader", "icon_class": "text-brand-500", "value": len(rendering_jobs), "accent": "Render", "accent_class": "text-brand-600", "bar_class": "bg-brand-500"},
-                {"label": "Đang upload", "icon": "cloud-upload", "icon_class": "text-sky-500", "value": len(uploading_jobs), "accent": "Upload", "accent_class": "text-sky-500", "bar_class": "bg-sky-400"},
-                {"label": "Xử lý lỗi", "icon": "shield-alert", "icon_class": "text-rose-500", "value": len(failed_jobs), "accent": "Lỗi", "accent_class": "text-rose-500", "bar_class": "bg-rose-400"},
+                {"label": "Kênh đã thêm", "icon": "radio", "icon_class": "text-emerald-500", "value": bootstrap.oauth.connected_count, "accent": "Online", "accent_class": "text-emerald-600", "accent_badge_class": "border-emerald-200 bg-emerald-50 text-emerald-700", "value_class": "text-emerald-600", "bar_class": "bg-emerald-500"},
+                {"label": "Đang chờ xử lý", "icon": "layers", "icon_class": "text-amber-500", "value": len(queued_jobs), "accent": "Chờ", "accent_class": "text-amber-600", "accent_badge_class": "border-amber-200 bg-amber-50 text-amber-700", "value_class": "text-amber-600", "bar_class": "bg-amber-500"},
+                {"label": "Đang render", "icon": "loader", "icon_class": "text-brand-500", "value": len(rendering_jobs), "accent": "Render", "accent_class": "text-brand-600", "accent_badge_class": "border-indigo-200 bg-indigo-50 text-indigo-700", "value_class": "text-brand-600", "bar_class": "bg-brand-500"},
+                {"label": "Đang upload", "icon": "cloud-upload", "icon_class": "text-sky-500", "value": len(uploading_jobs), "accent": "Upload", "accent_class": "text-sky-500", "accent_badge_class": "border-sky-200 bg-sky-50 text-sky-700", "value_class": "text-slate-900" if len(uploading_jobs) == 0 else "text-sky-500", "bar_class": "bg-sky-400"},
+                {"label": "Xử lý lỗi", "icon": "shield-alert", "icon_class": "text-rose-500", "value": len(failed_jobs), "accent": "Lỗi", "accent_class": "text-rose-500", "accent_badge_class": "border-rose-200 bg-rose-50 text-rose-700", "value_class": "text-slate-900" if len(failed_jobs) == 0 else "text-rose-500", "bar_class": "bg-rose-400"},
             ],
             "render_config": {"title": "Cấu hình render", "description": "Thiết lập nguồn đầu vào, file loop và kênh xuất bản cho job mới."},
             "quick_settings": {"video_title": "", "description_text": "", "duration": "03:30:00", "schedule_at": (now + timedelta(hours=1)).strftime("%d/%m/%Y %H:%M")},
@@ -676,14 +1029,15 @@ class AppStore:
         }
 
     def get_user_bootstrap(self) -> UserBootstrapResponse:
-        user = deepcopy(self.users[-1])
-        channels = deepcopy(self.channels)
+        user = deepcopy(self._current_app_user())
+        assigned_channel_ids = {link["channel_id"] for link in self.channel_user_links if link["user_id"] == user.id}
+        channels = deepcopy([channel for channel in self.channels if channel.id in assigned_channel_ids])
         connected_count = len([channel for channel in channels if channel.status == "connected"])
         reconnect_count = len([channel for channel in channels if channel.status != "connected"])
         return UserBootstrapResponse(
             user=user,
             channels=channels,
-            upload_capabilities=UploadCapabilities(),
+            upload_capabilities=self.get_upload_capabilities(),
             oauth=OAuthSummary(connected_count=connected_count, needs_reconnect_count=reconnect_count),
         )
 
@@ -696,18 +1050,56 @@ class AppStore:
         queue_order = max([job.queue_order or 0 for job in self.jobs], default=0) + 1
         created_at = datetime.now().replace(second=0, microsecond=0)
 
+        resolved_file_names = {
+            "intro": source_file_names.get("intro") or self.consume_uploaded_asset(payload.intro_asset_id),
+            "video_loop": source_file_names.get("video_loop") or self.consume_uploaded_asset(payload.video_loop_asset_id),
+            "audio_loop": source_file_names.get("audio_loop") or self.consume_uploaded_asset(payload.audio_loop_asset_id),
+            "outro": source_file_names.get("outro") or self.consume_uploaded_asset(payload.outro_asset_id),
+        }
+
         assets = [
-            JobAsset(slot="intro", label="Intro", source_mode=payload.source_mode, url=payload.intro_url, file_name=source_file_names.get("intro")),
-            JobAsset(slot="video_loop", label="Video loop", source_mode=payload.source_mode, url=payload.video_loop_url, file_name=source_file_names.get("video_loop")),
-            JobAsset(slot="audio_loop", label="Audio loop", source_mode=payload.source_mode, url=payload.audio_loop_url, file_name=source_file_names.get("audio_loop")),
-            JobAsset(slot="outro", label="Outro", source_mode=payload.source_mode, url=payload.outro_url, file_name=source_file_names.get("outro")),
+            JobAsset(
+                slot="intro",
+                label="Intro",
+                source_mode="local" if resolved_file_names.get("intro") else "drive",
+                url=payload.intro_url,
+                file_name=resolved_file_names.get("intro"),
+            ),
+            JobAsset(
+                slot="video_loop",
+                label="Video loop",
+                source_mode="local" if resolved_file_names.get("video_loop") else "drive",
+                url=payload.video_loop_url,
+                file_name=resolved_file_names.get("video_loop"),
+            ),
+            JobAsset(
+                slot="audio_loop",
+                label="Audio loop",
+                source_mode="local" if resolved_file_names.get("audio_loop") else "drive",
+                url=payload.audio_loop_url,
+                file_name=resolved_file_names.get("audio_loop"),
+            ),
+            JobAsset(
+                slot="outro",
+                label="Outro",
+                source_mode="local" if resolved_file_names.get("outro") else "drive",
+                url=payload.outro_url,
+                file_name=resolved_file_names.get("outro"),
+            ),
         ]
+
+        has_local_asset = any(item["file_name"] for item in [
+            {"file_name": resolved_file_names.get("intro")},
+            {"file_name": resolved_file_names.get("video_loop")},
+            {"file_name": resolved_file_names.get("audio_loop")},
+            {"file_name": resolved_file_names.get("outro")},
+        ])
 
         job = RenderJobRecord(
             id=f"job-{uuid4().hex[:8]}",
             title=payload.title,
             description=payload.description,
-            source_mode=payload.source_mode,
+            source_mode="local" if has_local_asset else "drive",
             channel_id=channel.id,
             channel_name=channel.name,
             channel_avatar_url=channel.avatar_url,
@@ -719,12 +1111,13 @@ class AppStore:
             time_render_string=payload.time_render_string,
             scheduled_at=payload.schedule_time,
             created_at=created_at,
-            source_label="Local Upload" if payload.source_mode == "local" else "Google Drive/cloud",
-            source_file_name=source_file_names.get("video_loop"),
+            source_label="Local Upload" if has_local_asset else "Google Drive/cloud",
+            source_file_name=resolved_file_names.get("video_loop"),
             thumbnail_url=None,
             assets=[asset for asset in assets if asset.url or asset.file_name],
         )
         self.jobs.append(job)
+        self._refresh_queue_positions()
         self._save_state()
         return deepcopy(job)
 
@@ -734,6 +1127,9 @@ class AppStore:
                 if job.status not in {"completed", "cancelled", "error"}:
                     job.status = "cancelled"
                     job.can_cancel = False
+                    job.completed_at = datetime.now().replace(second=0, microsecond=0)
+                    job.lease_expires_at = None
+                    self._refresh_queue_positions()
                     self._save_state()
                 return deepcopy(job)
         raise KeyError(job_id)
@@ -742,6 +1138,7 @@ class AppStore:
         for index, job in enumerate(self.jobs):
             if job.id == job_id:
                 self.jobs.pop(index)
+                self._refresh_queue_positions()
                 self._save_state()
                 return
         raise KeyError(job_id)
@@ -803,6 +1200,8 @@ class AppStore:
                     "id": user.id,
                     "username": user.username,
                     "display_name": user.display_name,
+                    "avatar_initials": self._initials(user.display_name or user.username),
+                    "avatar_class": self._avatar_palette(user.display_name or user.username),
                     "role": user.role,
                     "role_label": role_label,
                     "role_class": role_class,
@@ -1923,14 +2322,86 @@ class AppStore:
             return self.get_admin_render_index_context()
         raise KeyError(active_page)
 
-    def start_oauth(self, base_url: str | None = None) -> OAuthStartResponse:
-        client_id = os.getenv("GOOGLE_CLIENT_ID")
-        redirect_uri = os.getenv("GOOGLE_REDIRECT_URI") or (f"{base_url}/auth/google/callback" if base_url else None)
+    def _resolve_google_redirect_uri(self, base_url: str | None = None) -> str | None:
+        return os.getenv("GOOGLE_REDIRECT_URI") or (
+            f"{base_url}{self._oauth_callback_path()}" if base_url else None
+        )
+
+    def _google_oauth_config(self, base_url: str | None = None) -> dict[str, str | None]:
+        return {
+            "client_id": os.getenv("GOOGLE_CLIENT_ID"),
+            "client_secret": os.getenv("GOOGLE_CLIENT_SECRET"),
+            "redirect_uri": self._resolve_google_redirect_uri(base_url),
+        }
+
+    @staticmethod
+    def _parse_google_error(body: str) -> str:
+        if not body:
+            return ""
+        try:
+            payload = json.loads(body)
+        except json.JSONDecodeError:
+            return body.strip()
+
+        if isinstance(payload, dict):
+            error = payload.get("error")
+            description = payload.get("error_description")
+            nested = payload.get("error")
+            if isinstance(nested, dict):
+                message = nested.get("message")
+                status = nested.get("status")
+                return " - ".join([part for part in [status, message] if part])
+            return " - ".join([part for part in [str(error) if error else "", str(description) if description else ""] if part])
+        return body.strip()
+
+    def _post_form_json(self, url: str, payload: dict[str, str]) -> dict[str, Any]:
+        encoded_payload = urlencode(payload).encode("utf-8")
+        request = Request(
+            url,
+            data=encoded_payload,
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Accept": "application/json",
+            },
+            method="POST",
+        )
+
+        try:
+            with urlopen(request, timeout=20) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            detail = self._parse_google_error(exc.read().decode("utf-8", errors="ignore"))
+            raise ValueError(detail or "Google token endpoint tra ve loi.") from exc
+        except URLError as exc:
+            raise ValueError("Khong the ket noi toi Google OAuth endpoint.") from exc
+
+    def _get_json(self, url: str, access_token: str) -> dict[str, Any]:
+        request = Request(
+            url,
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/json",
+            },
+            method="GET",
+        )
+        try:
+            with urlopen(request, timeout=20) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            detail = self._parse_google_error(exc.read().decode("utf-8", errors="ignore"))
+            raise ValueError(detail or "Google API tra ve loi.") from exc
+        except URLError as exc:
+            raise ValueError("Khong the ket noi toi Google API.") from exc
+
+    def start_oauth(self, base_url: str | None = None, *, state: str) -> OAuthStartResponse:
+        config = self._google_oauth_config(base_url)
+        client_id = config["client_id"]
+        redirect_uri = config["redirect_uri"]
 
         if not client_id or not redirect_uri:
             return OAuthStartResponse(
                 auth_url=None,
-                message="Đã sẵn sàng cho flow Google OAuth. Cần bổ sung GOOGLE_CLIENT_ID và GOOGLE_REDIRECT_URI để bật kết nối thật.",
+                message="Đã sẵn sàng cho flow Google OAuth. Cần bổ sung GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET và GOOGLE_REDIRECT_URI để bật kết nối thật.",
             )
 
         query = urlencode(
@@ -1940,8 +2411,8 @@ class AppStore:
                 "response_type": "code",
                 "access_type": "offline",
                 "include_granted_scopes": "true",
-                "scope": "https://www.googleapis.com/auth/youtube.upload openid email profile",
-                "state": uuid4().hex,
+                "scope": self._google_oauth_scope(),
+                "state": state,
                 "prompt": "consent",
             }
         )
@@ -1949,6 +2420,248 @@ class AppStore:
             auth_url=f"https://accounts.google.com/o/oauth2/v2/auth?{query}",
             message="Đã tạo URL kết nối Google OAuth.",
         )
+
+    def complete_google_oauth(self, *, code: str, base_url: str | None = None) -> dict[str, str]:
+        config = self._google_oauth_config(base_url)
+        client_id = config["client_id"]
+        client_secret = config["client_secret"]
+        redirect_uri = config["redirect_uri"]
+        if not client_id or not client_secret or not redirect_uri:
+            raise ValueError("Thieu GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET hoac GOOGLE_REDIRECT_URI.")
+
+        token_payload = self._post_form_json(
+            "https://oauth2.googleapis.com/token",
+            {
+                "code": code,
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "redirect_uri": redirect_uri,
+                "grant_type": "authorization_code",
+            },
+        )
+        access_token = str(token_payload.get("access_token") or "").strip()
+        refresh_token = str(token_payload.get("refresh_token") or "").strip() or None
+        scope = str(token_payload.get("scope") or self._google_oauth_scope()).strip()
+        token_type = str(token_payload.get("token_type") or "").strip() or None
+        if not access_token:
+            raise ValueError("Google khong tra ve access_token.")
+
+        userinfo = self._get_json("https://openidconnect.googleapis.com/v1/userinfo", access_token)
+        youtube_payload = self._get_json(
+            "https://www.googleapis.com/youtube/v3/channels?part=id,snippet&mine=true",
+            access_token,
+        )
+        items = youtube_payload.get("items") or []
+        if not items:
+            raise ValueError("Tai khoan Google nay chua co YouTube channel hoac chua chon dung channel.")
+
+        channel_payload = items[0] or {}
+        channel_id = str(channel_payload.get("id") or "").strip()
+        snippet = channel_payload.get("snippet") or {}
+        channel_name = str(snippet.get("title") or "").strip() or "Untitled YouTube Channel"
+        avatar_url = (
+            ((snippet.get("thumbnails") or {}).get("default") or {}).get("url")
+            or ((snippet.get("thumbnails") or {}).get("medium") or {}).get("url")
+            or ((snippet.get("thumbnails") or {}).get("high") or {}).get("url")
+        )
+        oauth_email = str(userinfo.get("email") or "").strip() or None
+        oauth_google_subject = str(userinfo.get("sub") or "").strip() or None
+        now = datetime.now().replace(second=0, microsecond=0)
+
+        if not channel_id:
+            raise ValueError("Google tra ve du lieu channel khong hop le.")
+
+        existing_channel = next((channel for channel in self.channels if channel.channel_id == channel_id), None)
+        existing_refresh_token = existing_channel.oauth_refresh_token if existing_channel else None
+        if not refresh_token and not existing_refresh_token:
+            raise ValueError("Google khong tra ve refresh_token. Hay xoa quyen app cu va ket noi lai.")
+
+        current_user = self._current_app_user()
+        if existing_channel:
+            channel = existing_channel
+        else:
+            worker = self._pick_worker_for_user(current_user)
+            channel = ChannelRecord(
+                id=f"channel-{uuid4().hex[:8]}",
+                name=channel_name,
+                channel_id=channel_id,
+                avatar_url=avatar_url,
+                worker_id=worker.id,
+                worker_name=worker.name,
+                manager_name=current_user.manager_name or worker.manager_name,
+                status="connected",
+            )
+            self.channels.append(channel)
+
+        channel.name = channel_name
+        channel.avatar_url = avatar_url or channel.avatar_url
+        channel.status = "connected"
+        channel.oauth_email = oauth_email or channel.oauth_email
+        channel.oauth_connected_at = now
+        channel.oauth_google_subject = oauth_google_subject or channel.oauth_google_subject
+        channel.oauth_refresh_token = refresh_token or existing_refresh_token
+        channel.oauth_scope = scope or channel.oauth_scope
+        channel.oauth_token_type = token_type or channel.oauth_token_type
+
+        self._ensure_channel_user_link(channel_id=channel.id, user_id=current_user.id)
+        self._save_state()
+
+    @staticmethod
+    def _sanitize_filename(file_name: str) -> str:
+        value = re.sub(r"[^A-Za-z0-9._-]+", "-", (file_name or "").strip())
+        value = value.strip(".-")
+        return value or f"upload-{uuid4().hex[:8]}"
+
+    @staticmethod
+    def _path_for_session(session_id: str) -> str:
+        return f"tmp/{session_id}.part"
+
+    def _absolute_upload_path(self, relative_path: str) -> Path:
+        return self.upload_dir / relative_path
+
+    def _find_upload_session(self, session_id: str) -> UploadSessionRecord:
+        for session in self.upload_sessions:
+            if session.session_id == session_id:
+                return session
+        raise KeyError(session_id)
+
+    def _cleanup_stale_uploads(self) -> None:
+        now = datetime.now()
+        changed = False
+        keep_sessions: list[UploadSessionRecord] = []
+        for session in self.upload_sessions:
+            if session.status == "completed":
+                keep_sessions.append(session)
+                continue
+            if session.expires_at > now:
+                keep_sessions.append(session)
+                continue
+            session.status = "expired"
+            temp_path = self._absolute_upload_path(session.temp_path)
+            if temp_path.exists():
+                temp_path.unlink(missing_ok=True)
+            changed = True
+        if changed:
+            self.upload_sessions = keep_sessions
+            self._save_state()
+
+    @staticmethod
+    def _upload_response(session: UploadSessionRecord) -> UploadSessionResponse:
+        return UploadSessionResponse(
+            session_id=session.session_id,
+            slot=session.slot,
+            file_name=session.file_name,
+            size_bytes=session.size_bytes,
+            received_bytes=session.received_bytes,
+            chunk_size=session.chunk_size,
+            status=session.status,
+            expires_at=session.expires_at,
+            asset_id=session.asset_id,
+            stored_file_name=session.stored_file_name,
+        )
+
+    def create_upload_session(self, payload: UploadSessionCreateRequest) -> UploadSessionResponse:
+        self._cleanup_stale_uploads()
+        capabilities = self.get_upload_capabilities()
+        if payload.size_bytes <= 0:
+            raise ValueError("Kích thước file phải lớn hơn 0.")
+        if payload.size_bytes > capabilities.max_local_upload_bytes:
+            raise ValueError("File vượt quá giới hạn local upload hiện tại.")
+
+        extension = Path(payload.file_name).suffix.lower()
+        if extension not in capabilities.allowed_extensions:
+            raise ValueError(f"Định dạng file không hỗ trợ: {extension or '(không có extension)'}")
+
+        sanitized_name = self._sanitize_filename(payload.file_name)
+        now = datetime.now()
+        session = UploadSessionRecord(
+            session_id=f"upl-{uuid4().hex}",
+            slot=payload.slot,
+            file_name=sanitized_name,
+            content_type=payload.content_type,
+            size_bytes=payload.size_bytes,
+            received_bytes=0,
+            chunk_size=capabilities.resumable_chunk_bytes,
+            status="active",
+            created_at=now,
+            updated_at=now,
+            expires_at=now + timedelta(hours=24),
+            temp_path="",
+        )
+        session.temp_path = self._path_for_session(session.session_id)
+        temp_path = self._absolute_upload_path(session.temp_path)
+        temp_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path.write_bytes(b"")
+        self.upload_sessions.append(session)
+        self._save_state()
+        return self._upload_response(session)
+
+    def get_upload_session(self, session_id: str) -> UploadSessionResponse:
+        self._cleanup_stale_uploads()
+        session = self._find_upload_session(session_id)
+        return self._upload_response(session)
+
+    def append_upload_chunk(self, session_id: str, offset: int, chunk: bytes) -> UploadSessionResponse:
+        session = self._find_upload_session(session_id)
+        if session.status not in {"active", "completed"}:
+            raise ValueError("Upload session không còn hoạt động.")
+        if session.status == "completed":
+            return self._upload_response(session)
+        if offset < 0:
+            raise ValueError("Offset không hợp lệ.")
+
+        temp_path = self._absolute_upload_path(session.temp_path)
+        temp_path.parent.mkdir(parents=True, exist_ok=True)
+        current_size = temp_path.stat().st_size if temp_path.exists() else 0
+        if offset != current_size:
+            raise ValueError(f"Offset không khớp. Server đang có {current_size} bytes.")
+        if offset + len(chunk) > session.size_bytes:
+            raise ValueError("Chunk vượt quá kích thước đã khai báo.")
+
+        with temp_path.open("ab") as file_obj:
+            file_obj.write(chunk)
+
+        session.received_bytes = temp_path.stat().st_size
+        session.updated_at = datetime.now()
+        session.expires_at = session.updated_at + timedelta(hours=24)
+        if session.received_bytes > session.size_bytes:
+            raise ValueError("Upload vượt quá kích thước đã khai báo.")
+
+        if session.received_bytes == session.size_bytes:
+            session.status = "completed"
+            session.asset_id = f"asset-{uuid4().hex[:12]}"
+            stored_name = f"{session.asset_id}-{session.file_name}"
+            asset_relative_path = f"assets/{stored_name}"
+            final_path = self._absolute_upload_path(asset_relative_path)
+            final_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(temp_path), str(final_path))
+            session.stored_file_name = stored_name
+            session.temp_path = asset_relative_path
+
+        self._save_state()
+        return self._upload_response(session)
+
+    def consume_uploaded_asset(self, asset_id: str | None) -> str | None:
+        if not asset_id:
+            return None
+        session = next((item for item in self.upload_sessions if item.asset_id == asset_id), None)
+        if session is None or session.status != "completed" or not session.stored_file_name:
+            raise ValueError("Uploaded asset không hợp lệ hoặc chưa hoàn tất.")
+        return session.stored_file_name
+
+    def abort_upload_session(self, session_id: str) -> None:
+        session = self._find_upload_session(session_id)
+        temp_path = self._absolute_upload_path(session.temp_path)
+        if temp_path.exists():
+            temp_path.unlink(missing_ok=True)
+        self.upload_sessions = [item for item in self.upload_sessions if item.session_id != session_id]
+        self._save_state()
+        return {
+            "channel_id": channel.id,
+            "channel_name": channel.name,
+            "youtube_channel_id": channel.channel_id,
+            "oauth_email": channel.oauth_email or "",
+        }
 
 
 store = AppStore()

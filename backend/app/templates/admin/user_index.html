@@ -16,15 +16,11 @@
                     <p class="section-note">Manager filter, KPI strip, reset password, edit manager và gán BOT theo user.</p>
                 </div>
             </div>
-            <form method="get" action="/admin/user/index" class="grid gap-3 lg:min-w-[460px] lg:grid-cols-[1fr_auto_auto]">
-                <select class="toolbar-select" name="manager_ids" id="managerChoose" multiple>
-                    {% for manager in dashboard.manager_options %}
-                    <option value="{{ manager.id }}" {% if manager.selected %}selected{% endif %}>{{ manager.username }}</option>
-                    {% endfor %}
-                </select>
+            <form method="get" action="/admin/user/index" class="grid gap-3 lg:min-w-[560px] lg:grid-cols-[1fr_auto_auto]">
+                {% include "admin/_manager_picker.html" %}
                 <button type="submit" class="action-btn action-btn-primary h-11 justify-center px-4 text-[13px]">
-                    <i data-lucide="filter" class="h-4 w-4"></i>
-                    Lọc
+                    <i data-lucide="search" class="h-4 w-4"></i>
+                    Search
                 </button>
                 <a href="/admin/user/create" class="action-btn action-btn-emerald h-11 justify-center px-4 text-[13px]">
                     <i data-lucide="user-plus" class="h-4 w-4"></i>
@@ -62,8 +58,8 @@
                         <td class="table-mono text-slate-500">{{ user.index }}</td>
                         <td>
                             <div class="flex items-center gap-3">
-                                <div class="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-[12px] font-bold text-slate-600">
-                                    {{ user.display_name[:1] }}
+                                <div class="flex h-10 w-10 items-center justify-center rounded-full text-[12px] font-bold {{ user.avatar_class }}">
+                                    {{ user.avatar_initials }}
                                 </div>
                                 <div>
                                     <p class="text-[13px] font-semibold text-slate-900">{{ user.display_name }}</p>

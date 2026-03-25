@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ dashboard.page_title | e }}</title>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%235d67df'/%3E%3Cpath d='M20 20h24v24H20z' fill='white' opacity='.18'/%3E%3Cpath d='M28 24l12 8-12 8V24z' fill='white'/%3E%3C/svg%3E">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cg fill='%23ff5528'%3E%3Cpath d='M58 22c-7 0-12 5-12 12v116c0 56 45 102 101 102h54c7 0 12-5 12-12s-5-12-12-12h-54c-43 0-77-35-77-78V34c0-7-5-12-12-12z'/%3E%3Cpath d='M106 66c0-5 3-9 8-11 5-2 10-1 14 3l34 35 34-35c3-4 9-5 14-3 5 2 8 6 8 11v109c0 7-5 12-12 12s-12-5-12-12V95l-24 24c-5 5-12 5-17 0l-24-24v80c0 7-5 12-12 12s-12-5-12-12V66z'/%3E%3Crect x='181' y='119' width='14' height='78' rx='7'/%3E%3Ccircle cx='188' cy='205' r='28'/%3E%3C/g%3E%3C/svg%3E">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
@@ -102,6 +102,219 @@
         min-height: 84px;
         padding-top: 8px;
         padding-bottom: 8px;
+      }
+
+      .manager-picker {
+        position: relative;
+        min-width: 0;
+      }
+
+      .manager-picker-trigger {
+        display: flex;
+        min-height: 44px;
+        width: 100%;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        border: 1px solid rgb(203 213 225);
+        border-radius: 10px;
+        background: #ffffff;
+        padding: 8px 12px;
+        font-size: 13px;
+        color: rgb(15 23 42);
+        transition: border-color 120ms ease, box-shadow 120ms ease;
+      }
+
+      .manager-picker[data-open="true"] .manager-picker-trigger,
+      .manager-picker-trigger:focus {
+        border-color: rgba(93, 103, 223, 0.72);
+        box-shadow: 0 0 0 2px rgba(93, 103, 223, 0.1);
+        outline: none;
+      }
+
+      .manager-picker-trigger-body {
+        min-width: 0;
+        flex: 1;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .manager-picker-placeholder {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        text-align: left;
+        color: rgb(15 23 42);
+      }
+
+      .manager-picker-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .manager-picker-placeholder.is-hidden,
+      .manager-picker-tags:empty {
+        display: none;
+      }
+
+      .manager-picker-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        max-width: 180px;
+        border-radius: 8px;
+        background: rgb(93 103 223);
+        color: #ffffff;
+        padding: 6px 8px;
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 1;
+      }
+
+      .manager-picker-tag-label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .manager-picker-tag-remove {
+        display: inline-flex;
+        height: 14px;
+        width: 14px;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        color: rgba(255, 255, 255, 0.88);
+        transition: background-color 120ms ease, color 120ms ease;
+      }
+
+      .manager-picker-tag-remove:hover {
+        background: rgba(255, 255, 255, 0.16);
+        color: #ffffff;
+      }
+
+      .manager-picker-tag-clear {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border-radius: 8px;
+        border: 1px solid rgb(253 205 211);
+        background: rgb(255 241 242);
+        color: rgb(190 24 93);
+        padding: 6px 8px;
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 1;
+      }
+
+      .manager-picker-panel {
+        position: absolute;
+        top: calc(100% + 8px);
+        left: 0;
+        right: 0;
+        z-index: 30;
+        border: 1px solid rgb(226 232 240);
+        border-radius: 12px;
+        background: #ffffff;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+      }
+
+      .manager-picker-search-shell {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border-bottom: 1px solid rgb(241 245 249);
+        padding: 12px;
+      }
+
+      .manager-picker-search {
+        width: 100%;
+        border: 0;
+        background: transparent;
+        font-size: 13px;
+        color: rgb(15 23 42);
+        outline: none;
+      }
+
+      .manager-picker-list {
+        max-height: 260px;
+        overflow-y: auto;
+        padding: 6px;
+      }
+
+      .manager-picker-option {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border-radius: 10px;
+        padding: 10px;
+        transition: background-color 120ms ease;
+        cursor: pointer;
+      }
+
+      .manager-picker-option:hover {
+        background: rgb(248 250 252);
+      }
+
+      .manager-picker-option.is-hidden {
+        display: none;
+      }
+
+      .manager-picker-checkbox {
+        height: 16px;
+        width: 16px;
+        border-radius: 4px;
+      }
+
+      .manager-picker-avatar {
+        display: inline-flex;
+        height: 34px;
+        width: 34px;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        flex-shrink: 0;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .manager-picker-name {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 13px;
+        font-weight: 600;
+        color: rgb(15 23 42);
+      }
+
+      .manager-picker-meta {
+        display: block;
+        margin-top: 2px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 11px;
+        color: rgb(100 116 139);
+      }
+
+      .manager-picker-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        border-top: 1px solid rgb(241 245 249);
+        padding: 12px;
+      }
+
+      .manager-picker-count {
+        font-size: 11px;
+        font-weight: 600;
+        color: rgb(100 116 139);
       }
 
       .section-title {
@@ -343,7 +556,7 @@
                         </svg>
                     </div>
                     <div>
-                        <p class="font-display text-[17px] font-bold leading-none tracking-tight text-slate-900">Upload YouTube</p>
+                        <p class="font-display text-[17px] font-bold leading-none tracking-tight text-slate-900">Youtube Upload Lush</p>
                         <p class="mt-1 text-[11px] text-slate-500">Admin workspace</p>
                     </div>
                 </a>
@@ -418,6 +631,144 @@
               dialog.close();
             }
           });
+        });
+
+        document.querySelectorAll('[data-manager-picker]').forEach(function (picker) {
+          const trigger = picker.querySelector('[data-manager-trigger]');
+          const panel = picker.querySelector('[data-manager-panel]');
+          const search = picker.querySelector('[data-manager-search]');
+          const placeholderNode = picker.querySelector('[data-manager-placeholder]');
+          const tagsNode = picker.querySelector('[data-manager-tags]');
+          const count = picker.querySelector('[data-manager-count]');
+          const hiddenInputs = picker.querySelector('[data-manager-hidden-inputs]');
+          const clearButton = picker.querySelector('[data-manager-clear]');
+          const options = Array.from(picker.querySelectorAll('[data-manager-option]'));
+          const checkboxes = Array.from(picker.querySelectorAll('.manager-picker-checkbox'));
+          const placeholder = picker.dataset.placeholder || 'Tất cả manager';
+
+          function selectedCheckboxes() {
+            return checkboxes.filter(function (checkbox) { return checkbox.checked; });
+          }
+
+          function syncHiddenInputs() {
+            hiddenInputs.innerHTML = '';
+            const selected = selectedCheckboxes();
+            if (!selected.length) {
+              const blank = document.createElement('input');
+              blank.type = 'hidden';
+              blank.name = 'manager_ids';
+              blank.value = '';
+              hiddenInputs.appendChild(blank);
+              return;
+            }
+
+            selected.forEach(function (checkbox) {
+              const input = document.createElement('input');
+              input.type = 'hidden';
+              input.name = 'manager_ids';
+              input.value = checkbox.value;
+              hiddenInputs.appendChild(input);
+            });
+          }
+
+          function syncSummary() {
+            const selected = selectedCheckboxes();
+            tagsNode.innerHTML = '';
+            placeholderNode.textContent = placeholder;
+            placeholderNode.classList.toggle('is-hidden', selected.length > 0);
+
+            selected.forEach(function (checkbox) {
+              const option = checkbox.closest('[data-manager-option]');
+              const name = option ? option.querySelector('.manager-picker-name') : null;
+              const tag = document.createElement('span');
+              tag.className = 'manager-picker-tag';
+              tag.innerHTML =
+                '<span class="manager-picker-tag-label"></span>' +
+                '<button type="button" class="manager-picker-tag-remove" aria-label="Bỏ chọn">x</button>';
+              tag.querySelector('.manager-picker-tag-label').textContent = name ? name.textContent.trim() : checkbox.value;
+              tag.querySelector('.manager-picker-tag-remove').addEventListener('click', function (event) {
+                event.preventDefault();
+                event.stopPropagation();
+                checkbox.checked = false;
+                syncHiddenInputs();
+                syncSummary();
+              });
+              tagsNode.appendChild(tag);
+            });
+
+            if (selected.length > 1) {
+              const clearTag = document.createElement('button');
+              clearTag.type = 'button';
+              clearTag.className = 'manager-picker-tag-clear';
+              clearTag.textContent = 'Xóa tất cả';
+              clearTag.addEventListener('click', function (event) {
+                event.preventDefault();
+                event.stopPropagation();
+                checkboxes.forEach(function (checkbox) {
+                  checkbox.checked = false;
+                });
+                syncHiddenInputs();
+                syncSummary();
+              });
+              tagsNode.appendChild(clearTag);
+            }
+
+            count.textContent = selected.length + '/' + checkboxes.length + ' manager';
+          }
+
+          function filterOptions() {
+            const keyword = (search.value || '').trim().toLowerCase();
+            options.forEach(function (option) {
+              const haystack = option.dataset.search || '';
+              option.classList.toggle('is-hidden', !!keyword && haystack.indexOf(keyword) === -1);
+            });
+          }
+
+          function setOpen(open) {
+            picker.dataset.open = open ? 'true' : 'false';
+            trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+            panel.hidden = !open;
+            if (open) {
+              search.focus();
+            }
+          }
+
+          trigger.addEventListener('click', function () {
+            setOpen(picker.dataset.open !== 'true');
+          });
+
+          checkboxes.forEach(function (checkbox) {
+            checkbox.addEventListener('change', function () {
+              syncHiddenInputs();
+              syncSummary();
+            });
+          });
+
+          clearButton.addEventListener('click', function () {
+            checkboxes.forEach(function (checkbox) {
+              checkbox.checked = false;
+            });
+            syncHiddenInputs();
+            syncSummary();
+          });
+
+          search.addEventListener('input', filterOptions);
+
+          document.addEventListener('click', function (event) {
+            if (!picker.contains(event.target)) {
+              setOpen(false);
+            }
+          });
+
+          document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape') {
+              setOpen(false);
+            }
+          });
+
+          syncHiddenInputs();
+          syncSummary();
+          filterOptions();
         });
       });
 

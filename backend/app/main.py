@@ -5,7 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from .auth import ADMIN_SESSION_KEY
-from .routers import api_admin, api_user, web
+from .routers import api_admin, api_user, api_worker, web
 from .store import store
 
 
@@ -26,6 +26,7 @@ def create_app() -> FastAPI:
     app.include_router(web.router)
     app.include_router(api_user.router, prefix="/api")
     app.include_router(api_admin.router, prefix="/api")
+    app.include_router(api_worker.router, prefix="/api")
 
     root_dir = Path(__file__).resolve().parents[2]
     legacy_static_dir = root_dir / "YoutubeBOTUpload-master" / "BaseSource.AppUI" / "wwwroot"

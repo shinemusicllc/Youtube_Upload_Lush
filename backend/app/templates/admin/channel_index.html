@@ -16,15 +16,13 @@
                 </div>
             </div>
 
-            <form method="get" action="/admin/channel/index" class="flex w-full min-w-0 flex-col gap-3 xl:max-w-[680px] xl:flex-row xl:items-center xl:justify-end">
-                <select class="toolbar-select w-full xl:w-[280px]" name="manager_ids" multiple size="3">
-                    {% for manager in dashboard.manager_options %}
-                    <option value="{{ manager.id }}" {% if manager.selected %}selected{% endif %}>{{ manager.username }}</option>
-                    {% endfor %}
-                </select>
+            <form method="get" action="/admin/channel/index" class="flex w-full min-w-0 flex-col gap-3 xl:max-w-[760px] xl:flex-row xl:items-center xl:justify-end">
+                <div class="min-w-0 flex-1">
+                    {% include "admin/_manager_picker.html" %}
+                </div>
                 <button type="submit" class="action-btn action-btn-primary h-11 shrink-0 justify-center px-4 text-[13px]">
-                    <i data-lucide="filter" class="h-4 w-4"></i>
-                    Lọc
+                    <i data-lucide="search" class="h-4 w-4"></i>
+                    Search
                 </button>
                 <a href="/admin/channel/export" class="action-btn action-btn-emerald h-11 shrink-0 justify-center px-4 text-[13px]">
                     <i data-lucide="file-output" class="h-4 w-4"></i>

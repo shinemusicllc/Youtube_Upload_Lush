@@ -1,0 +1,16 @@
+[Unit]
+Description=Youtube Upload Lush Worker Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/youtube-upload-lush
+EnvironmentFile=/etc/youtube-upload-worker.env
+ExecStart=/opt/youtube-upload-lush/.venv/bin/python workers/agent/main.py
+Restart=always
+RestartSec=5
+User=root
+
+[Install]
+WantedBy=multi-user.target

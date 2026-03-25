@@ -11,6 +11,7 @@ from fastapi.templating import Jinja2Templates
 
 from ..auth import (
     AdminSessionUser,
+    GOOGLE_OAUTH_STATE_SESSION_KEY,
     clear_admin_session,
     get_admin_session_user,
     normalize_manager_filter_ids,
@@ -104,18 +105,60 @@ def _admin_forbidden_redirect(path: str = "/admin/user/index") -> RedirectRespon
 
 
 @router.get("/", response_class=HTMLResponse)
-async def root(request: Request):
+async def root(
+    request: Request,
+    notice: str | None = None,
+    notice_level: str = "success",
+):
     return templates.TemplateResponse(
         "user_dashboard.html",
-        {"request": request, "dashboard": store.get_user_dashboard_view()},
+        {
+            "request": request,
+            "dashboard": store.get_user_dashboard_view(notice=notice, notice_level=notice_level),
+        },
     )
 
 
 @router.get("/app", response_class=HTMLResponse)
-async def user_dashboard(request: Request):
+async def user_dashboard(
+    request: Request,
+    notice: str | None = None,
+    notice_level: str = "success",
+):
     return templates.TemplateResponse(
         "user_dashboard.html",
-        {"request": request, "dashboard": store.get_user_dashboard_view()},
+        {
+            "request": request,
+            "dashboard": store.get_user_dashboard_view(notice=notice, notice_level=notice_level),
+        },
+    )
+
+
+@router.get("/auth/google/callback")
+async def google_oauth_callback(
+    request: Request,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+):
+    expected_state = str(request.session.pop(GOOGLE_OAUTH_STATE_SESSION_KEY, "") or "")
+    if error:
+        return _redirect_with_notice("/app", f"Google OAuth bi tu choi: {error}", "error")
+
+    if not code or not state:
+        return _redirect_with_notice("/app", "Google OAuth callback thieu code hoac state.", "error")
+    if not expected_state or state != expected_state:
+        return _redirect_with_notice("/app", "State OAuth khong hop le hoac da het han.", "error")
+
+    try:
+        result = store.complete_google_oauth(code=code, base_url=str(request.base_url).rstrip("/"))
+    except ValueError as exc:
+        return _redirect_with_notice("/app", str(exc), "error")
+
+    return _redirect_with_notice(
+        "/app",
+        f"Da ket noi kenh {result['channel_name']} ({result['youtube_channel_id']}).",
+        "success",
     )
 
 

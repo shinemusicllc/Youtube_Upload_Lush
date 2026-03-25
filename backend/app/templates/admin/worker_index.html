@@ -16,15 +16,11 @@
                 </div>
             </div>
 
-            <form method="get" action="/admin/ManagerBOT/index" class="grid gap-3 lg:min-w-[460px] lg:grid-cols-[1fr_auto]">
-                <select class="toolbar-select" name="manager_ids" id="managerChoose" multiple>
-                    {% for manager in dashboard.manager_options %}
-                    <option value="{{ manager.id }}" {% if manager.selected %}selected{% endif %}>{{ manager.username }}</option>
-                    {% endfor %}
-                </select>
+            <form method="get" action="/admin/ManagerBOT/index" class="grid gap-3 lg:min-w-[520px] lg:grid-cols-[1fr_auto]">
+                {% include "admin/_manager_picker.html" %}
                 <button type="submit" class="action-btn action-btn-primary h-11 justify-center px-4 text-[13px]">
-                    <i data-lucide="filter" class="h-4 w-4"></i>
-                    Lọc
+                    <i data-lucide="search" class="h-4 w-4"></i>
+                    Search
                 </button>
             </form>
         </div>

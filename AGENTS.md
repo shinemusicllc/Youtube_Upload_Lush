@@ -18,6 +18,8 @@
 ### Module Boundaries
 - `backend/`: FastAPI, templates, static assets, API routers, seed/store prototype.
 - `frontend/`: chi giu lai neu can tai su dung asset/build tooling; khong xem la source chinh cua UI moi.
+- `workers/`: worker agent Python, logic heartbeat/claim/render trong tuong lai; khong nhot vao `backend/`.
+- `infra/`: Docker, reverse proxy, systemd va deploy artifact; khong dat business logic vao day.
 - `YoutubeBOTUpload-master/`: repo .NET cu, chi dung lam nguon tham chieu UI/domain.
 
 ### Debug Workflow
@@ -28,6 +30,7 @@
 ### Safety Rules
 - Khong sua repo `.NET` cu khi chua co migration plan ro rang.
 - Khong doi domain model lon neu chua cap nhat `docs/DECISIONS.md`.
+- Worker phai chu dong `pull/heartbeat` ve control plane; khong dua repo ve huong desktop bot hay push-job qua UI event.
 
 ## Project Task
 

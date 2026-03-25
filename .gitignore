@@ -11,3 +11,5 @@ backend/app/data/uploads/
 backend/data/app_state.db
 backend/data/uploads/
 artifacts/
+Youtube_Upload_Lush/
+backend/*.log

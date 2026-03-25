@@ -8,6 +8,7 @@ from fastapi import HTTPException, Request
 
 ADMIN_SESSION_KEY = "admin_auth"
 MANAGER_FILTER_SESSION_KEY = "admin_manager_ids"
+GOOGLE_OAUTH_STATE_SESSION_KEY = "google_oauth_state"
 
 
 @dataclass

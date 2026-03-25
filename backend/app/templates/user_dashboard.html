@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ dashboard.page_title | e }}</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%235d67df'/%3E%3Cpath d='M20 20h24v24H20z' fill='white' opacity='.18'/%3E%3Cpath d='M28 24l12 8-12 8V24z' fill='white'/%3E%3C/svg%3E">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cg fill='%23ff5528'%3E%3Cpath d='M58 22c-7 0-12 5-12 12v116c0 56 45 102 101 102h54c7 0 12-5 12-12s-5-12-12-12h-54c-43 0-77-35-77-78V34c0-7-5-12-12-12z'/%3E%3Cpath d='M106 66c0-5 3-9 8-11 5-2 10-1 14 3l34 35 34-35c3-4 9-5 14-3 5 2 8 6 8 11v109c0 7-5 12-12 12s-12-5-12-12V95l-24 24c-5 5-12 5-17 0l-24-24v80c0 7-5 12-12 12s-12-5-12-12V66z'/%3E%3Crect x='181' y='119' width='14' height='78' rx='7'/%3E%3Ccircle cx='188' cy='205' r='28'/%3E%3C/g%3E%3C/svg%3E">
   
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -454,6 +454,24 @@
 
     <div class="flex-1 overflow-y-auto w-full pb-16">
       <div class="w-full px-8 py-6 space-y-6">
+        {% if dashboard.notice %}
+        <div class="elevated-card px-5 py-4 border {% if dashboard.notice_level == 'error' %}border-rose-200 bg-rose-50/80{% else %}border-emerald-200 bg-emerald-50/80{% endif %}">
+          <div class="flex items-start gap-3">
+            <div class="mt-0.5 {% if dashboard.notice_level == 'error' %}text-rose-600{% else %}text-emerald-600{% endif %}">
+              <i data-lucide="{% if dashboard.notice_level == 'error' %}shield-alert{% else %}badge-check{% endif %}" class="w-4 h-4"></i>
+            </div>
+            <div>
+              <p class="text-[13px] font-semibold {% if dashboard.notice_level == 'error' %}text-rose-700{% else %}text-emerald-700{% endif %}">
+                {{ dashboard.notice | e }}
+              </p>
+              <p class="mt-1 text-[11px] {% if dashboard.notice_level == 'error' %}text-rose-600{% else %}text-emerald-600{% endif %}">
+                OAuth callback da duoc backend xu ly va dong bo vao danh sach kenh hien tai.
+              </p>
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
         <div class="elevated-card grid grid-cols-5 divide-x divide-slate-200/70 overflow-hidden">
           {% for kpi in dashboard.kpis %}
           <div class="relative px-6 py-5 text-center">
@@ -461,14 +479,22 @@
               <p class="text-slate-500 text-[12px] font-medium">{{ kpi.label | e }}</p>
               <i data-lucide="{{ kpi.icon | e }}" class="w-3.5 h-3.5 {{ kpi.icon_class | e }}"></i>
             </div>
-            <p class="text-[28px] font-display font-bold {{ kpi.accent_class | e }} leading-none tracking-tight">{{ kpi.value }}</p>
-            <p class="text-[11px] font-semibold {{ kpi.accent_class | e }} mt-2.5">{{ kpi.accent | e }}</p>
+            <p class="text-[28px] font-display font-bold {{ (kpi.value_class or kpi.accent_class) | e }} leading-none tracking-tight">{{ kpi.value }}</p>
+            <div class="mt-2.5">
+              <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold {{ kpi.accent_badge_class | e }}">{{ kpi.accent | e }}</span>
+            </div>
             <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-12 h-[3px] rounded-full {{ kpi.bar_class | e }}"></div>
           </div>
           {% endfor %}
         </div>
 
-        <form id="job-form" class="elevated-card grid grid-cols-1 lg:grid-cols-4 overflow-visible">
+        <form
+          id="job-form"
+          class="elevated-card grid grid-cols-1 lg:grid-cols-4 overflow-visible"
+          data-max-upload-bytes="{{ dashboard.upload_capabilities.max_local_upload_bytes }}"
+          data-chunk-bytes="{{ dashboard.upload_capabilities.resumable_chunk_bytes }}"
+          data-allowed-extensions="{{ dashboard.upload_capabilities.allowed_extensions | join(',') }}"
+        >
             <div class="lg:col-span-2 p-6 flex flex-col lg:border-r border-slate-200">
               <div class="flex items-start gap-3 pb-4 border-b border-slate-100 mb-6">
                  <div class="w-9 h-9 rounded-lg bg-brand-50 flex items-center justify-center shrink-0">
@@ -523,7 +549,7 @@
                   </div>
                 </div>
 
-                <div>
+                <div data-upload-slot="intro">
                   <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">Link video Intro</label>
                   <div class="flex items-stretch border border-slate-200 rounded-md bg-white focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/15 transition-all overflow-hidden">
                     <input type="text" id="introPath" name="intro_url" placeholder="Link video Intro..." class="flex-1 bg-transparent px-4 py-2.5 text-slate-900 text-[13px] outline-none placeholder:text-slate-400">
@@ -532,9 +558,10 @@
                       <input type="file" class="hidden file-input" name="intro_file" data-target="introPath">
                     </label>
                   </div>
+                  <div data-upload-status="intro" class="mt-1.5 text-[11px] text-slate-400">Có thể nhập link hoặc chọn file local.</div>
                 </div>
 
-                <div>
+                <div data-upload-slot="video_loop">
                   <label class="flex items-center gap-2 text-[12px] font-semibold mb-1.5">
                     <span class="text-slate-600">Link video loop</span>
                     <span class="text-red-600 text-[11px] font-medium">* Bắt buộc</span>
@@ -546,9 +573,10 @@
                       <input type="file" class="hidden file-input" name="video_loop_file" data-target="videoLoopPath" accept="video/*">
                     </label>
                   </div>
+                  <div data-upload-status="video_loop" class="mt-1.5 text-[11px] text-slate-400">Có thể nhập link hoặc chọn file local.</div>
                 </div>
 
-                <div>
+                <div data-upload-slot="audio_loop">
                   <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">Link audio loop</label>
                   <div class="flex items-stretch border border-slate-200 rounded-md bg-white focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/15 transition-all overflow-hidden">
                     <input type="text" id="audioLoopPath" name="audio_loop_url" placeholder="Link audio loop..." class="flex-1 bg-transparent px-4 py-2.5 text-slate-900 text-[13px] outline-none placeholder:text-slate-400">
@@ -557,9 +585,10 @@
                       <input type="file" class="hidden file-input" name="audio_loop_file" data-target="audioLoopPath" accept="audio/*">
                     </label>
                   </div>
+                  <div data-upload-status="audio_loop" class="mt-1.5 text-[11px] text-slate-400">Có thể nhập link hoặc chọn file local.</div>
                 </div>
 
-                <div>
+                <div data-upload-slot="outro">
                   <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">Link Outro</label>
                   <div class="flex items-stretch border border-slate-200 rounded-md bg-white focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/15 transition-all overflow-hidden">
                     <input type="text" id="outroPath" name="outro_url" placeholder="Link Outro..." class="flex-1 bg-transparent px-4 py-2.5 text-slate-900 text-[13px] outline-none placeholder:text-slate-400">
@@ -568,6 +597,7 @@
                       <input type="file" class="hidden file-input" name="outro_file" data-target="outroPath">
                     </label>
                   </div>
+                  <div data-upload-status="outro" class="mt-1.5 text-[11px] text-slate-400">Có thể nhập link hoặc chọn file local.</div>
                 </div>
 
               </div>
@@ -579,7 +609,7 @@
                   <i data-lucide="calendar-range" class="w-4.5 h-4.5 text-rose-500"></i>
                 </div>
                 <div>
-                  <h3 class="font-display font-bold text-[14px] text-slate-900">Thiết lập nhanh</h3>
+                  <h3 class="font-display font-bold text-[14px] text-slate-900">Quick Settings</h3>
                   <p class="text-[11px] text-slate-500 mt-1 leading-relaxed">Cấu hình metadata, thời lượng render và lịch đăng cho job mới.</p>
                 </div>
               </div>
@@ -613,11 +643,15 @@
                 </div>
 
                 <input type="hidden" id="sourceMode" name="source_mode" value="drive">
+                <input type="hidden" id="introAssetId" name="intro_asset_id" value="">
+                <input type="hidden" id="videoLoopAssetId" name="video_loop_asset_id" value="">
+                <input type="hidden" id="audioLoopAssetId" name="audio_loop_asset_id" value="">
+                <input type="hidden" id="outroAssetId" name="outro_asset_id" value="">
                 <div class="mt-auto border-t border-slate-200 pt-4 flex flex-col items-start gap-3">
                   <div id="jobFormMessage" class="hidden text-[12px] font-medium"></div>
                   <div class="flex gap-2">
                       <button id="resetJobForm" type="button" class="px-4 py-2 bg-white hover:bg-slate-50 text-slate-600 font-semibold transition-all border border-slate-200 rounded-lg text-[13px] hover:shadow-sm">Đặt lại</button>
-                      <button id="submitJobButton" type="submit" class="bg-brand-600 hover:bg-brand-700 text-white font-semibold px-5 py-2 rounded-lg transition-all text-[13px] whitespace-nowrap shadow-md shadow-brand-600/20 hover:shadow-lg hover:shadow-brand-600/30">Tạo job render</button>
+                      <button id="submitJobButton" type="submit" class="bg-brand-600 hover:bg-brand-700 text-white font-semibold px-5 py-2 rounded-lg transition-all text-[13px] whitespace-nowrap shadow-md shadow-brand-600/20 hover:shadow-lg hover:shadow-brand-600/30">Render</button>
                   </div>
                 </div>
               </div>
@@ -630,11 +664,11 @@
                           <i data-lucide="link-2" class="w-4.5 h-4.5 text-emerald-600"></i>
                         </div>
                         <div>
-                            <h3 class="font-display font-bold text-[14px] text-slate-900">Kênh đã kết nối</h3>
+                            <h3 class="font-display font-bold text-[14px] text-slate-900">My Channel</h3>
                             <p class="text-[11px] text-slate-500 mt-1 leading-relaxed">Danh sách kênh đã OAuth, BOT gán và trạng thái sẵn sàng.</p>
                         </div>
                     </div>
-                    <button id="connectYouTubeButton" type="button" class="shrink-0 -mr-1 px-2.5 py-1.5 text-[12px] font-semibold text-brand-600 hover:text-brand-700 hover:bg-brand-50 rounded-lg transition-all">Kết nối Google</button>
+                    <button id="connectYouTubeButton" type="button" class="shrink-0 -mr-1 px-2.5 py-1.5 text-[12px] font-semibold text-brand-600 hover:text-brand-700 hover:bg-brand-50 rounded-lg transition-all">+ Thêm Kênh</button>
                 </div>
 
                 <div class="space-y-3 flex-1 overflow-y-auto pr-1">

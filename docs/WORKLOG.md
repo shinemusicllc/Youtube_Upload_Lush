@@ -55,3 +55,47 @@
 - [x] Sua `.gitignore` de bo qua dung `backend/data/app_state.db`, `backend/data/uploads/` va cac artifact local truoc khi commit.
 - [x] Tao initial commit `Initial FastAPI control plane rebuild` voi toan bo workspace hien tai, bao gom backend FastAPI, docs parity, `final_user_ui.html` va repo tham chieu `.NET` dang duoc dung de phuc vu asset/UI reference.
 - [x] Push thanh cong branch `main` len GitHub remote va set upstream `origin/main`.
+### 2026-03-25
+- [x] Clone repo `https://github.com/shinemusicllc/Youtube_Upload_Lush.git` vao workspace tam va copy noi dung repo ra root `D:\Youtube_BOT_UPLOAD`.
+- [x] Tao `backend\venv`, cai `backend/requirements.txt`, start local app bang `uvicorn` tren `127.0.0.1:8000`.
+- [x] Verify startup qua `GET /api/health` tra `{"status":"ok"}`.
+- [!] Policy hien tai chan lenh xoa, nen hai thu muc du `Youtube_Upload_Lush` va `YoutubeBOTUpload-master` van con ton tai o root; noi dung repo chinh da nam dung o root.
+### 2026-03-25
+- [x] Implement flow Google OAuth that cho user dashboard: sinh `state` trong session, callback `/auth/google/callback`, doi `code -> token`, goi `userinfo` va `channels.list(mine=true)`, roi tao/cap nhat channel that trong `backend/app/store.py`.
+- [x] Mo rong `ChannelRecord` de luu `oauth_refresh_token`, subject, scope, token type; gioi han bootstrap channel theo user dang dung va them banner notice tren user dashboard.
+- [x] Bo sung `.env.example`, tu nap `.env` o root workspace, cai them dependency `httpx` cho smoke test va verify flow bang `FastAPI TestClient` voi mock Google responses (`oauth_smoke_ok`).
+- [x] Restart local `uvicorn` va verify lai `GET /api/health` = `{"status":"ok"}` sau khi ap dung code moi.
+### 2026-03-25
+- [x] Chinh lai KPI strip admin theo `UI_SYSTEM`: bo sung icon, nhan phu duoi so, va giu pattern divider-strip dong nhat cho tat ca tab `User / BOT / Channel / Render`.
+- [x] Cap nhat `backend/app/store.py` de `summary_strip` tra ve du icon/mau/accent/value class; rieng KPI upload = `0` hien so mau den de de doc hon.
+- [x] Sua partial dung chung `backend/app/templates/admin/_summary_strip.html`, compile backend va restart local `uvicorn`, verify `GET /api/health` = `{"status":"ok"}`.
+### 2026-03-25
+- [x] Doi avatar chu o admin user list sang palette mau on dinh theo ten, tao cam giac ngau nhien nhung khong bi thay doi qua moi lan reload.
+- [x] Tao `backend/app/templates/admin/_manager_picker.html` va thay the `select multiple` tho bang manager picker co search + checkbox + multi-select cho cac tab `User / BOT / Channel / Render`.
+- [x] Cap nhat CSS/JS chung trong `backend/app/templates/admin/_layout.html`, compile backend, smoke test `admin_ui_smoke_ok`, restart local `uvicorn` va verify lai `GET /api/health` = `{"status":"ok"}`.
+### 2026-03-25
+- [x] Thu nghiem them badge nhe cho nhan phu trong KPI strip admin bang partial dung chung `backend/app/templates/admin/_summary_strip.html`.
+- [x] Cap nhat `backend/app/store.py` de moi KPI co `accent_badge_class`, compile backend va restart local `uvicorn`, verify lai `GET /api/health` = `{"status":"ok"}`.
+### 2026-03-25
+- [x] Dieu chinh lai manager picker theo flow tag giong app cu hon: manager da chon hien thanh tag ngoai trigger, moi tag co nut `x` de bo nhanh, va co them `Xóa tất cả` khi dang chon nhieu manager.
+- [x] Cap nhat `backend/app/templates/admin/_manager_picker.html` va JS/CSS dung chung trong `backend/app/templates/admin/_layout.html`, compile backend, smoke test `admin_manager_picker_smoke_ok`, restart local `uvicorn` va verify lai `GET /api/health` = `{"status":"ok"}`.
+### 2026-03-25
+- [x] Trace luong render cua app cu tu `RenderClientService -> BotHub -> UploadYoutubeBot MainWork -> RenderAdminService` de xac nhan pipeline that cua job render/upload.
+- [x] Chot lai rang pipeline cu chu yeu la `download -> FFProbe validate -> ffmpeg concat/copy -> Chrome upload`, khong phai full re-encode, nen phu hop hon voi bai toan loop video 4K.
+- [x] Ghi nhan cac diem can cai tien cho ban rebuild: preflight disk, tach phase job, bo Selenium upload, va giu fast-path `copy/remux` khi input hop le.
+### 2026-03-25
+- [x] Nang cap local upload tu `single multipart request` len huong `upload session + resumable chunk upload`, them backend API session, hidden asset refs, JS upload theo chunk va fallback stream-to-disk an toan hon.
+- [x] Them scaffold worker-control plane toi thieu: `POST /api/workers/register`, `POST /api/workers/heartbeat`, `workers/agent/main.py`, va file infra/deploy (`Dockerfile`, `docker-compose`, `Caddyfile`, `systemd`, `bootstrap scripts`).
+- [x] Tao `workers/AGENTS.md` va `infra/AGENTS.md`, cap nhat root `AGENTS.md` va `docs/PROJECT_CONTEXT.md` de phan tach ro khu vuc `backend / workers / infra`.
+- [x] Verify local bang `compileall`, `node --check`, smoke test `upload session -> chunk upload -> create job -> worker register/heartbeat`.
+- [x] Deploy thu nghiem control plane len `82.197.71.6:8000` va deploy worker agent len `109.123.233.131`, `62.72.46.42`; xac nhan 2 worker heartbeat thanh cong vao host state.
+### 2026-03-25
+- [x] Mo rong worker contract len `claim / progress / complete / fail`, them job lease metadata va queue refresh logic trong control plane.
+- [x] Nang cap `workers/agent/main.py` thanh poll loop co `simulate mode` opt-in de worker co the dien tap full state machine ma khong bat mac dinh tren VPS.
+- [x] Smoke test local cho `register -> claim -> progress -> complete`, sau do redeploy host/worker va xac nhan host van khoe, 2 worker van `active`.
+- [x] Don stray process cua chinh app tren host (`:8010`) de tranh de lai runtime rac; giu lai duy nhat app nay tren `:8000`.
+### 2026-03-26
+- [x] Audit host shared `82.197.71.6` de tim reverse proxy chung dang chiem `80/443`, xac nhan Caddy shared nam trong stack `deploy` va app hien tai van chay rieng tren `:8000`.
+- [x] Them site block `ytb.jazzrelaxation.com` vao `/opt/spoticheck/app/deploy/Caddyfile`, reverse proxy sang `172.17.0.1:8000`, validate va reload Caddy ma khong anh huong domain khac.
+- [x] Cap nhat `/opt/youtube-upload-lush/.env` tren host sang `APP_BASE_URL=https://ytb.jazzrelaxation.com`, `APP_DOMAIN=ytb.jazzrelaxation.com`, `GOOGLE_REDIRECT_URI=https://ytb.jazzrelaxation.com/auth/google/callback`, roi restart app.
+- [x] Verify server-side bang `curl --resolve`: route HTTP da redirect sang HTTPS dung domain moi; HTTPS cert chua cap duoc vi DNS public `ytb.jazzrelaxation.com` hien chua ton tai.

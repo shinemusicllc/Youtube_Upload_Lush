@@ -11,6 +11,7 @@ WorkerStatus = Literal["online", "busy", "offline"]
 ChannelStatus = Literal["connected", "pending_reconnect", "disconnected"]
 JobStatus = Literal["pending", "queueing", "downloading", "rendering", "uploading", "completed", "cancelled", "error"]
 SourceMode = Literal["drive", "local"]
+UploadSessionStatus = Literal["active", "completed", "expired", "cancelled"]
 
 
 class UserSummary(BaseModel):
@@ -54,6 +55,10 @@ class ChannelRecord(BaseModel):
     status: ChannelStatus
     oauth_email: str | None = None
     oauth_connected_at: datetime | None = None
+    oauth_google_subject: str | None = None
+    oauth_refresh_token: str | None = None
+    oauth_scope: str | None = None
+    oauth_token_type: str | None = None
 
 
 class UserBotAssignment(BaseModel):
@@ -69,7 +74,9 @@ class UserBotAssignment(BaseModel):
 
 class UploadCapabilities(BaseModel):
     allow_local_upload: bool = True
-    max_local_upload_bytes: int = 2_147_483_648
+    allow_resumable_upload: bool = True
+    resumable_chunk_bytes: int = 8_388_608
+    max_local_upload_bytes: int = 8_589_934_592
     allowed_extensions: list[str] = Field(default_factory=lambda: [".mp4", ".mov", ".webm", ".mp3", ".wav", ".jpg", ".png"])
 
 
@@ -113,6 +120,12 @@ class RenderJobRecord(BaseModel):
     download_started_at: datetime | None = None
     upload_started_at: datetime | None = None
     completed_at: datetime | None = None
+    started_at: datetime | None = None
+    claimed_at: datetime | None = None
+    claimed_by_worker_id: str | None = None
+    lease_expires_at: datetime | None = None
+    error_message: str | None = None
+    output_url: str | None = None
     source_label: str
     source_file_name: str | None = None
     thumbnail_url: str | None = None
@@ -133,6 +146,10 @@ class JobCreatePayload(BaseModel):
     video_loop_url: str | None = None
     audio_loop_url: str | None = None
     outro_url: str | None = None
+    intro_asset_id: str | None = None
+    video_loop_asset_id: str | None = None
+    audio_loop_asset_id: str | None = None
+    outro_asset_id: str | None = None
     time_render_string: str = "00:30:00"
     schedule_time: datetime | None = None
 
@@ -159,3 +176,99 @@ class AdminDashboardResponse(BaseModel):
     workers: list[WorkerRecord]
     channels: list[ChannelRecord]
     jobs: list[RenderJobRecord]
+
+
+class UploadSessionCreateRequest(BaseModel):
+    slot: Literal["intro", "video_loop", "audio_loop", "outro"]
+    file_name: str
+    size_bytes: int
+    content_type: str | None = None
+
+
+class UploadSessionRecord(BaseModel):
+    session_id: str
+    slot: Literal["intro", "video_loop", "audio_loop", "outro"]
+    file_name: str
+    content_type: str | None = None
+    size_bytes: int
+    received_bytes: int = 0
+    chunk_size: int
+    status: UploadSessionStatus = "active"
+    created_at: datetime
+    updated_at: datetime
+    expires_at: datetime
+    temp_path: str
+    asset_id: str | None = None
+    stored_file_name: str | None = None
+
+
+class UploadSessionResponse(BaseModel):
+    session_id: str
+    slot: Literal["intro", "video_loop", "audio_loop", "outro"]
+    file_name: str
+    size_bytes: int
+    received_bytes: int
+    chunk_size: int
+    status: UploadSessionStatus
+    expires_at: datetime
+    asset_id: str | None = None
+    stored_file_name: str | None = None
+
+
+class WorkerRegisterPayload(BaseModel):
+    worker_id: str
+    name: str
+    shared_secret: str
+    manager_name: str = "system"
+    group: str | None = None
+    capacity: int = 1
+    threads: int = 1
+    disk_total_gb: float = 0
+
+
+class WorkerHeartbeatPayload(BaseModel):
+    worker_id: str
+    shared_secret: str
+    load_percent: int = 0
+    bandwidth_kbps: int = 0
+    disk_used_gb: float = 0
+    disk_total_gb: float = 0
+    threads: int = 1
+    status: WorkerStatus = "online"
+
+
+class WorkerControlResponse(BaseModel):
+    ok: bool
+    worker: WorkerRecord
+
+
+class WorkerAuthPayload(BaseModel):
+    worker_id: str
+    shared_secret: str
+
+
+class WorkerClaimResponse(BaseModel):
+    ok: bool
+    worker: WorkerRecord
+    job: RenderJobRecord | None = None
+
+
+class WorkerJobProgressPayload(BaseModel):
+    worker_id: str
+    shared_secret: str
+    status: JobStatus
+    progress: int = 0
+    message: str | None = None
+
+
+class WorkerJobCompletePayload(BaseModel):
+    worker_id: str
+    shared_secret: str
+    output_url: str | None = None
+    message: str | None = None
+
+
+class WorkerJobFailPayload(BaseModel):
+    worker_id: str
+    shared_secret: str
+    message: str

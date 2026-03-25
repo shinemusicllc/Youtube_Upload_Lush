@@ -19,19 +19,17 @@
                 </div>
             </div>
 
-            <form method="get" action="{% if dashboard.filtered_channel %}/admin/render/channel{% else %}/admin/render/index{% endif %}" class="flex w-full min-w-0 flex-col gap-3 xl:max-w-[520px] xl:flex-row xl:items-center xl:justify-end">
+            <form method="get" action="{% if dashboard.filtered_channel %}/admin/render/channel{% else %}/admin/render/index{% endif %}" class="flex w-full min-w-0 flex-col gap-3 xl:max-w-[720px] xl:flex-row xl:items-center xl:justify-end">
                 {% if dashboard.filtered_channel %}
                 <input type="hidden" name="channelId" value="{{ dashboard.filtered_channel.id }}">
                 <input type="hidden" name="channelName" value="{{ dashboard.filtered_channel.name }}">
                 {% endif %}
-                <select class="toolbar-select w-full xl:w-[260px]" name="manager_ids" multiple size="3">
-                    {% for manager in dashboard.manager_options %}
-                    <option value="{{ manager.id }}" {% if manager.selected %}selected{% endif %}>{{ manager.username }}</option>
-                    {% endfor %}
-                </select>
+                <div class="min-w-0 flex-1">
+                    {% include "admin/_manager_picker.html" %}
+                </div>
                 <button type="submit" class="action-btn action-btn-primary h-11 shrink-0 justify-center px-4 text-[13px]">
-                    <i data-lucide="filter" class="h-4 w-4"></i>
-                    Lọc
+                    <i data-lucide="search" class="h-4 w-4"></i>
+                    Search
                 </button>
             </form>
         </div>
