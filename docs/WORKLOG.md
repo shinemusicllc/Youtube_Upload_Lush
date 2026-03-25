@@ -50,3 +50,8 @@
 - [x] Them persistence local bang SQLite snapshot trong `backend/app/store.py`, luu duoc state admin/user/channel/job qua restart.
 - [x] Them `backend/app/templates/admin/login.html`, doi nut logout trong shell thanh form that, va khoa manager binding tren form tao user khi dang nhap bang manager.
 - [x] Verify bang `python -m compileall backend/app` va smoke test `TestClient`: redirect khi chua login, login admin, session manager filter, API/admin, va persistence qua `AppStore()` moi deu pass.
+### 2026-03-25
+- [x] Khoi tao Git cho workspace `D:\\Youtube_BOT_UPLOAD`, them remote `origin` tro den `https://github.com/shinemusicllc/Youtube_Upload_Lush.git`.
+- [x] Sua `.gitignore` de bo qua dung `backend/data/app_state.db`, `backend/data/uploads/` va cac artifact local truoc khi commit.
+- [x] Tao initial commit `Initial FastAPI control plane rebuild` voi toan bo workspace hien tai, bao gom backend FastAPI, docs parity, `final_user_ui.html` va repo tham chieu `.NET` dang duoc dung de phuc vu asset/UI reference.
+- [x] Push thanh cong branch `main` len GitHub remote va set upstream `origin/main`.
