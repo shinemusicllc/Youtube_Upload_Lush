@@ -1,0 +1,256 @@
+{% extends "admin/_layout.html" %}
+
+{% block content %}
+<section class="space-y-6">
+    {% include "admin/_user_tabs.html" %}
+    {% include "admin/_admin_notice.html" %}
+
+    <div class="panel p-5">
+        <div class="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div class="flex items-start gap-3">
+                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50">
+                    <i data-lucide="users" class="h-4.5 w-4.5 text-brand-600"></i>
+                </div>
+                <div>
+                    <h2 class="section-title">Danh sách người dùng</h2>
+                    <p class="section-note">Manager filter, KPI strip, reset password, edit manager và gán BOT theo user.</p>
+                </div>
+            </div>
+            <form method="get" action="/admin/user/index" class="grid gap-3 lg:min-w-[460px] lg:grid-cols-[1fr_auto_auto]">
+                <select class="toolbar-select" name="manager_ids" id="managerChoose" multiple>
+                    {% for manager in dashboard.manager_options %}
+                    <option value="{{ manager.id }}" {% if manager.selected %}selected{% endif %}>{{ manager.username }}</option>
+                    {% endfor %}
+                </select>
+                <button type="submit" class="action-btn action-btn-primary h-11 justify-center px-4 text-[13px]">
+                    <i data-lucide="filter" class="h-4 w-4"></i>
+                    Lọc
+                </button>
+                <a href="/admin/user/create" class="action-btn action-btn-emerald h-11 justify-center px-4 text-[13px]">
+                    <i data-lucide="user-plus" class="h-4 w-4"></i>
+                    Tạo mới
+                </a>
+            </form>
+        </div>
+    </div>
+
+    {% include "admin/_summary_strip.html" %}
+
+    <div class="panel overflow-hidden">
+        <div class="border-b border-slate-200/80 px-5 py-4">
+            <h3 class="section-title">Danh sách người dùng</h3>
+            <p class="section-note">Giữ route cũ nhưng chuyển action sang form thật thay vì stub UI.</p>
+        </div>
+
+        <div class="table-shell">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th class="w-14">STT</th>
+                        <th>Thông tin user</th>
+                        <th>Vai trò</th>
+                        <th>Manager</th>
+                        <th>Cập nhật</th>
+                        <th>Kênh</th>
+                        <th>BOT</th>
+                        <th class="text-right">Tác vụ</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in dashboard.users %}
+                    <tr>
+                        <td class="table-mono text-slate-500">{{ user.index }}</td>
+                        <td>
+                            <div class="flex items-center gap-3">
+                                <div class="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-[12px] font-bold text-slate-600">
+                                    {{ user.display_name[:1] }}
+                                </div>
+                                <div>
+                                    <p class="text-[13px] font-semibold text-slate-900">{{ user.display_name }}</p>
+                                    <p class="table-meta table-mono">{{ user.username }}</p>
+                                    <p class="table-meta">{{ user.telegram or 'Chưa có Telegram' }}</p>
+                                </div>
+                            </div>
+                        </td>
+                        <td><span class="{{ user.role_class }}">{{ user.role_label }}</span></td>
+                        <td class="text-[12px] font-medium text-slate-700">{{ user.manager_name }}</td>
+                        <td class="table-meta">{{ user.updated_meta }}</td>
+                        <td>
+                            <span class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold text-emerald-700">
+                                {{ user.total_channels }} kênh
+                            </span>
+                        </td>
+                        <td>
+                            <span class="inline-flex items-center rounded-full border border-brand-100 bg-brand-50 px-2.5 py-1 text-[10px] font-semibold text-brand-700">
+                                {{ user.total_workers }} BOT
+                            </span>
+                        </td>
+                        <td>
+                            <div class="flex items-center justify-end gap-2">
+                                <a href="/admin/channel/user?userId={{ user.id }}&username={{ user.username | urlencode }}" class="action-btn action-btn-sky">
+                                    <i data-lucide="link-2" class="h-3.5 w-3.5"></i>
+                                    Kênh
+                                </a>
+                                <a href="/admin/user/managerbot?userId={{ user.id }}" class="action-btn action-btn-primary">
+                                    <i data-lucide="server" class="h-3.5 w-3.5"></i>
+                                    BOT
+                                </a>
+                                <button
+                                    type="button"
+                                    class="action-btn action-btn-amber"
+                                    data-dialog-open="reset-password-dialog"
+                                    data-user-id="{{ user.id }}"
+                                    data-username="{{ user.username }}"
+                                >
+                                    <i data-lucide="key-round" class="h-3.5 w-3.5"></i>
+                                    Reset pass
+                                </button>
+                                <button
+                                    type="button"
+                                    class="action-btn action-btn-emerald"
+                                    data-dialog-open="edit-user-dialog"
+                                    data-user-id="{{ user.id }}"
+                                    data-display-name="{{ user.display_name }}"
+                                    data-telegram="{{ user.telegram }}"
+                                    data-manager-id="{{ user.manager_id }}"
+                                    data-role="{{ user.role }}"
+                                >
+                                    <i data-lucide="pencil" class="h-3.5 w-3.5"></i>
+                                    Sửa
+                                </button>
+                                <button
+                                    type="button"
+                                    class="action-btn action-btn-rose"
+                                    data-dialog-open="delete-user-dialog"
+                                    data-user-id="{{ user.id }}"
+                                    data-username="{{ user.username }}"
+                                >
+                                    <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
+                                    Xóa
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+<dialog id="edit-user-dialog" class="admin-dialog">
+    <div class="panel">
+        <form method="post" action="/admin/user/updatetelegram">
+            <div class="border-b border-slate-200 px-5 py-4">
+                <h3 class="section-title">Cập nhật user</h3>
+                <p class="section-note">Sửa tên hiển thị, Telegram và manager của user.</p>
+            </div>
+            <div class="space-y-4 px-5 py-5">
+                <input type="hidden" name="UserId" id="edit-user-id">
+                <div>
+                    <label class="field-label" for="edit-display-name">Display name</label>
+                    <input class="toolbar-input" id="edit-display-name" name="DisplayName" required>
+                </div>
+                <div>
+                    <label class="field-label" for="edit-telegram">Telegram</label>
+                    <input class="toolbar-input" id="edit-telegram" name="Telegram" placeholder="@username">
+                </div>
+                <div id="edit-manager-wrap">
+                    <label class="field-label" for="edit-manager-id">Manager</label>
+                    <select class="toolbar-select" id="edit-manager-id" name="UserIdManager">
+                        <option value="">-- Chọn manager --</option>
+                        {% for manager in dashboard.manager_form_options %}
+                        <option value="{{ manager.id }}">{{ manager.label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
+                <button type="button" class="action-btn action-btn-slate" data-dialog-close>Đóng</button>
+                <button type="submit" class="action-btn action-btn-emerald">Lưu thay đổi</button>
+            </div>
+        </form>
+    </div>
+</dialog>
+
+<dialog id="reset-password-dialog" class="admin-dialog">
+    <div class="panel">
+        <form method="post" action="/admin/user/resetpassword">
+            <div class="border-b border-slate-200 px-5 py-4">
+                <h3 class="section-title">Reset mật khẩu</h3>
+                <p class="section-note">Mật khẩu mới sẽ áp dụng ngay cho tài khoản được chọn.</p>
+            </div>
+            <div class="space-y-4 px-5 py-5">
+                <input type="hidden" name="userId" id="reset-user-id">
+                <div>
+                    <label class="field-label">UserName</label>
+                    <input class="toolbar-input bg-slate-50" id="reset-username" readonly>
+                </div>
+                <div>
+                    <label class="field-label" for="reset-password-value">Password mới</label>
+                    <input class="toolbar-input" id="reset-password-value" name="Password" required>
+                </div>
+            </div>
+            <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
+                <button type="button" class="action-btn action-btn-slate" data-dialog-close>Đóng</button>
+                <button type="submit" class="action-btn action-btn-amber">Reset password</button>
+            </div>
+        </form>
+    </div>
+</dialog>
+
+<dialog id="delete-user-dialog" class="admin-dialog">
+    <div class="panel">
+        <form method="post" action="/admin/user/delete">
+            <div class="border-b border-slate-200 px-5 py-4">
+                <h3 class="section-title">Xóa user</h3>
+                <p class="section-note">Thao tác này sẽ xóa user và toàn bộ mapping BOT của user đó.</p>
+            </div>
+            <div class="space-y-3 px-5 py-5">
+                <input type="hidden" name="userId" id="delete-user-id">
+                <p class="text-[13px] text-slate-700">Bạn có chắc muốn xóa tài khoản <strong id="delete-username"></strong>?</p>
+            </div>
+            <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
+                <button type="button" class="action-btn action-btn-slate" data-dialog-close>Đóng</button>
+                <button type="submit" class="action-btn action-btn-rose">Xóa user</button>
+            </div>
+        </form>
+    </div>
+</dialog>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const editDialog = document.getElementById('edit-user-dialog');
+    const resetDialog = document.getElementById('reset-password-dialog');
+    const deleteDialog = document.getElementById('delete-user-dialog');
+    const editManagerWrap = document.getElementById('edit-manager-wrap');
+
+    document.querySelectorAll('[data-dialog-open="edit-user-dialog"]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        document.getElementById('edit-user-id').value = button.dataset.userId || '';
+        document.getElementById('edit-display-name').value = button.dataset.displayName || '';
+        document.getElementById('edit-telegram').value = button.dataset.telegram || '';
+        document.getElementById('edit-manager-id').value = button.dataset.managerId || '';
+        const role = button.dataset.role || 'user';
+        editManagerWrap.style.display = role === 'user' ? 'block' : 'none';
+      });
+    });
+
+    document.querySelectorAll('[data-dialog-open="reset-password-dialog"]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        document.getElementById('reset-user-id').value = button.dataset.userId || '';
+        document.getElementById('reset-username').value = button.dataset.username || '';
+      });
+    });
+
+    document.querySelectorAll('[data-dialog-open="delete-user-dialog"]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        document.getElementById('delete-user-id').value = button.dataset.userId || '';
+        document.getElementById('delete-username').textContent = button.dataset.username || '';
+      });
+    });
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,176 @@
+{% extends "admin/_layout.html" %}
+
+{% block content %}
+{% set last_deleted_user = dashboard.delete_render_meta.user %}
+{% set last_deleted_at = dashboard.delete_render_meta.deleted_at %}
+
+<section class="space-y-6">
+    {% include "admin/_admin_notice.html" %}
+
+    <div class="panel p-5">
+        <div class="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div class="flex items-start gap-3">
+                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50">
+                    <i data-lucide="layers-3" class="h-4.5 w-4.5 text-brand-600"></i>
+                </div>
+                <div>
+                    <h2 class="section-title">Danh sách render</h2>
+                    <p class="section-note">Theo dõi queue, timeline download/upload và thao tác nhanh trên từng job render.</p>
+                </div>
+            </div>
+
+            <form method="get" action="{% if dashboard.filtered_channel %}/admin/render/channel{% else %}/admin/render/index{% endif %}" class="flex w-full min-w-0 flex-col gap-3 xl:max-w-[520px] xl:flex-row xl:items-center xl:justify-end">
+                {% if dashboard.filtered_channel %}
+                <input type="hidden" name="channelId" value="{{ dashboard.filtered_channel.id }}">
+                <input type="hidden" name="channelName" value="{{ dashboard.filtered_channel.name }}">
+                {% endif %}
+                <select class="toolbar-select w-full xl:w-[260px]" name="manager_ids" multiple size="3">
+                    {% for manager in dashboard.manager_options %}
+                    <option value="{{ manager.id }}" {% if manager.selected %}selected{% endif %}>{{ manager.username }}</option>
+                    {% endfor %}
+                </select>
+                <button type="submit" class="action-btn action-btn-primary h-11 shrink-0 justify-center px-4 text-[13px]">
+                    <i data-lucide="filter" class="h-4 w-4"></i>
+                    Lọc
+                </button>
+            </form>
+        </div>
+
+        {% if dashboard.filtered_channel %}
+        <div class="mt-4 inline-flex items-center rounded-lg border border-brand-100 bg-brand-50 px-3 py-2 text-[12px] font-medium text-brand-700">
+            Đang lọc render theo kênh: {{ dashboard.filtered_channel.name }}
+        </div>
+        {% endif %}
+    </div>
+
+    {% include "admin/_summary_strip.html" %}
+
+    <div class="panel overflow-hidden">
+        <div class="flex flex-col gap-4 border-b border-slate-200/80 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+                <h3 class="section-title">Danh sách job render</h3>
+                <p class="section-note">Giữ thông tin admin cũ nhưng gom lại thành bảng dễ scan và nối đủ action chính.</p>
+            </div>
+
+            <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+                <span class="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-600">
+                    <i data-lucide="clock-3" class="h-3.5 w-3.5 text-slate-400"></i>
+                    Xóa lần cuối bởi:
+                    <strong class="text-slate-800">{{ last_deleted_user }}</strong>
+                    <span class="font-mono">{{ last_deleted_at }}</span>
+                </span>
+                <form method="post" action="/admin/render/delete" class="inline-flex">
+                    {% if dashboard.filtered_channel %}
+                    <input type="hidden" name="channelId" value="{{ dashboard.filtered_channel.id }}">
+                    {% endif %}
+                    <input type="hidden" name="deleted_by" value="admin">
+                    <button type="submit" class="action-btn action-btn-rose px-4 py-2 text-[13px]" onclick="return confirm('Xóa toàn bộ dữ liệu render hiện có?');">
+                        <i data-lucide="trash-2" class="h-4 w-4"></i>
+                        Xóa tất cả dữ liệu
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="table-shell">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th class="w-14">STT</th>
+                        <th>Thông tin job</th>
+                        <th>Kênh</th>
+                        <th>BOT</th>
+                        <th>Link nguồn</th>
+                        <th>Timeline</th>
+                        <th>Thời lượng</th>
+                        <th>Trạng thái</th>
+                        <th>Queue</th>
+                        <th class="text-right">Tác vụ</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for render in dashboard.renders %}
+                    <tr>
+                        <td class="table-mono text-slate-500">{{ render.index }}</td>
+                        <td>
+                            <div class="min-w-[280px]">
+                                <p class="text-[13px] font-semibold text-slate-900">{{ render.title }}</p>
+                                <p class="table-meta">Manager {{ render.manager_name }} • User {{ render.username }}</p>
+                                <p class="table-meta table-mono">Tạo lúc {{ render.created_at }}</p>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="flex items-center gap-3">
+                                <div class="avatar-tile h-9 w-9 rounded-lg bg-emerald-800 text-[10px] font-bold text-white">
+                                    {% if render.avatar_url %}
+                                    <img src="{{ render.avatar_url }}" alt="{{ render.channel_name }}" class="h-full w-full object-cover">
+                                    {% else %}
+                                    {{ render.channel_name[:1] }}
+                                    {% endif %}
+                                </div>
+                                <div>
+                                    <p class="text-[12px] font-semibold text-slate-900">{{ render.channel_name }}</p>
+                                    <p class="table-meta table-mono">{{ render.channel_id }}</p>
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            <p class="text-[12px] font-semibold text-slate-900">{{ render.worker_name }}</p>
+                            <p class="table-meta">{{ render.group }}</p>
+                        </td>
+                        <td>
+                            <a class="inline-flex max-w-[260px] items-center gap-1.5 truncate text-[12px] font-semibold text-brand-700 hover:text-brand-800" href="https://www.youtube.com/channel/{{ render.channel_id }}" target="_blank" rel="noreferrer">
+                                <i data-lucide="external-link" class="h-3.5 w-3.5"></i>
+                                {{ render.video_link }}
+                            </a>
+                            <p class="table-meta table-mono mt-2">{{ render.channel_id }}</p>
+                        </td>
+                        <td class="table-mono text-slate-600">
+                            <p>Tạo: {{ render.created_at }}</p>
+                            <p class="mt-1">Tải: {{ render.download_started_at }}</p>
+                            <p class="mt-1">Upload: {{ render.upload_started_at }}</p>
+                            <p class="mt-1">Xong: {{ render.completed_at }}</p>
+                        </td>
+                        <td class="table-mono text-slate-700">{{ render.time_render_string }}</td>
+                        <td><span class="{{ render.status_class }}">{{ render.status_label }}</span></td>
+                        <td class="table-mono text-slate-500">{{ render.queue_order }}</td>
+                        <td>
+                            <div class="flex items-center justify-end gap-2">
+                                <a href="/admin/render/renderinfo?id={{ render.id }}" class="action-btn action-btn-slate">
+                                    <i data-lucide="eye" class="h-3.5 w-3.5"></i>
+                                    Chi tiết
+                                </a>
+                                <form method="post" action="/admin/render/deletejob" class="inline-flex">
+                                    <input type="hidden" name="id" value="{{ render.id }}">
+                                    {% if dashboard.filtered_channel %}
+                                    <input type="hidden" name="channelId" value="{{ dashboard.filtered_channel.id }}">
+                                    {% endif %}
+                                    <button type="submit" class="action-btn action-btn-rose" onclick="return confirm('Xóa job render này?');">
+                                        <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
+                                        Xóa
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="flex items-center justify-between gap-4 border-t border-slate-200 px-5 py-4">
+            <p class="text-[13px] text-slate-500">Hiển thị {{ dashboard.renders|length }} job render</p>
+            <div class="flex items-center gap-1.5">
+                <button type="button" class="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-400 transition-all hover:border-slate-300 hover:text-slate-600">
+                    <i data-lucide="chevron-left" class="h-4 w-4"></i>
+                </button>
+                <button type="button" class="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-600 text-[13px] font-semibold text-white shadow-md shadow-brand-600/20">1</button>
+                <button type="button" class="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-[13px] font-medium text-slate-600 transition-all hover:border-slate-300 hover:text-slate-900">2</button>
+                <button type="button" class="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition-all hover:border-slate-300 hover:text-slate-900">
+                    <i data-lucide="chevron-right" class="h-4 w-4"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

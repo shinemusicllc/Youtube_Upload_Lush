@@ -1,0 +1,67 @@
+{% extends "admin/_layout.html" %}
+
+{% block content %}
+<section class="space-y-6">
+    {% include "admin/_admin_notice.html" %}
+
+    <div class="panel p-5">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div class="flex items-start gap-3">
+                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50">
+                    <i data-lucide="file-text" class="h-4.5 w-4.5 text-brand-600"></i>
+                </div>
+                <div>
+                    <h2 class="section-title">Chi tiết tiến trình render</h2>
+                    <p class="section-note">Màn readonly bám đúng flow detail cấu hình của app cũ.</p>
+                </div>
+            </div>
+            <a href="/admin/render/index" class="action-btn action-btn-slate">
+                <i data-lucide="arrow-left" class="h-3.5 w-3.5"></i>
+                Quay lại danh sách render
+            </a>
+        </div>
+    </div>
+
+    <div class="panel p-5">
+        <div class="mb-5">
+            <h3 class="section-title">Cấu hình chi tiết</h3>
+            <p class="section-note">Job: {{ dashboard.render_detail.title }} • {{ dashboard.render_detail.id }}</p>
+        </div>
+
+        <div class="grid gap-5 lg:grid-cols-2">
+            <div>
+                <label class="field-label">Link video Intro</label>
+                <input class="toolbar-input bg-slate-50" value="{{ dashboard.render_detail.intro or 'Không có Intro' }}" readonly>
+            </div>
+            <div>
+                <label class="field-label">Link video loop</label>
+                <input class="toolbar-input bg-slate-50" value="{{ dashboard.render_detail.video_loop }}" readonly>
+            </div>
+            <div>
+                <label class="field-label">Link audio loop</label>
+                <input class="toolbar-input bg-slate-50" value="{{ dashboard.render_detail.audio_loop or '' }}" readonly>
+            </div>
+            <div>
+                <label class="field-label">Link Outro</label>
+                <input class="toolbar-input bg-slate-50" value="{{ dashboard.render_detail.outro or '' }}" readonly>
+            </div>
+            <div>
+                <label class="field-label">Kênh đăng tải</label>
+                <input class="toolbar-input bg-slate-50" value="{{ dashboard.render_detail.channel_name }} - {{ dashboard.render_detail.channel_id }}" readonly>
+            </div>
+            <div>
+                <label class="field-label">Thời lượng render</label>
+                <input class="toolbar-input bg-slate-50 font-mono" value="{{ dashboard.render_detail.time_render_string }}" readonly>
+            </div>
+            <div>
+                <label class="field-label">Thời gian hẹn lịch</label>
+                <input class="toolbar-input bg-slate-50" value="{{ dashboard.render_detail.scheduled_at }}" readonly>
+            </div>
+            <div>
+                <label class="field-label">Tên video upload</label>
+                <input class="toolbar-input bg-slate-50" value="{{ dashboard.render_detail.title }}" readonly>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

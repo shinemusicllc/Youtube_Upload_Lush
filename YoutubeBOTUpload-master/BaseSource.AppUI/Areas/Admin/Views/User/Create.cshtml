@@ -1,0 +1,90 @@
+@model UserCreateAdminDto
+@{
+    ViewData["Title"] = "Tạo mới người dùng";
+    Layout = "~/Areas/Admin/Views/Shared/_Layout.cshtml";
+    var managers = ViewBag.Managers as List<UserAdminInfoDto>;
+}
+<section class="section">
+    <div class="section-header">
+        <h1>Tạo người dùng</h1>
+        <div class="section-header-breadcrumb">
+            <div class="breadcrumb-item active"><a href="#">Hệ thống</a></div>
+            <div class="breadcrumb-item"><a href="#">Người dùng</a></div>
+            <div class="breadcrumb-item">Thêm mới</div>
+        </div>
+    </div>
+    <div class="section-body">
+        <div class="row justify-content-center">
+            <div class="col-12 col-md-8 col-lg-6">
+                <div class="elevated-card">
+                    <div class="card-header border-bottom-0 pb-0">
+                        <h4 class="text-brand">@ViewData["Title"]</h4>
+                    </div>
+                    <div class="card-body">
+                        <form method="post" action="/admin/user/create">
+                            <div class="row">
+                                <div class="col-12">
+                                    <div class="form-group mb-4">
+                                        <label class="">Tên đăng nhập <span class="text-danger">*</span></label>
+                                        <div class="input-group">
+                                            <div class="input-group-prepend">
+                                                <div class="input-group-text"><i class="fas fa-user text-muted"></i></div>
+                                            </div>
+                                            <input asp-for="UserName" required placeholder="Ví dụ: admin123" class="form-control" />
+                                        </div>
+                                        <span asp-validation-for="UserName" class="text-danger mt-1 d-block text-small"></span>
+                                    </div>
+
+                                    <div class="form-group mb-4">
+                                        <label class="">Mật khẩu <span class="text-danger">*</span></label>
+                                        <div class="input-group">
+                                            <div class="input-group-prepend">
+                                                <div class="input-group-text"><i class="fas fa-lock text-muted"></i></div>
+                                            </div>
+                                            <input asp-for="Password" required placeholder="Mật khẩu an toàn" class="form-control" />
+                                        </div>
+                                        <span asp-validation-for="Password" class="text-danger mt-1 d-block text-small"></span>
+                                    </div>
+
+                                    @if (User.IsInRole("Admin"))
+                                    {
+                                        <div class="form-group mb-4">
+                                            <label class="">Người quản lý (Manager)</label>
+                                            <div class="input-group">
+                                                <div class="input-group-prepend">
+                                                    <div class="input-group-text"><i class="fas fa-user-shield text-muted"></i></div>
+                                                </div>
+                                                <select class="form-control select2" asp-for="UserIdManager">
+                                                    <option value="">-- Không có Manager --</option>
+                                                    @foreach (var item in managers)
+                                                    {
+                                                        <option value="@item.Id">@item.UserName</option>
+                                                    }
+                                                </select>
+                                            </div>
+                                            <span asp-validation-for="UserIdManager" class="text-danger mt-1 d-block text-small"></span>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                            
+                            <hr class="mt-2 mb-4">
+                            <div class="form-group row mb-0">
+                                <div class="col-12 text-right">
+                                    @Html.ValidationSummary(true, "", new { @class = "text-danger mb-3 text-left" })
+                                    <a href="/admin/user/index" class="btn btn-secondary mr-2">Hủy bỏ</a>
+                                    <button type="submit" class="btn btn-primary px-4"><i class="fas fa-user-plus mr-1"></i> Tạo tài khoản</button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+@section Scripts{
+    <script>
+
+    </script>
+}

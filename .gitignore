@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.DS_Store
+Thumbs.db
+
+backend/app/data/app_state.db
+backend/app/data/uploads/
+backend/data/app_state.db
+backend/data/uploads/
+artifacts/

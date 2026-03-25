@@ -1,0 +1,61 @@
+{% extends "admin/_layout.html" %}
+
+{% block content %}
+<section class="space-y-6">
+    <div class="panel p-5">
+        <div class="flex flex-col gap-5">
+            <div class="flex items-start gap-3">
+                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50">
+                    <i data-lucide="user-plus" class="h-4.5 w-4.5 text-brand-600"></i>
+                </div>
+                <div>
+                    <h2 class="section-title">Tạo tài khoản user</h2>
+                    <p class="section-note">Giữ đúng luồng cũ: tạo username, password và chọn manager phụ trách ngay từ đầu.</p>
+                </div>
+            </div>
+            {% include "admin/_user_tabs.html" %}
+        </div>
+    </div>
+
+    <div class="panel max-w-3xl p-6">
+        <form method="post" action="/admin/user/create" class="space-y-5">
+            {% if dashboard.error %}
+            <div class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] font-medium text-rose-700">{{ dashboard.error }}</div>
+            {% endif %}
+
+            <div class="grid gap-5 md:grid-cols-2">
+                <label class="block">
+                    <span class="mb-2 block text-[12px] font-semibold text-slate-700">Tên đăng nhập</span>
+                    <input class="toolbar-input" type="text" name="username" value="{{ dashboard.form.username }}" placeholder="Ví dụ: user-alpha" required>
+                </label>
+                <label class="block">
+                    <span class="mb-2 block text-[12px] font-semibold text-slate-700">Mật khẩu</span>
+                    <input class="toolbar-input" type="text" name="password" value="{{ dashboard.form.password }}" placeholder="Nhập mật khẩu khởi tạo" required>
+                </label>
+            </div>
+
+            <label class="block">
+                <span class="mb-2 block text-[12px] font-semibold text-slate-700">Manager phụ trách</span>
+                <select class="toolbar-select" name="manager_id" {% if dashboard.manager_binding_locked %}disabled{% endif %}>
+                    <option value="">-- Không gán manager --</option>
+                    {% for manager in dashboard.manager_candidates %}
+                    <option value="{{ manager.id }}" {% if dashboard.form.manager_id == manager.id %}selected{% endif %}>{{ manager.username }}</option>
+                    {% endfor %}
+                </select>
+                {% if dashboard.manager_binding_locked %}
+                <input type="hidden" name="manager_id" value="{{ dashboard.form.manager_id }}">
+                <p class="mt-2 text-[11px] text-slate-500">Manager scope duoc khoa theo tai khoan dang dang nhap.</p>
+                {% endif %}
+            </label>
+
+            <div class="flex items-center justify-end gap-3 border-t border-slate-200 pt-4">
+                <a href="/admin/user/index" class="action-btn action-btn-slate px-4 py-2 text-[13px]">Quay lại</a>
+                <button type="submit" class="action-btn action-btn-emerald px-4 py-2 text-[13px]">
+                    <i data-lucide="user-plus" class="h-4 w-4"></i>
+                    Tạo tài khoản
+                </button>
+            </div>
+        </form>
+    </div>
+</section>
+{% endblock %}

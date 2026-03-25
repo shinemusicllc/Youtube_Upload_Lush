@@ -1,0 +1,260 @@
+﻿@using BaseSource.ViewModels.User
+@model RegisterRequestVm
+@{
+    Layout = null;
+}
+<html lang="en"
+      dir="ltr"
+      class="js flexbox canvas canvastext webgl no-touch geolocation postmessage websqldatabase indexeddb hashchange history draganddrop websockets rgba hsla multiplebgs backgroundsize borderimage borderradius boxshadow textshadow opacity cssanimations csscolumns cssgradients cssreflections csstransforms csstransforms3d csstransitions fontface generatedcontent video audio localstorage sessionstorage webworkers no-applicationcache svg inlinesvg smil svgclippaths">
+<head>
+    <base href="/" />
+    <meta charset="utf-8" />
+    <meta name="viewport" content="minimum-scale=1,initial-scale=1,width=device-width,shrink-to-fit=no" />
+    <meta name="keywords"
+          content="autolive.vip, autolive.win,autolive, auto livestream, auto live youtube, live 247 youtube, livestram tiktok, live tiktok, live stream tik tok, huong dan live stream tiktok, huong dan live stream youtube, huong dan live stream fb, livestream youtube,live youtube, phan mem livestream youtube, live facebook, phan mem live facebook, tu dong live, tu dong live stream, tu dong livestream" />
+    <meta name="description" content="AutoLive.VIP Phần Mềm Tự Động Live Stream Youtube,Live Stream Tiktok, Live Stream Facebook, Live Stream Twitch. Live Stream Đơn Giản, Dễ Sử Dụng, Live Stream Ổn Định Chất Lượng Video 4K" />
+    <meta name="author" content="Autowin Team" />
+    <link rel="icon" type="image/x-icon" href="~/live-logo.png" />
+    <meta name="msapplication-TileColor" content="#ffffff" />
+    <meta name="theme-color" content="#9C27B0" />
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans:400,600,700&amp;display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons" />
+    <link rel="stylesheet" href="https://code.ionicframework.com/ionicons/2.0.1/css/ionicons.min.css" />
+    <meta property="twitter:site" content="autolive.vip" />
+    <meta property="twitter:domain" content="autolive.vip" />
+    <meta property="twitter:creator" content="Autowin Team" />
+    <meta property="twitter:card" content="summary" />
+    <meta name="twitter:site" content="autolive.vip" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta property="og:site_name" content="Autolive" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="autolive.vip" />
+    <meta property="og:title" content="Ứng dụng live stream" />
+    <meta property="og:description" content="AutoLive.VIP Phần Mềm Tự Động Live Stream Youtube, Live Stream Facebook, Live Stream Twitch Ổn Định, LiveStream 24/7 Youtube" />
+    <meta property="og:image" content="~/live-logo.png" />
+    <title>Auto Live Stream 24/7 Youtube - Facebook - Twitch</title>
+    <link href="~/css/side-right.css" rel="stylesheet" asp-append-version="true" />
+    <link href="~/css/saas-bundle.min.css" rel="stylesheet" asp-append-version="true" />
+</head>
+<body class="pace-done">
+    <div style="position: fixed; top: 0px; left: 0px; width: 0; height: 0;" id="scrollzipPoint"></div>
+    <div class="pace pace-inactive">
+        <div class="pace-progress" data-progress-text="100%" data-progress="99" style="transform: translate3d(100%, 0px, 0px);">
+            <div class="pace-progress-inner"></div>
+        </div>
+        <div class="pace-activity"></div>
+    </div>
+    <div id="preloader" style="position: fixed; z-index: 10000; background: rgb(250, 250, 250); width: 100%; height: 100%; display: none;">
+        <img style="opacity: 0.5; position: fixed; top: calc(50% - 50px); left: calc(50% - 50px);" src="landing/images/loading.gif" alt="loading" />
+    </div>
+    <div class="m-application theme--light transition-page page-fadeUp-transition-exit" id="app">
+        <div class="loading"></div>
+        <div class="m-content violeta violeta-var" id="main-wrap">
+            <div>
+                <div class="sidenav-opt drawer-opt right-aligned" id="slidemenu">
+                    <div class="opt-wrap">
+                        <div class="hidden-sm-up">
+                            <div class="btn-icon waves-effect" id="close_sideright"><i class="material-icons">arrow_back</i></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="form-page">
+                <div class="page-wrap" style="min-height: 100vh;">
+                    <div class="hidden-md-up">
+                        <div class="logo logo-header">
+                            <a href="/">
+                                <img src="~/live-logo.png" alt="logo" />
+                                <p class="use-text-subtitle2">Autolive</p>
+                            </a>
+                        </div>
+                    </div>
+                    <div class="container max-lg inner-wrap">
+                        <div class="decoration">
+                            <svg class="left-deco" width="1045px" height="1468px" viewBox="0 0 1045 1468" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+                                <g transform="translate(-1030.000000, 0.000000)">
+                                    <g transform="translate(950.000000, 0.000000)">
+                                        <path d="M0,0 L805.395445,0 C731.131815,0 740.666667,76.9414646 834,230.824394 C915.57424,365.319569 1045,513.536468 1045,652.024982 C1045,806.30828 951.877684,902.632061 904.5,1091.56209 C874.07902,1212.87314 909.795583,1338.35244 1011.64969,1468 L0,1468 L0,0 Z"></path>
+                                    </g>
+                                </g>
+                            </svg>
+                            <svg class="right-deco" width="389px" height="1468px" viewBox="0 0 389 1468" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+                                <g transform="translate(-2171.000000, 0.000000)">
+                                    <g transform="translate(-950.000000, 0.000000)">
+                                        <g transform="translate(950.000000, 0.000000)">
+                                            <path d="M2329.58044,-732.909805 L3294.66463,-608.836163 C3018.10652,-208.944402 2934.07929,71.8618948 3042.58292,233.582726 C3136.98689,374.288498 3255.13325,471.945016 3255.13325,636.668858 C3255.13325,820.179655 3107.51302,903.798038 3059.64228,1128.51906 C3028.9047,1272.81133 3063.63816,1429.66837 3163.84265,1599.0902 L2141.66463,1599.0902 L2329.58044,-732.909805 Z"
+                                                  transform="translate(2718.164626, 433.090195) rotate(179.000000) translate(-2718.164626, -433.090195) "></path>
+                                        </g>
+                                    </g>
+                                </g>
+                            </svg>
+                        </div>
+                        <div class="card form-box fragment-fadeUp">
+                            <a class="waves-effect btn-icon backtohome" href="/">
+                                <span><i class="ion-ios-home-outline"></i><i class="ion-ios-arrow-thin-left"></i></span>
+                            </a>
+                            <div class="auth-frame">
+                                <div class="row">
+                                    <div class="col-md-5">
+                                        <div class="hidden-sm-down">
+                                            <div class="greeting">
+                                                <div class="logo">
+                                                    <img src="~/live-logo.png" style="width: 128px;" alt="logo" />
+                                                    <p class="use-text-subtitle2">
+                                                        <span style="background: linear-gradient(to right, #cd0c1c, #aa343d, #c53841, #e13c45, #fbbbbd); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+                                                            Autolive
+                                                        </span>
+                                                    </p>
+                                                </div>
+                                                <h4 class="use-text-title2 pb-2">Autolive chào mừng bạn!</h4>
+                                                <h6 class="use-text-subtitle2">Đăng ký miễn phí ngay</h6>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-7">
+                                        <div class="form-wrap">
+                                            <div>
+                                                <div class="head">
+                                                    <div class="title-secondary align-left">
+                                                        <h3>Đăng ký miễn phí</h3>
+                                                    </div>
+                                                    <a class="btn btn-flat waves-effect button-link" href="/auth/login"><i class="material-icons icon left mr-1">arrow_forward</i>Bạn đã có tài khoản?</a>
+                                                </div>
+                                                <form id="register_form" method="POST" action="/Account/register">
+                                                    <input type="hidden" name="_token" value="DKgv8uzdV2sece2ehFRl6vYA4fX8p67L1kbQ2QBi" />
+                                                    <div class="row spacing3">
+                                                        <div class="col-sm-12">
+                                                            <div class="input-field filled dark">
+                                                                <input id="facebook" type="text" name="LinkFB" required value="@Model.LinkFB" />
+                                                                <label for="facebook" class="active">Link Facebook</label>
+                                                            </div>
+                                                        </div>
+                                                        <div class="col-sm-12">
+                                                            <div class="input-field filled dark">
+                                                                <input id="phone" type="text" name="PhoneNumber" required value="@Model.PhoneNumber" />
+                                                                <label for="phone" class="active">Số điện thoại</label>
+                                                            </div>
+                                                        </div>
+                                                        <div class="col-sm-12">
+                                                            <div class="input-field filled dark">
+                                                                <input id="user_name" type="text" name="UserName" required="" value="@Model.UserName" />
+                                                                <label for="user_name" class="active">Tài khoản</label>
+                                                            </div>
+                                                        </div>
+                                                        <div class="col-md-6">
+                                                            <div class="input-field filled dark mq-md-up me-2" data-class="me-2">
+                                                                <input class="validate invalid" id="password" type="password" name="Password" required="" aria-autocomplete="list" />
+                                                                <label for="password" class="active">Mật khẩu</label>
+                                                            </div>
+                                                        </div>
+                                                        <div class="col-md-6">
+                                                            <div class="input-field filled dark mq-md-up ms-2" data-class="ms-2">
+                                                                <input class="validate invalid" id="confirm" type="password" name="ConfirmPassword" required="" />
+                                                                <label for="confirm" class="active">Xác nhận mật khẩu</label>
+                                                            </div>
+                                                        </div>
+                                                        <div class="col-sm-12" style="text-align: -moz-center; text-align: -webkit-center;">
+                                                            @*<script type="text/javascript" id="www-widgetapi-script" src="https://www.youtube.com/s/player/7862ca1f/www-widgetapi.vflset/www-widgetapi.js" async=""></script>
+                                                            <script src="https://www.youtube.com/iframe_api"></script>
+                                                            <script type="text/javascript"
+                                                            async=""
+                                                            src="https://www.gstatic.com/recaptcha/releases/8G7OPK94bhCRbT0VqyEVpQNj/recaptcha__en.js"
+                                                            crossorigin="anonymous"
+                                                            integrity="sha384-PaZVGWpzlxWrPIz/VX4dSIV4s5cicu/DQ5+5PolPWJ01pBKwynyB4sCIKUL/bEEE"></script>*@
+                                                            @* <script src="https://www.google.com/recaptcha/api.js" async="" defer=""></script>
+                                                            <div class="g-recaptcha" data-sitekey="6LfTuCMhAAAAAGxjix7riDjZz_JpZ2RAnHybqZoZ">
+                                                            <div style="width: 304px; height: 78px;">
+                                                            <div>
+                                                            <iframe
+                                                            title="reCAPTCHA"
+                                                            src="https://www.google.com/recaptcha/api2/anchor?ar=1&amp;k=6LfTuCMhAAAAAGxjix7riDjZz_JpZ2RAnHybqZoZ&amp;co=aHR0cHM6Ly9hdXRvbGl2ZS52aXA6NDQz&amp;hl=en&amp;v=8G7OPK94bhCRbT0VqyEVpQNj&amp;size=normal&amp;cb=4vf1u53nb5q3"
+                                                            width="304"
+                                                            height="78"
+                                                            role="presentation"
+                                                            name="a-e7p1uiqu2yjd"
+                                                            frameborder="0"
+                                                            scrolling="no"
+                                                            sandbox="allow-forms allow-popups allow-same-origin allow-scripts allow-top-navigation allow-modals allow-popups-to-escape-sandbox"
+                                                            ></iframe>
+                                                            </div>
+                                                            <textarea
+                                                            id="g-recaptcha-response"
+                                                            name="g-recaptcha-response"
+                                                            class="g-recaptcha-response"
+                                                            style="width: 250px; height: 40px; border: 1px solid rgb(193, 193, 193); margin: 10px 25px; padding: 0px; resize: none; display: none;"
+                                                            ></textarea>
+                                                            </div>
+                                                            <iframe style="display: none;"></iframe>
+                                                            </div>*@
+                                                        </div>
+                                                    </div>
+                                                    <div class="btn-area">
+                                                        <button class="btn secondary btn-large block waves-effect" type="submit">Đăng ký</button>
+                                                    </div>
+                                                </form>
+                                                <div class="alert-violet">
+
+                                                    <ul>
+                                                        <li>
+                                                            <span asp-validation-for="UserName"></span>
+                                                        </li>
+                                                        <li>
+                                                            <span asp-validation-for="LinkFB"></span>
+                                                        </li>
+                                                        <li>
+                                                            <span asp-validation-for="PhoneNumber"></span>
+                                                        </li>
+                                                        <li>
+                                                            <span asp-validation-for="Password"></span>
+                                                        </li>
+                                                        <li>
+                                                            <span asp-validation-for="ConfirmPassword"></span>
+                                                        </li>
+
+
+                                                    </ul>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="landing/js/saas-bundle.min.js?v=1"></script>
+    <script src="landing/js/side-right.js"></script>
+
+    <div class="sidenav-overlay"></div>
+    <div class="drag-target right-aligned"></div>
+    <div style="
+                background-color: rgb(255, 255, 255);
+                border: 1px solid rgb(204, 204, 204);
+                box-shadow: rgba(0, 0, 0, 0.2) 2px 2px 3px;
+                position: absolute;
+                transition: visibility 0s linear 0.3s, opacity 0.3s linear 0s;
+                opacity: 0;
+                visibility: hidden;
+                z-index: 2000000000;
+                left: 0px;
+                top: -10000px;
+            ">
+        <div style="width: 100%; height: 100%; position: fixed; top: 0px; left: 0px; z-index: 2000000000; background-color: rgb(255, 255, 255); opacity: 0.05;"></div>
+        <div class="g-recaptcha-bubble-arrow" style="border: 11px solid transparent; width: 0px; height: 0px; position: absolute; pointer-events: none; margin-top: -11px; z-index: 2000000000;"></div>
+        <div class="g-recaptcha-bubble-arrow" style="border: 10px solid transparent; width: 0px; height: 0px; position: absolute; pointer-events: none; margin-top: -10px; z-index: 2000000000;"></div>
+        <div style="z-index: 2000000000; position: relative;">
+            <iframe title="recaptcha challenge expires in two minutes"
+                    src="https://www.google.com/recaptcha/api2/bframe?hl=en&amp;v=8G7OPK94bhCRbT0VqyEVpQNj&amp;k=6LfTuCMhAAAAAGxjix7riDjZz_JpZ2RAnHybqZoZ"
+                    name="c-e7p1uiqu2yjd"
+                    frameborder="0"
+                    scrolling="no"
+                    sandbox="allow-forms allow-popups allow-same-origin allow-scripts allow-top-navigation allow-modals allow-popups-to-escape-sandbox"
+                    style="width: 100%; height: 100%;"></iframe>
+        </div>
+    </div>
+</body>
+</html>

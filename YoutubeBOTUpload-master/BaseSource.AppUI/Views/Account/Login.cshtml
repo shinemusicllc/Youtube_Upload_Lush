@@ -1,0 +1,200 @@
+@using BaseSource.ViewModels.User
+@model LoginRequestVm
+@{
+    Layout = null;
+}
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Đăng nhập — Upload YouTube</title>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS (CDN for standalone login page) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#eef2ff', 100: '#e0e7ff', 500: '#6b74f0', 600: '#5d67df', 700: '#4b56c9'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        display: ['Be Vietnam Pro', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <link rel="icon" type="image/x-icon" href="~/live-logo.png" />
+    <style>
+        body {
+            background-color: #f8fafc;
+            background-image: 
+                radial-gradient(at 0% 0%, hsla(253,16%,7%,1) 0, transparent 50%), 
+                radial-gradient(at 50% 0%, hsla(225,39%,30%,1) 0, transparent 50%), 
+                radial-gradient(at 100% 0%, hsla(339,49%,30%,1) 0, transparent 50%);
+            background-attachment: fixed;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Inter', sans-serif;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Ambient background blobs for depth */
+        .ambient-blob {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(80px);
+            z-index: 0;
+            opacity: 0.6;
+        }
+        .blob-1 { top: -10%; left: -10%; width: 50vw; height: 50vw; background: rgba(93, 103, 223, 0.3); }
+        .blob-2 { bottom: -20%; right: -10%; width: 60vw; height: 60vw; background: rgba(139, 92, 246, 0.2); }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0,0,0,0.05);
+            z-index: 10;
+            position: relative;
+        }
+
+        .input-field {
+            transition: all 0.2s ease;
+        }
+        .input-field:focus-within {
+            box-shadow: 0 0 0 3px rgba(93, 103, 223, 0.15);
+            border-color: #5d67df;
+        }
+
+        .btn-gradient {
+            background: linear-gradient(135deg, #5d67df 0%, #4f46e5 100%);
+            transition: all 0.3s ease;
+        }
+        .btn-gradient:hover {
+            box-shadow: 0 10px 25px -5px rgba(93, 103, 223, 0.5);
+            transform: translateY(-1px);
+        }
+        .btn-gradient:active {
+            transform: translateY(1px);
+        }
+    </style>
+</head>
+<body class="antialiased text-slate-800">
+
+    <div class="ambient-blob blob-1"></div>
+    <div class="ambient-blob blob-2"></div>
+
+    <div class="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 flex items-center justify-center min-h-screen">
+        
+        <div class="glass-card w-full rounded-3xl overflow-hidden flex flex-col md:flex-row">
+            
+            <!-- Left Side: Branding & Welcome -->
+            <div class="w-full md:w-5/12 bg-gradient-to-br from-brand-600 to-indigo-800 p-10 lg:p-12 flex flex-col justify-between text-white relative overflow-hidden">
+                <!-- Decorative pattern -->
+                <div class="absolute inset-0 opacity-10" style="background-image: url('data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'none\' fill-rule=\'evenodd\'%3E%3Cg fill=\'%23ffffff\' fill-opacity=\'1\'%3E%3Cpath d=\'M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E');"></div>
+                
+                <div class="relative z-10">
+                    <div class="flex items-center gap-3 mb-12">
+                        <div class="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-lg">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 text-brand-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                        </div>
+                        <span class="font-display font-bold text-xl tracking-tight">UploadYT</span>
+                    </div>
+
+                    <h1 class="font-display font-bold text-4xl leading-tight mb-4">Chào mừng<br>trở lại.</h1>
+                    <p class="text-indigo-100 text-sm leading-relaxed mb-8 opacity-90 font-medium">
+                        Hệ thống điều phối job render và quản lý upload video tự động đa nền tảng.
+                    </p>
+                </div>
+
+                <div class="relative z-10">
+                    <div class="flex items-center gap-3 text-sm font-medium text-indigo-200">
+                        <div class="w-8 h-px bg-indigo-300"></div>
+                        <span>Admin Dashboard</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Side: Login Form -->
+            <div class="w-full md:w-7/12 p-10 lg:p-14 bg-white">
+                
+                <div class="mb-10">
+                    <h2 class="font-display font-bold text-2xl text-slate-900 mb-2">Đăng nhập tài khoản</h2>
+                    <p class="text-slate-500 font-medium text-sm">Vui lòng nhập thông tin để truy cập hệ thống quản trị.</p>
+                </div>
+
+                @if (!ViewData.ModelState.IsValid)
+                {
+                    <div class="mb-6 bg-rose-50 border border-rose-100 rounded-xl p-4 flex items-start gap-3">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-rose-500 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                        <div class="text-sm font-medium text-rose-700">
+                            <span asp-validation-for="UserName" class="block"></span>
+                            <span asp-validation-for="Password" class="block"></span>
+                        </div>
+                    </div>
+                }
+
+                <form id="register_form" method="POST" action="/account/login" class="space-y-6">
+                    <input type="hidden" name="_token" value="DKgv8uzdV2sece2ehFRl6vYA4fX8p67L1kbQ2QBi" />
+                    
+                    <div class="space-y-5">
+                        <!-- Username Field -->
+                        <div>
+                            <label for="UserName" class="block text-sm font-semibold text-slate-700 mb-2">Tên đăng nhập</label>
+                            <div class="relative">
+                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                                </div>
+                                <input id="UserName" type="text" name="UserName" value="@Model.UserName" required
+                                       class="input-field w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white" 
+                                       placeholder="Nhập tài khoản của bạn" />
+                            </div>
+                        </div>
+
+                        <!-- Password Field -->
+                        <div>
+                            <div class="flex items-center justify-between mb-2">
+                                <label for="Password" class="block text-sm font-semibold text-slate-700">Mật khẩu</label>
+                            </div>
+                            <div class="relative">
+                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                                </div>
+                                <input id="Password" type="password" name="Password" value="@Model.Password" required
+                                       class="input-field w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white" 
+                                       placeholder="Nhập mật khẩu" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Submit Button -->
+                    <button type="submit" class="btn-gradient w-full py-3.5 px-4 rounded-xl text-white font-semibold text-sm flex items-center justify-center gap-2 mt-8">
+                        <span>Đăng nhập hệ thống</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+                    </button>
+                </form>
+
+                <div class="mt-8 text-center text-xs font-medium text-slate-400">
+                    <p>© 2024 Upload YouTube. Đã đăng ký bản quyền.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

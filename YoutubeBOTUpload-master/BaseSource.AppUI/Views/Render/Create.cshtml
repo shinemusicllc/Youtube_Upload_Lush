@@ -1,0 +1,727 @@
+﻿@using BaseSource.ViewModels.Channel;
+@using BaseSource.ViewModels.Render;
+@using BaseSource.SharedSignalrData.Enums;
+@using BaseSource.ViewModels.Report;
+@model RenderCreateDto
+@{
+    ViewData["Title"] = "Cấu hình Render";
+    var renderData = ViewBag.Renders as List<RenderHistoryDto>;
+    var channels = ViewBag.Channels as List<ChannelYoutubeDto>;
+    channels = channels?.Where(x => x.Status == ManagerBOTStatus.Connected).ToList();
+    var index = 1;
+    var reportData = ViewBag.Report as RenderReportClientDto;
+
+}
+<section class="section">
+    <div class="section-header">
+        <h1>@ViewData["Title"]</h1>
+        <div class="section-header-breadcrumb">
+            <div class="breadcrumb-item active"><a href="#">Dashboard</a></div>
+            <div class="breadcrumb-item"><a href="#">Cấu hình</a></div>
+            <div class="breadcrumb-item">@ViewData["Title"]</div>
+        </div>
+    </div>
+    <div class="section-body">
+        <div class="row">
+            <div class="col-12 col-md-12 col-lg-12">
+                <div class="card">
+                    <form asp-action="Create" class="needs-validation" novalidate="">
+                        <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+                        <div class="card-header">
+                            <h4>Cấu hình</h4>
+                        </div>
+                        <div class="card-body">
+                            <div class="section-title">Cấu hình Render</div>
+
+                            <div class="form-group">
+                                <label>Link video Intro</label>
+                                <input asp-for="Intro" placeholder="Link video Intro" class="form-control" id="linkVideoIntro">
+                                <span asp-validation-for="Intro" class="text-danger"></span>
+                                <span class="text-danger checklinkVideoIntro"></span>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Link video loop <span class="text-danger"> * Bắt buộc</span> </label>
+                                <input class="form-control" placeholder="Link video loop" required asp-for="VideoLoop" id="linkVideoLoop" />
+                                <span asp-validation-for="VideoLoop" class="text-danger"></span>
+                                <span class="text-danger checklinkVideoLoop"></span>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Link audio loop</label>
+                                <input class="form-control" asp-for="AudioLoop" placeholder="Link audio loop" id="linkAudioLoop" />
+                                <span asp-validation-for="AudioLoop" class="text-danger"></span>
+                                <span class="text-danger checklinkAudioLoop"></span>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Link Outro</label>
+                                <input class="form-control" name="Outtro" asp-for="Outtro" placeholder="Link Outro" id="linkOutro" />
+                                <span asp-validation-for="Outtro" class="text-danger"></span>
+                                <span class="text-danger checklinkOutro"></span>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Chọn Kênh</label>
+                                <select class="form-control select2" id="selectChannel" asp-for="ChannelId" required>
+                                    <option value="">--Chọn kênh--</option>
+                                    @foreach (var item in channels)
+                                    {
+                                        <option data-image="@item.Avatar" value="@item.Id">@item.Name - (@item.ChannelYTId)</option>
+                                    }
+                                </select>
+
+                                <span asp-validation-for="ChannelId" class="text-danger"></span>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Thời gian Render <span class="text-danger"> * Định dạng hhh:mm:ss. Dung lượng video < 250GB</span></label>
+                                <input class="form-control" placeholder="00:00:00" asp-for="TimeRenderString" required />
+                                <span asp-validation-for="TimeRenderString" class="text-danger"></span>
+                            </div>
+                            <div class="form-group">
+                                <label>Hẹn lịch <span class="text-danger">* Upload 2 video/kênh cùng lúc thì chọn lên lịch cách nhau 6-12h</span></label>
+                                <input class="form-control" type="datetime-local" asp-for="ScheduleTime" />
+                                <span asp-validation-for="ScheduleTime" class="text-danger"></span>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Tên video upload <span class="text-danger">*Nhỏ hơn 100 ký tự, không sử dụng dấu, icon, ký tự đặc biệt !#@@$%^&*()?/|\{}[]...</span></label>
+                                <input class="form-control" name="VideoName" asp-for="VideoName" maxlength="100" required />
+                                <span class="text-danger txt-LengthInput">Ký tự: 0/100</span>
+                                <span asp-validation-for="VideoName" class="text-danger"></span>
+                            </div>
+
+                        </div>
+                        <div class="card-footer text-left">
+                            <button class="btn btn-primary">Render</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class=" row">
+            <div class="col-lg-12 col-md-12 col-sm-12">
+                <div class="card card-statistic-2">
+                    <div class="card-stats">
+                        <div class="card-stats-title">
+                            Thông tin Render
+                        </div>
+                        <div class="card-stats-items">
+                            @* <div class="card-stats-item">
+                            <div class="card-stats-item-count"><span class="">@reportData.TotalRender</span></div>
+                            <div class="card-stats-item-label"><span class="badge badge-success">Tổng</span> </div>
+                            </div>*@
+                            <div class="card-stats-item">
+                                <div class="card-stats-item-count"><span class="">@reportData.TotalRenderInRun</span></div>
+                                <div class="card-stats-item-label"><span class="badge badge-primary">Render</span></div>
+                            </div>
+                            <div class="card-stats-item">
+                                <div class="card-stats-item-count">@reportData.TotalRenderUpload</div>
+                                <div class="card-stats-item-label"><span class="badge badge-info">Upload</span></div>
+                            </div>
+                            <div class="card-stats-item">
+                                <div class="card-stats-item-count">@reportData.TotalRenderPending</div>
+                                <div class="card-stats-item-label"><span class="badge badge-warning">Chờ</span></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <br />
+                        <span></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h4>Danh sách Render <span class="text-success">(NẾU BỊ LỖI THÌ CHỤP ẢNH GỬI CHO ADMIN)</span> </h4>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped" id="tableRenders">
+                                <thead>
+                                    <tr>
+                                        <th>STT</th>
+                                        <th>Action</th>
+                                        <th class="text-center">
+                                            Ngày tạo
+                                        </th>
+                                        <th>VideoName</th>
+                                        <th>BotName</th>
+                                        <th>Group</th>
+                                        <th>Avatar</th>
+                                        <th>Kênh</th>
+                                        <th>Link Kênh</th>
+                                        <th>Link video</th>
+                                        <th>Time Render</th>
+                                        <th>Start Download</th>
+                                        <th>Start Upload</th>
+                                        <th>Complete Upload</th>
+                                        <th>Status</th>
+                                        <th>Queueing</th>
+
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @if (renderData != null)
+                                    {
+
+                                        @foreach (var item in renderData)
+                                        {
+                                            <tr class="renderInfo_@(item.Id)" id="row@(item.Id)" data-index="@index">
+                                                <td>@(index++)</td>
+                                                <td>
+                                                    @if (item.Status != WorkStatus.Completed
+                                                   && item.Status != WorkStatus.Error
+                                                   && item.Status != WorkStatus.Cancelled
+                                                   && item.Status != WorkStatus.Pending
+
+                                                   )
+                                                    {
+                                                        <button class="btn btn-sm btn-danger "
+                                                                data-id="@item.Id"
+                                                                onclick="stop('@item.Id');">
+                                                            Dừng
+                                                        </button>
+                                                    }
+
+                                                    <a href="/render/info?id=@item.Id" class="btn btn-sm btn-primary">Xem cài đặt</a>
+                                                </td>
+                                                <td>
+                                                    <span class="">@item.CreatedTime.ToString("dd/MM/yyyy HH:mm:ss")</span>
+                                                </td>
+                                                <td>@item.VideoName</td>
+                                                <td>
+                                                    <span class="text-danger">@item.BotName</span>
+                                                </td>
+                                                <td>
+                                                    <span class="text-primary">@item.Group</span>
+                                                </td>
+                                                <td><img width="35" height="35" src="@item.Avatar" /></td>
+                                                <td>
+                                                    <span class="">@item.ChannelName</span>
+                                                </td>
+                                                <td><a href="https://www.youtube.com/channel/@item.ChannelYTId">@item.ChannelYTId</a></td>
+                                                <td>
+                                                    @if (!string.IsNullOrEmpty(item.VideoLink))
+                                                    {
+                                                        <a href="@item.VideoLink">@item.VideoLink</a>
+                                                    }
+
+                                                </td>
+                                                <td>@item.TimeRender</td>
+                                                <td>@item.DownloadStartTime?.ToString("dd/MM/yyyy: HH:mm:ss")</td>
+                                                <td>@item.UploadStartTime?.ToString("dd/MM/yyyy: HH:mm:ss")</td>
+                                                <td>@item.UploadTimeCompleted?.ToString("dd/MM/yyyy: HH:mm:ss")</td>
+                                                <td>
+                                                    @switch (item.Status)
+                                                    {
+
+                                                        case WorkStatus.Pending:
+                                                            <span class="badge badge-warning">Pending</span>
+                                                            break;
+                                                        case WorkStatus.Schedule:
+                                                            <span class="badge badge-warning">Schedule(@item.ScheduleTime?.ToString("dd/MM/yyyy HH:mm:ss"))</span>
+                                                            break;
+                                                        case WorkStatus.Queueing:
+                                                            <span class="badge badge-warning">Queueing</span>
+                                                            break;
+                                                        case WorkStatus.Downloading:
+                                                            <span class="badge badge-primary">Downloading (@(item.Pencent.ToString("N2"))%)</span>
+                                                            break;
+                                                        case WorkStatus.Rendering:
+                                                            <span class="badge badge-primary">Rendering (@(item.Pencent.ToString("N2"))%)</span>
+                                                            break;
+                                                        case WorkStatus.Uploading:
+                                                            <span class="badge badge-info">Uploading (@(item.Pencent.ToString("N2"))%)</span>
+                                                            break;
+                                                        case WorkStatus.Completed:
+                                                            <span class="badge badge-success">Completed</span>
+                                                            break;
+                                                        case WorkStatus.Cancelled:
+                                                            <span class="badge badge-danger">Cancelled</span>
+                                                            break;
+                                                        case WorkStatus.Error:
+                                                            <span class="badge badge-danger">Error - (@item.ErrorMessage)</span>
+                                                            break;
+
+                                                    }
+                                                </td>
+                                                <td>@item.Order</td>
+
+
+                                            </tr>
+
+                                        }
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+
+<div class="modal fade" tabindex="-1" role="dialog" id="stopStreamModal">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <form method="post" action="/stream/stopStream" id="formStop">
+                <div class="modal-header">
+                    <h5 class="modal-title">Dừng Render</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <p>Bạn có muốn dừng Render này?</p>
+                    <input class="form-control" name="id" type="hidden" />
+                </div>
+                <div class="modal-footer bg-whitesmoke br">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                    <button type="submit" class="btn btn-primary">Xác nhận</button>
+
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<div class="modal fade" tabindex="-1" role="dialog" id="startStreamModal">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <form method="post" id="formStart" action="/stream/startStream">
+                <div class="modal-header">
+                    <h5 class="modal-title">Bạn muốn chạy Render</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <p>Bạn có muốn chạy Render này?</p>
+                    <input class="form-control" type="hidden" name="id" />
+                </div>
+                <div class="modal-footer bg-whitesmoke br">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                    <button type="submit" class="btn btn-primary">Xác nhận</button>
+
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" tabindex="-1" role="dialog" id="deleteStreamModal">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <form method="post" id="formDelete" action="/stream/delete">
+                <div class="modal-header">
+                    <h5 class="modal-title">Xóa luồng stream</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <p>Bạn có muốn xóa luồng livestream này?</p>
+                    <input class="form-control" type="hidden" name="id" />
+                </div>
+                <div class="modal-footer bg-whitesmoke br">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                    <button type="submit" class="btn btn-primary">Xác nhận</button>
+
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Scripts{
+    <script>
+        var tableRenders;
+        function myFunction() {
+            $('#StartTimeLive').val('');
+            $('#EndTimeLive').val('');
+
+        }
+        function start(id) {
+            $('#startStreamModal').modal('show');
+
+            //    let id = $(this).attr('data-id');
+            $('#formStart input[name="id"]').val(id);
+        }
+        function stop(id) {
+            $('#stopStreamModal').modal('show');
+            //    let id = $(this).attr('data-id');
+            $('#formStop input[name="id"]').val(id);
+        }
+        function deleteStream(id) {
+            $('#deleteStreamModal').modal('show');
+            //let id = $(this).attr('data-id');
+
+            $('#formDelete input[name="id"]').val(id);
+        }
+        $(document).ready(function () {
+
+            let isCheck = false;
+            tableRenders = $("#tableRenders").DataTable({
+                //createdRow: function (row, data, index) {
+                //    $(row).attr('id', 'row' + index)
+                //}
+            });
+
+            //setInterval(function () {
+
+            //    if ($('#tableRenders').length) {
+            //        tableRenders.ajax.reload(null, false);
+            //    }
+            //}, 3000);
+            //$('body').on('click', '.btnStop', function () {
+            //    $('#stopStreamModal').modal('show');
+            //    let id = $(this).attr('data-id');
+            //    $('#formStop input[name="id"]').val(id);
+            //});
+            //$('body').on('click', '.btnStart', function () {
+            //     $('#startStreamModal').modal('show');
+
+            //    let id = $(this).attr('data-id');
+            //    $('#formStart input[name="id"]').val(id);
+            //});
+            //$('body').on('click mousedown touchstart', '.btnDelete', function (e) {
+            //    //e.preventDefault();
+            //    $('#deleteStreamModal').modal('show');
+            //    let id = $(this).attr('data-id');
+
+            //    $('#formDelete input[name="id"]').val(id);
+            //});
+
+            $('body').on('submit', '#formStop', function (e) {
+                e.preventDefault();
+                $.ajax({
+                    type: "POST",
+                    url: "/render/stop",
+                    data: $(this).serialize(),
+                    success: function (response) {
+                        switch (response.code) {
+                            case 1:
+                                window.location = '/render/create';
+                                break;
+                            case -2:
+
+                                iziToast.error({
+                                    title: 'Lỗi!',
+                                    message: response.err,
+                                    position: 'topRight'
+                                });
+                                break;
+                        }
+
+                    }
+                });
+            });
+            $('body').on('submit', '#formStart', function (e) {
+                e.preventDefault();
+                $.ajax({
+                    type: "POST",
+                    url: "/render/start",
+                    data: $(this).serialize(),
+                    success: function (response) {
+                        switch (response.code) {
+                            case 1:
+                                window.location = '/render/create';
+                                break;
+                            case -2:
+                                iziToast.error({
+                                    title: 'Lỗi!',
+                                    message: response.err,
+                                    position: 'topRight'
+                                });
+                                break;
+                        }
+
+                    }
+                });
+            });
+            $('body').on('submit', '#formDelete', function (e) {
+                e.preventDefault();
+                $.ajax({
+                    type: "POST",
+                    url: "/stream/delete",
+                    data: $(this).serialize(),
+                    success: function (response) {
+                        switch (response.code) {
+                            case 1:
+                                window.location = '/stream/create';
+                                break;
+                            case -2:
+                                iziToast.error({
+                                    title: 'Lỗi!',
+                                    message: response.err,
+                                    position: 'topRight'
+                                });
+                                break;
+                        }
+
+                    }
+                });
+            });
+
+            $("body").on('change keyup paste', '#linkVideoIntro', function (e) {
+                let value = $(this).val();
+                if (value !== null && value !== "") {
+                    setTimeout(function () {
+                        $.ajax({
+                            type: "POST",
+                            url: "/render/ValidateLink",
+                            data: { link: value },
+                            success: function (response) {
+                                isCheck = false;
+                                switch (response.code) {
+                                    case 1:
+                                        $('.checklinkVideoIntro').removeClass('text-danger').addClass('text-success').html("Link hoạt động");
+                                        break;
+                                    case -2:
+                                        $('.checklinkVideoIntro').removeClass('text-success').addClass('text-danger').html("Link không hoạt động");
+                                        //iziToast.error({
+                                        //    title: 'Lỗi!',
+                                        //    message: response.err,
+                                        //    position: 'topRight'
+                                        //});
+                                        break;
+                                }
+
+                            }
+                        });
+                    }, 500);
+                }
+
+            });
+            $("body").on('change keyup paste', '#linkVideoLoop', function (e) {
+                let value = $(this).val();
+                if (value !== null && value !== "") {
+                    setTimeout(function () {
+                        $.ajax({
+                            type: "POST",
+                            url: "/render/ValidateLink",
+                            data: { link: value },
+                            success: function (response) {
+                                // isCheck = false;
+                                switch (response.code) {
+                                    case 1:
+                                        $('.checklinkVideoLoop').removeClass('text-danger').addClass('text-success').html("Link hoạt động");
+                                        break;
+                                    case -2:
+                                        $('.checklinkVideoLoop').removeClass('text-success').addClass('text-danger').html("Link không hoạt động");
+
+                                        break;
+                                }
+
+                            }
+                        });
+                    }, 500);
+                }
+
+
+            });
+            $("body").on('change keyup paste', '#linkAudioLoop', function (e) {
+                let value = $(this).val();
+                if (value !== null && value !== "") {
+                    setTimeout(function () {
+                        $.ajax({
+                            type: "POST",
+                            url: "/render/ValidateLink",
+                            data: { link: value },
+                            success: function (response) {
+                                // isCheck = false;
+                                switch (response.code) {
+                                    case 1:
+                                        $('.checklinkAudioLoop').removeClass('text-danger').addClass('text-success').html("Link hoạt động");
+                                        break;
+                                    case -2:
+                                        $('.checklinkAudioLoop').removeClass('text-success').addClass('text-danger').html("Link không hoạt động");
+
+                                        break;
+                                }
+
+                            }
+                        });
+                    }, 500);
+                }
+
+
+            });
+            $("body").on('change keyup paste', '#linkOutro', function (e) {
+                let value = $(this).val();
+                if (value !== null && value !== "") {
+                    setTimeout(function () {
+                        $.ajax({
+                            type: "POST",
+                            url: "/render/ValidateLink",
+                            data: { link: value },
+                            success: function (response) {
+                                // isCheck = false;
+                                switch (response.code) {
+                                    case 1:
+                                        $('.checklinkOutro').removeClass('text-danger').addClass('text-success').html("Link hoạt động");
+                                        break;
+                                    case -2:
+                                        $('.checklinkOutro').removeClass('text-success').addClass('text-danger').html("Link không hoạt động");
+
+                                        break;
+                                }
+
+                            }
+                        });
+                    }, 500);
+                }
+
+
+            });
+
+            $("body").on('change keyup paste', '#VideoName', function () {
+                let lengVal = $(this).val().length;
+                $('.txt-LengthInput').html(`Ký tự: ${lengVal}/100`);
+            });
+            setTimeout(function () {
+                let lengVal = $('#VideoName').val().length;
+                $('.txt-LengthInput').html(`Ký tự: ${lengVal}/100`);
+            }, 500);
+
+        });
+        $(document).ready(function () {
+            $("#TimeRender").on("input", function () {
+                var timeSpanInput = $(this).val();
+
+                if (!isValidTimeSpanFormat(timeSpanInput)) {
+
+                    $('span[data-valmsg-for="TimeRender"]').html('Định dạng thời gian không hợp lệ');
+                    // Thực hiện xử lý lỗi hoặc thông báo cho người dùng
+                    // alert("Định dạng thời gian không hợp lệ");
+                } else {
+                    $('span[data-valmsg-for="TimeRender"]').html('');
+                }
+            });
+
+            function isValidTimeSpanFormat(timeSpanInput) {
+                // Kiểm tra định dạng chuỗi thời gian
+                if (!/^\d{1,4}:\d{1,2}:\d{1,2}$/.test(timeSpanInput)) {
+                    return false;
+                }
+
+                // Lấy giá trị giờ, phút và giây từ chuỗi
+                var parts = timeSpanInput.split(":");
+                var hours = parseInt(parts[0]);
+                var minutes = parseInt(parts[1]);
+                var seconds = parseInt(parts[2]);
+
+                // Kiểm tra giá trị hợp lệ cho giờ, phút và giây
+                if (hours < 0 || minutes < 0 || minutes >= 60 || seconds < 0 || seconds >= 60) {
+                    return false;
+                }
+
+                return true;
+            }
+            setTimeout(function () {
+                $("#selectChannel").select2({
+                    templateResult: formatState,
+                    templateSelection: formatState
+
+                });
+            }, 100);
+
+        });
+        function formatState(opt) {
+            if (!opt.id) {
+                return opt.text;
+            }
+            var optimage = $(opt.element).data('image');
+            if (!optimage) {
+                return opt.text;
+            } else {
+                var $opt = $(
+                    '<span><img src="' + optimage + '" width="23px" /> ' + opt.text + '</span>'
+                );
+                return $opt;
+            }
+
+        };
+
+        //signalR
+        $(document).ready(function () {
+            const connection = new signalR.HubConnectionBuilder()
+                .withUrl("https://apiytb.shinemusicllc.com/webHub")
+                .withAutomaticReconnect()
+                .configureLogging(signalR.LogLevel.Information)
+                .build();
+
+            async function start() {
+                try {
+                    await connection.start();
+                    console.log("SignalR Connected.");
+                } catch (err) {
+                    console.log(err);
+                    setTimeout(start, 5000);
+                }
+            };
+
+            connection.onclose(async () => {
+                await start();
+            });
+
+            // Start the connection.
+            start();
+
+            connection.on("RenderInfo", (renderInfo) => {
+                //let rowIndex = `#row${renderInfo.id}`
+                //console.log(renderInfo);
+                //let id = renderInfo.id;
+                //let index = $(rowIndex).attr('data-index');
+
+                //console.log(index);
+                //$.ajax({
+                //    type: "POST",
+                //    url: `/render/UpdateData?index=${index}`,
+                //    data: renderInfo,
+                //    success: function (response) {
+                //        console.log(response);
+
+                //        var d = $(response, 'td').map(function (i, td) {
+                //            return td.textContent
+                //        })
+
+                //        tableRenders.row(rowIndex).data(d).invalidate().draw()
+                //        //tableRenders.row(`.renderInfo_${id}`).data(d).invalidate().draw()
+                //        // $(`.renderInfo_${id}`).html(response);
+                //    }
+                //});
+            });
+
+        });
+        var lockResolver;
+        if (navigator && navigator.locks && navigator.locks.request) {
+            const promise = new Promise((res) => {
+                lockResolver = res;
+            });
+
+            navigator.locks.request('unique_lock_name', { mode: "shared" }, () => {
+                return promise;
+            });
+        }
+                                                                        //setTimeout(function () {
+                                                                        //    var response = `<td> 1 </td> <td> <span class="">26/06/2023 19:50:50</span> </td> <td> <span class="text-danger"></span> </td> <td><img width="35" height="35" /></td> <td> <span class=""></span> </td> <td><a href="https://www.youtube.com/channel/"></a></td> <td>  </td> <td>00:04:02</td> <td>26/06/2023: 12:50:51</td> <td></td> <td></td> <td>  <span class="badge badge-info">Uploading (0%)</span>  </td> <td>  <button class="btn btn-sm btn-danger " data-id="42" onclick="stop('42');"> Dừng </button>  <a href="/render/info?id=42" class="btn btn-sm btn-primary">Xem cài đặt</a> </td>`;
+                                                                        //    var d = $(response, 'td').map(function (i, td) {
+                                                                        //        if (i % 2 == 0) {
+                                                                        //            console.log(td);
+                                                                        //            return td.textContent
+                                                                        //        }
+                                                                        //    })
+                                                                        //    console.log(d);
+
+                                                                        //    tableRenders.row('#row40').data(d).invalidate().draw()
+
+                                                                        //}, 1000)
+    </script>
+}

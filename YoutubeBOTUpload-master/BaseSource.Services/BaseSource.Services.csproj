@@ -1,0 +1,25 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net6.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="AutoMapper.Extensions.Microsoft.DependencyInjection" Version="11.0.0" />
+		<PackageReference Include="Mailjet.Api" Version="3.0.0" />
+		<PackageReference Include="UnitOfWork.EntityFrameworkCore" Version="6.0.3" />
+		<PackageReference Include="Microsoft.AspNetCore.SignalR" Version="1.1.0" />
+		<PackageReference Include="TqkLibrary.Net.CloudStorage.Dropbox" Version="1.0.2-build20231014164108" />
+		<PackageReference Include="TqkLibrary.Net.CloudStorage.OneDrive" Version="1.0.2-build20231014164201" />
+		<PackageReference Include="TqkLibrary.Net.CloudStorage.GoogleDrive" Version="1.0.2-build20240116165420" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\BaseSource.Data\BaseSource.Data.csproj" />
+		<ProjectReference Include="..\BaseSource.SharedSignalrData\BaseSource.SharedSignalrData.csproj" />
+		<ProjectReference Include="..\BaseSource.ViewModels\BaseSource.ViewModels.csproj" />
+	</ItemGroup>
+
+</Project>

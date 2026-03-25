@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ dashboard.page_title | e }}</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%235d67df'/%3E%3Cpath d='M20 20h24v24H20z' fill='white' opacity='.18'/%3E%3Cpath d='M28 24l12 8-12 8V24z' fill='white'/%3E%3C/svg%3E">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              brand: {
+                50: '#eef2ff',
+                100: '#e0e7ff',
+                500: '#6b74f0',
+                600: '#5d67df',
+                700: '#4b56c9',
+              }
+            },
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+              display: ['Be Vietnam Pro', 'sans-serif'],
+              mono: ['IBM Plex Mono', 'monospace'],
+            }
+          }
+        }
+      }
+    </script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+      :root {
+        color-scheme: light;
+      }
+
+      .panel {
+        background: #ffffff;
+        border: 1px solid rgba(226, 232, 240, 0.82);
+        border-radius: 12px;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03), 0 8px 24px rgba(15, 23, 42, 0.04);
+      }
+
+      .nav-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin: 0 12px;
+        padding: 10px 14px;
+        border-radius: 10px;
+        color: rgb(71 85 105);
+        transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+      }
+
+      .nav-item:hover {
+        background: rgb(248 250 252);
+        color: rgb(15 23 42);
+      }
+
+      .nav-item.active {
+        background: linear-gradient(135deg, #5d67df 0%, #4b56c9 100%);
+        color: #ffffff;
+        box-shadow: 0 8px 18px rgba(93, 103, 223, 0.18);
+      }
+
+      .nav-item.active i,
+      .nav-item.active span {
+        color: #ffffff !important;
+      }
+
+      .frosted-header {
+        background: rgba(255, 255, 255, 0.86);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border-bottom: 1px solid rgba(226, 232, 240, 0.75);
+      }
+
+      .toolbar-select,
+      .toolbar-input {
+        width: 100%;
+        min-height: 44px;
+        border: 1px solid rgb(203 213 225);
+        border-radius: 10px;
+        background: #ffffff;
+        color: rgb(15 23 42);
+        font-size: 13px;
+        padding: 10px 12px;
+        outline: none;
+        transition: border-color 120ms ease, box-shadow 120ms ease;
+      }
+
+      .toolbar-select:focus,
+      .toolbar-input:focus {
+        border-color: rgba(93, 103, 223, 0.72);
+        box-shadow: 0 0 0 2px rgba(93, 103, 223, 0.1);
+      }
+
+      .toolbar-select[multiple] {
+        min-height: 84px;
+        padding-top: 8px;
+        padding-bottom: 8px;
+      }
+
+      .section-title {
+        font-family: 'Be Vietnam Pro', sans-serif;
+        font-size: 16px;
+        font-weight: 700;
+        color: rgb(15 23 42);
+      }
+
+      .section-note {
+        margin-top: 4px;
+        font-size: 11px;
+        color: rgb(100 116 139);
+      }
+
+      .table-shell {
+        overflow-x: auto;
+      }
+
+      .admin-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        white-space: nowrap;
+      }
+
+      .admin-table thead th {
+        position: relative;
+        padding: 14px 18px;
+        border-bottom: 1px solid rgb(226 232 240);
+        background: rgba(248, 250, 252, 0.72);
+        text-align: left;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        color: rgb(71 85 105);
+      }
+
+      .admin-table thead th:not(:last-child)::after {
+        content: '';
+        position: absolute;
+        right: 0;
+        top: 50%;
+        width: 1px;
+        height: 18px;
+        background: rgb(226 232 240);
+        transform: translateY(-50%);
+      }
+
+      .admin-table tbody td {
+        padding: 18px;
+        border-bottom: 1px solid rgba(226, 232, 240, 0.72);
+        vertical-align: top;
+        font-size: 13px;
+        color: rgb(51 65 85);
+      }
+
+      .admin-table tbody tr:hover {
+        background: rgba(248, 250, 252, 0.78);
+      }
+
+      .table-meta {
+        margin-top: 4px;
+        font-size: 11px;
+        color: rgb(100 116 139);
+      }
+
+      .table-mono {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 11px;
+      }
+
+      .action-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 7px 10px;
+        border-radius: 8px;
+        border: 1px solid rgb(226 232 240);
+        font-size: 11px;
+        font-weight: 700;
+        transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+      }
+
+      .action-btn-primary {
+        background: rgb(255 255 255);
+        color: rgb(79 70 229);
+        border-color: rgb(199 210 254);
+      }
+
+      .action-btn-primary:hover {
+        background: rgb(238 242 255);
+      }
+
+      .action-btn-sky {
+        background: rgb(240 249 255);
+        color: rgb(3 105 161);
+        border-color: rgb(186 230 253);
+      }
+
+      .action-btn-sky:hover {
+        background: rgb(224 242 254);
+      }
+
+      .action-btn-emerald {
+        background: rgb(236 253 245);
+        color: rgb(5 150 105);
+        border-color: rgb(167 243 208);
+      }
+
+      .action-btn-emerald:hover {
+        background: rgb(209 250 229);
+      }
+
+      .action-btn-amber {
+        background: rgb(255 251 235);
+        color: rgb(180 83 9);
+        border-color: rgb(253 230 138);
+      }
+
+      .action-btn-amber:hover {
+        background: rgb(254 243 199);
+      }
+
+      .action-btn-rose {
+        background: rgb(255 241 242);
+        color: rgb(190 24 93);
+        border-color: rgb(254 205 211);
+      }
+
+      .action-btn-rose:hover {
+        background: rgb(255 228 230);
+      }
+
+      .action-btn-slate {
+        background: rgb(248 250 252);
+        color: rgb(71 85 105);
+        border-color: rgb(226 232 240);
+      }
+
+      .action-btn-slate:hover {
+        background: rgb(241 245 249);
+      }
+
+      .avatar-tile {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        background: rgb(241 245 249);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        flex-shrink: 0;
+      }
+
+      .avatar-tile img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .module-tab {
+        display: inline-flex;
+        align-items: center;
+        border-bottom: 2px solid transparent;
+        padding: 0 2px 14px;
+        font-size: 13px;
+        font-weight: 600;
+        color: rgb(100 116 139);
+        transition: color 120ms ease, border-color 120ms ease;
+      }
+
+      .module-tab:hover {
+        color: rgb(15 23 42);
+      }
+
+      .module-tab.active {
+        border-color: rgb(93 103 223);
+        color: rgb(79 70 229);
+      }
+
+      .notice {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        border-radius: 12px;
+        border: 1px solid rgb(226 232 240);
+        padding: 14px 16px;
+        font-size: 13px;
+      }
+
+      .notice-success {
+        border-color: rgb(167 243 208);
+        background: rgb(236 253 245);
+        color: rgb(6 95 70);
+      }
+
+      .notice-error {
+        border-color: rgb(254 205 211);
+        background: rgb(255 241 242);
+        color: rgb(159 18 57);
+      }
+
+      .field-label {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        color: rgb(51 65 85);
+      }
+
+      .admin-dialog {
+        width: min(560px, calc(100vw - 32px));
+        padding: 0;
+        border: 0;
+        border-radius: 12px;
+        background: transparent;
+      }
+
+      .admin-dialog::backdrop {
+        background: rgba(15, 23, 42, 0.42);
+      }
+    </style>
+</head>
+<body class="min-h-screen overflow-hidden bg-[#f3f5f9] font-sans antialiased text-slate-800">
+    <div class="flex min-h-screen">
+        <aside class="hidden w-64 shrink-0 border-r border-slate-200/80 bg-white md:flex md:flex-col">
+            <div class="flex h-16 items-center border-b border-slate-200 px-6">
+                <a href="/admin/user/index" class="flex items-center gap-3">
+                    <div class="flex h-10 w-10 shrink-0 items-center justify-center text-[#ff5528]">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" class="h-10 w-10" aria-hidden="true">
+                            <g fill="currentColor">
+                                <path d="M58 22c-7 0-12 5-12 12v116c0 56 45 102 101 102h54c7 0 12-5 12-12s-5-12-12-12h-54c-43 0-77-35-77-78V34c0-7-5-12-12-12z"/>
+                                <path d="M106 66c0-5 3-9 8-11 5-2 10-1 14 3l34 35 34-35c3-4 9-5 14-3 5 2 8 6 8 11v109c0 7-5 12-12 12s-12-5-12-12V95l-24 24c-5 5-12 5-17 0l-24-24v80c0 7-5 12-12 12s-12-5-12-12V66z"/>
+                                <rect x="181" y="119" width="14" height="78" rx="7"/>
+                                <circle cx="188" cy="205" r="28"/>
+                            </g>
+                        </svg>
+                    </div>
+                    <div>
+                        <p class="font-display text-[17px] font-bold leading-none tracking-tight text-slate-900">Upload YouTube</p>
+                        <p class="mt-1 text-[11px] text-slate-500">Admin workspace</p>
+                    </div>
+                </a>
+            </div>
+
+            <nav class="flex-1 overflow-y-auto py-4">
+                <div class="mb-2 px-6">
+                    <p class="text-[11px] font-medium text-slate-400">Điều hướng</p>
+                </div>
+                <div class="space-y-0.5">
+                    {% for item in dashboard.nav_items %}
+                    <a href="{{ item.href }}" class="nav-item {% if dashboard.active_page == item.key %}active{% endif %}">
+                        <i data-lucide="{{ item.icon }}" class="h-4 w-4"></i>
+                        <span class="text-[13px] {% if dashboard.active_page == item.key %}font-semibold{% else %}font-medium{% endif %}">{{ item.label }}</span>
+                    </a>
+                    {% endfor %}
+                </div>
+            </nav>
+
+            <div class="border-t border-slate-200 p-4">
+                <div class="flex items-center gap-3 rounded-xl px-2 py-2">
+                    <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100">
+                        <i data-lucide="shield" class="h-4 w-4 text-slate-500"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <p class="truncate text-[13px] font-semibold text-slate-900">{{ dashboard.current_user.name }}</p>
+                        <p class="truncate text-[11px] text-slate-500">{{ dashboard.current_user.role_text or 'Control plane' }}</p>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <main class="flex h-screen min-w-0 flex-1 flex-col">
+            <header class="frosted-header flex h-16 shrink-0 items-center justify-between px-8">
+                <div class="flex items-center gap-2 text-[13px]">
+                    <i data-lucide="panel-top-open" class="h-4 w-4 text-brand-600"></i>
+                    <span class="font-medium text-slate-900">{{ dashboard.page_title }}</span>
+                </div>
+                <form method="post" action="/admin/logout">
+                <button type="submit" class="action-btn action-btn-slate px-4 py-2 text-[13px]">
+                    <i data-lucide="log-out" class="h-4 w-4"></i>
+                    Đăng xuất
+                </button>
+                </form>
+            </header>
+
+            <div class="flex-1 min-w-0 overflow-y-auto pb-16">
+                <div class="space-y-6 px-8 py-6 min-w-0">
+                    {% block content %}{% endblock %}
+                </div>
+            </div>
+        </main>
+    </div>
+    <script>
+      document.addEventListener('DOMContentLoaded', function () {
+        if (window.lucide) {
+          lucide.createIcons();
+        }
+
+        document.querySelectorAll('[data-dialog-open]').forEach(function (button) {
+          button.addEventListener('click', function () {
+            const dialog = document.getElementById(button.getAttribute('data-dialog-open'));
+            if (!dialog) return;
+            dialog.showModal();
+          });
+        });
+
+        document.querySelectorAll('[data-dialog-close]').forEach(function (button) {
+          button.addEventListener('click', function () {
+            const dialog = button.closest('dialog');
+            if (dialog) {
+              dialog.close();
+            }
+          });
+        });
+      });
+
+      function reloadPage() {
+        location.reload();
+      }
+    </script>
+    {% block page_scripts %}{% endblock %}
+</body>
+</html>

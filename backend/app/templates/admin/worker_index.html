@@ -1,0 +1,247 @@
+{% extends "admin/_layout.html" %}
+
+{% block content %}
+<section class="space-y-6">
+    {% include "admin/_admin_notice.html" %}
+
+    <div class="panel p-5">
+        <div class="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div class="flex items-start gap-3">
+                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50">
+                    <i data-lucide="server" class="h-4.5 w-4.5 text-brand-600"></i>
+                </div>
+                <div>
+                    <h2 class="section-title">Danh sách BOT</h2>
+                    <p class="section-note">Giữ luồng quản trị BOT cũ: lọc theo manager, xem kênh, xem user, sửa, xóa và cập nhật số luồng.</p>
+                </div>
+            </div>
+
+            <form method="get" action="/admin/ManagerBOT/index" class="grid gap-3 lg:min-w-[460px] lg:grid-cols-[1fr_auto]">
+                <select class="toolbar-select" name="manager_ids" id="managerChoose" multiple>
+                    {% for manager in dashboard.manager_options %}
+                    <option value="{{ manager.id }}" {% if manager.selected %}selected{% endif %}>{{ manager.username }}</option>
+                    {% endfor %}
+                </select>
+                <button type="submit" class="action-btn action-btn-primary h-11 justify-center px-4 text-[13px]">
+                    <i data-lucide="filter" class="h-4 w-4"></i>
+                    Lọc
+                </button>
+            </form>
+        </div>
+    </div>
+
+    {% include "admin/_summary_strip.html" %}
+
+    <div class="panel overflow-hidden">
+        <div class="border-b border-slate-200/80 px-5 py-4">
+            <h3 class="section-title">Cụm BOT VPS</h3>
+            <p class="section-note">Danh sách BOT theo manager, tải hiện tại, dung lượng, băng thông và số user/kênh đang gắn.</p>
+        </div>
+
+        <div class="table-shell">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th class="w-14">STT</th>
+                        <th>BOT</th>
+                        <th>Manager</th>
+                        <th>Trạng thái</th>
+                        <th>Tải</th>
+                        <th>Disk</th>
+                        <th>Băng thông</th>
+                        <th>Luồng</th>
+                        <th class="text-right">Tác vụ</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for worker in dashboard.workers %}
+                    <tr>
+                        <td class="table-mono text-slate-500">{{ worker.index }}</td>
+                        <td>
+                            <div>
+                                <p class="text-[13px] font-semibold text-slate-900">{{ worker.name }}</p>
+                                <p class="table-meta table-mono">{{ worker.bot_id }}</p>
+                                <p class="table-meta">Nhóm {{ worker.group }}</p>
+                            </div>
+                        </td>
+                        <td>
+                            <p class="text-[12px] font-medium text-slate-800">{{ worker.manager_name }}</p>
+                            <p class="table-meta">{{ worker.total_users }} user • {{ worker.total_channels }} kênh</p>
+                        </td>
+                        <td><span class="{{ worker.status_class }}">{{ worker.status_label }}</span></td>
+                        <td>
+                            <p class="table-mono font-semibold text-slate-800">{{ worker.load_percent }}%</p>
+                            <div class="mt-2 h-1.5 w-24 overflow-hidden rounded-full bg-slate-100">
+                                <div class="h-full rounded-full bg-brand-500" style="width: {{ worker.load_percent }}%;"></div>
+                            </div>
+                        </td>
+                        <td class="table-mono text-slate-700">{{ worker.disk_text }}</td>
+                        <td class="table-mono text-slate-700">{{ worker.bandwidth_text }}</td>
+                        <td>
+                            <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-700">
+                                {{ worker.thread_text }}
+                            </span>
+                        </td>
+                        <td>
+                            <div class="flex items-center justify-end gap-2">
+                                <a href="/admin/channel/bot?botId={{ worker.id }}&botName={{ worker.raw_name }}" class="action-btn action-btn-sky">
+                                    <i data-lucide="link-2" class="h-3.5 w-3.5"></i>
+                                    DS kênh
+                                </a>
+                                <a href="/admin/bot/userofbot?botId={{ worker.id }}&botName={{ worker.raw_name }}" class="action-btn action-btn-primary">
+                                    <i data-lucide="users" class="h-3.5 w-3.5"></i>
+                                    DS user
+                                </a>
+                                <button
+                                    type="button"
+                                    class="action-btn action-btn-amber"
+                                    data-dialog-open="thread-bot-dialog"
+                                    data-worker-id="{{ worker.id }}"
+                                    data-worker-name="{{ worker.name }}"
+                                    data-thread="{{ worker.threads }}"
+                                >
+                                    <i data-lucide="cpu" class="h-3.5 w-3.5"></i>
+                                    Luồng
+                                </button>
+                                <button
+                                    type="button"
+                                    class="action-btn action-btn-emerald"
+                                    data-dialog-open="edit-bot-dialog"
+                                    data-worker-id="{{ worker.id }}"
+                                    data-worker-name="{{ worker.raw_name }}"
+                                    data-group="{{ worker.group }}"
+                                    data-manager-id="{{ worker.manager_id }}"
+                                >
+                                    <i data-lucide="pencil" class="h-3.5 w-3.5"></i>
+                                    Sửa
+                                </button>
+                                <button
+                                    type="button"
+                                    class="action-btn action-btn-rose"
+                                    data-dialog-open="delete-bot-dialog"
+                                    data-worker-id="{{ worker.id }}"
+                                    data-worker-name="{{ worker.name }}"
+                                >
+                                    <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
+                                    Xóa
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+<dialog id="edit-bot-dialog" class="admin-dialog">
+    <div class="panel">
+        <form method="post" action="/admin/bot/update">
+            <div class="border-b border-slate-200 px-5 py-4">
+                <h3 class="section-title">Cập nhật BOT</h3>
+                <p class="section-note">Cập nhật tên BOT, group và manager phụ trách.</p>
+            </div>
+            <div class="space-y-4 px-5 py-5">
+                <input type="hidden" name="Id" id="edit-bot-id">
+                <div>
+                    <label class="field-label" for="edit-bot-name">Tên BOT</label>
+                    <input class="toolbar-input" id="edit-bot-name" name="Name" required>
+                </div>
+                <div>
+                    <label class="field-label" for="edit-bot-group">Group</label>
+                    <input class="toolbar-input" id="edit-bot-group" name="Group" required>
+                </div>
+                <div>
+                    <label class="field-label" for="edit-bot-manager-id">Manager</label>
+                    <select class="toolbar-select" id="edit-bot-manager-id" name="UserIdManager">
+                        <option value="">-- Chọn manager --</option>
+                        {% for manager in dashboard.manager_options %}
+                        <option value="{{ manager.id }}">{{ manager.username }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
+                <button type="button" class="action-btn action-btn-slate" data-dialog-close>Đóng</button>
+                <button type="submit" class="action-btn action-btn-emerald">Cập nhật</button>
+            </div>
+        </form>
+    </div>
+</dialog>
+
+<dialog id="delete-bot-dialog" class="admin-dialog">
+    <div class="panel">
+        <form method="post" action="/admin/managerbot/delete">
+            <div class="border-b border-slate-200 px-5 py-4">
+                <h3 class="section-title">Xóa BOT</h3>
+                <p class="section-note">Thao tác này sẽ gỡ toàn bộ kênh, user mapping và job đang gắn với BOT này trong seed local.</p>
+            </div>
+            <div class="space-y-3 px-5 py-5">
+                <input type="hidden" name="Id" id="delete-bot-id">
+                <p class="text-[13px] text-slate-700">Bạn có chắc muốn xóa <strong id="delete-bot-name"></strong>?</p>
+            </div>
+            <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
+                <button type="button" class="action-btn action-btn-slate" data-dialog-close>Đóng</button>
+                <button type="submit" class="action-btn action-btn-rose">Xóa BOT</button>
+            </div>
+        </form>
+    </div>
+</dialog>
+
+<dialog id="thread-bot-dialog" class="admin-dialog">
+    <div class="panel">
+        <form method="post" action="/admin/bot/updateThread">
+            <div class="border-b border-slate-200 px-5 py-4">
+                <h3 class="section-title">Cập nhật số luồng BOT</h3>
+                <p class="section-note">Điều chỉnh concurrency của BOT theo đúng workflow cũ.</p>
+            </div>
+            <div class="space-y-4 px-5 py-5">
+                <input type="hidden" name="Id" id="thread-bot-id">
+                <div>
+                    <label class="field-label" for="thread-bot-name">BOT</label>
+                    <input class="toolbar-input bg-slate-50" id="thread-bot-name" readonly>
+                </div>
+                <div>
+                    <label class="field-label" for="thread-bot-value">Số luồng</label>
+                    <input class="toolbar-input" id="thread-bot-value" name="Thread" type="number" min="1" required>
+                </div>
+            </div>
+            <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
+                <button type="button" class="action-btn action-btn-slate" data-dialog-close>Đóng</button>
+                <button type="submit" class="action-btn action-btn-amber">Cập nhật luồng</button>
+            </div>
+        </form>
+    </div>
+</dialog>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('[data-dialog-open="edit-bot-dialog"]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        document.getElementById('edit-bot-id').value = button.dataset.workerId || '';
+        document.getElementById('edit-bot-name').value = button.dataset.workerName || '';
+        document.getElementById('edit-bot-group').value = button.dataset.group || '';
+        document.getElementById('edit-bot-manager-id').value = button.dataset.managerId || '';
+      });
+    });
+
+    document.querySelectorAll('[data-dialog-open="delete-bot-dialog"]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        document.getElementById('delete-bot-id').value = button.dataset.workerId || '';
+        document.getElementById('delete-bot-name').textContent = button.dataset.workerName || '';
+      });
+    });
+
+    document.querySelectorAll('[data-dialog-open="thread-bot-dialog"]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        document.getElementById('thread-bot-id').value = button.dataset.workerId || '';
+        document.getElementById('thread-bot-name').value = button.dataset.workerName || '';
+        document.getElementById('thread-bot-value').value = button.dataset.thread || '1';
+      });
+    });
+  });
+</script>
+{% endblock %}

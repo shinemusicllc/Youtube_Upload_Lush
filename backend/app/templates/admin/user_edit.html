@@ -1,0 +1,64 @@
+{% extends "admin/_layout.html" %}
+
+{% block content %}
+<section class="space-y-6">
+    <div class="panel p-5">
+        <div class="flex flex-col gap-5">
+            <div class="flex items-start gap-3">
+                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50">
+                    <i data-lucide="pencil" class="h-4.5 w-4.5 text-brand-600"></i>
+                </div>
+                <div>
+                    <h2 class="section-title">Cập nhật user</h2>
+                    <p class="section-note">Form này thay cho modal cũ, giữ trọng tâm vào gán manager và metadata quản trị của user.</p>
+                </div>
+            </div>
+            {% include "admin/_user_tabs.html" %}
+        </div>
+    </div>
+
+    <div class="panel max-w-3xl p-6">
+        <form method="post" action="/admin/user/updatetelegram" class="space-y-5">
+            <input type="hidden" name="user_id" value="{{ dashboard.user_record.id }}">
+
+            {% if dashboard.error %}
+            <div class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] font-medium text-rose-700">{{ dashboard.error }}</div>
+            {% endif %}
+
+            <div class="grid gap-5 md:grid-cols-2">
+                <div>
+                    <span class="mb-2 block text-[12px] font-semibold text-slate-700">UserName</span>
+                    <div class="toolbar-input flex items-center bg-slate-50 text-slate-600">{{ dashboard.user_record.username }}</div>
+                </div>
+                <div>
+                    <span class="mb-2 block text-[12px] font-semibold text-slate-700">Vai trò hiện tại</span>
+                    <div class="toolbar-input flex items-center bg-slate-50 text-slate-600">{{ dashboard.user_record.role }}</div>
+                </div>
+            </div>
+
+            <label class="block">
+                <span class="mb-2 block text-[12px] font-semibold text-slate-700">Manager phụ trách</span>
+                <select class="toolbar-select" name="manager_id">
+                    <option value="">-- Không gán manager --</option>
+                    {% for manager in dashboard.manager_candidates %}
+                    <option value="{{ manager.id }}" {% if dashboard.user_record.manager_id == manager.id %}selected{% endif %}>{{ manager.username }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+
+            <label class="block">
+                <span class="mb-2 block text-[12px] font-semibold text-slate-700">Link Telegram</span>
+                <input class="toolbar-input" type="text" name="link_telegram" value="{{ dashboard.user_record.link_telegram or '' }}" placeholder="@telegram_handle">
+            </label>
+
+            <div class="flex items-center justify-end gap-3 border-t border-slate-200 pt-4">
+                <a href="/admin/user/index" class="action-btn action-btn-slate px-4 py-2 text-[13px]">Quay lại</a>
+                <button type="submit" class="action-btn action-btn-emerald px-4 py-2 text-[13px]">
+                    <i data-lucide="save" class="h-4 w-4"></i>
+                    Cập nhật
+                </button>
+            </div>
+        </form>
+    </div>
+</section>
+{% endblock %}

@@ -1,0 +1,115 @@
+@using BaseSource.ViewModels.Render;
+@model RenderHistoryDto
+@{
+    ViewData["Title"] = "Thông tin Render";
+    Layout = "~/Areas/Admin/Views/Shared/_Layout.cshtml";
+}
+
+<section class="section">
+    <div class="section-header d-flex justify-content-between align-items-center flex-wrap gap-3">
+        <h1 class="mb-2">Chi tiết Tiến trình Render</h1>
+        <div class="section-header-breadcrumb m-0">
+            <div class="breadcrumb-item active"><a href="#">Dashboard</a></div>
+            <div class="breadcrumb-item"><a href="/admin/render/index">Danh sách Render</a></div>
+            <div class="breadcrumb-item">Chi tiết cấu hình</div>
+        </div>
+    </div>
+    <div class="section-body">
+        <div class="row">
+            <div class="col-12 col-md-12 col-lg-12">
+
+                <div class="elevated-card p-0">
+                    <form  class="needs-validation" novalidate="">
+                        <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+                        <div class="card-header border-bottom-0 pb-0 d-flex justify-content-between align-items-center">
+                            <h4 class="text-brand">Cấu hình chi tiết</h4>
+                        </div>
+                        <div class="card-body">
+                            <h2 class="section-title mt-0 mb-4 bg-slate-50 text-brand px-3 py-2 rounded-lg text-sm inline-block">Thông số Config Render</h2>
+
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label class="font-weight-600 text-slate-700">Link video Intro</label>
+                                        <input asp-for="Intro" placeholder="Không có Intro..." class="form-control bg-slate-50 border-slate-200" id="linkVideoIntro" readonly>
+                                        <span asp-validation-for="Intro" class="text-danger"></span>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label class="font-weight-600 text-slate-700">Link video loop <span class="text-rose-500">*</span></label>
+                                        <input class="form-control bg-slate-50 border-slate-200" required asp-for="VideoLoop" rows="1" id="linkVideoLoop" readonly />
+                                        <span asp-validation-for="VideoLoop" class="text-danger"></span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label class="font-weight-600 text-slate-700">Link audio loop</label>
+                                        <input class="form-control bg-slate-50 border-slate-200" asp-for="AudioLoop" rows="1" id="linkAudioLoop" readonly />
+                                        <span asp-validation-for="AudioLoop" class="text-danger"></span>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label class="font-weight-600 text-slate-700">Link Outro</label>
+                                        <input class="form-control bg-slate-50 border-slate-200" name="Outtro" asp-for="Outtro" id="linkOutro" required readonly />
+                                        <span asp-validation-for="Outtro" class="text-danger"></span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label class="font-weight-600 text-slate-700">Kênh Đăng Tải</label>
+                                        <select class="form-control bg-slate-100 border-slate-200 text-slate-500 font-weight-bold" disabled>
+                                            <option>@Model.ChannelName - @Model.ChannelId</option>
+                                        </select>
+                                        <span asp-validation-for="ChannelId" class="text-danger"></span>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label class="font-weight-600 text-slate-700">Thời lượng Render</label>
+                                        <input class="form-control bg-slate-50 border-slate-200 font-mono text-indigo-600 font-weight-bold" placeholder="00:00:00" value="@Model.TimeRender" required readonly />
+                                        <span asp-validation-for="TimeRender" class="text-danger"></span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label class="font-weight-600 text-slate-700">Thời gian Hẹn lịch</label>
+                                        <input class="form-control bg-slate-50 border-slate-200 text-amber-600 font-weight-bold" readonly type="datetime-local" asp-for="ScheduleTime" />
+                                        <span asp-validation-for="ScheduleTime" class="text-danger"></span>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-group mb-0">
+                                        <label class="font-weight-600 text-slate-700">Tên video Upload</label>
+                                        <input class="form-control bg-slate-50 border-slate-200" name="VideoName" asp-for="VideoName" required readonly />
+                                        <span asp-validation-for="VideoName" class="text-danger"></span>
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+                        
+                    </form>
+                </div>
+            </div>
+        </div>
+
+
+    </div>
+</section>
+@section Scripts{
+    <script>
+       
+
+    </script>
+}

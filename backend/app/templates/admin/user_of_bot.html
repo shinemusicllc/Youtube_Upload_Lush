@@ -1,0 +1,65 @@
+{% extends "admin/_layout.html" %}
+
+{% block content %}
+<section class="space-y-6">
+    {% include "admin/_admin_notice.html" %}
+
+    <div class="panel p-5">
+        <div class="flex items-start gap-3">
+            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50">
+                <i data-lucide="users" class="h-4.5 w-4.5 text-brand-600"></i>
+            </div>
+            <div>
+                <h2 class="section-title">Danh sách user của {{ dashboard.target_bot.name }}</h2>
+                <p class="section-note">Liệt kê các user đang gắn với BOT này và cho phép nhảy nhanh sang danh sách kênh hoặc BOT của từng user.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel overflow-hidden">
+        <div class="border-b border-slate-200/80 px-5 py-4">
+            <h3 class="section-title">User được gán BOT</h3>
+            <p class="section-note">Tương ứng checklist 2.6 của admin parity.</p>
+        </div>
+
+        <div class="table-shell">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th class="w-14">STT</th>
+                        <th>Người dùng</th>
+                        <th>Số kênh</th>
+                        <th>Số BOT</th>
+                        <th class="text-right">Tác vụ</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in dashboard.users %}
+                    <tr>
+                        <td class="table-mono text-slate-500">{{ user.index }}</td>
+                        <td>
+                            <p class="text-[13px] font-semibold text-slate-900">{{ user.display_name }}</p>
+                            <p class="table-meta table-mono">{{ user.username }}</p>
+                        </td>
+                        <td><span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-700">{{ user.total_channels }}</span></td>
+                        <td><span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-700">{{ user.total_bots }}</span></td>
+                        <td>
+                            <div class="flex items-center justify-end gap-2">
+                                <a href="/admin/channel/index?userId={{ user.id }}" class="action-btn action-btn-sky">
+                                    <i data-lucide="link-2" class="h-3.5 w-3.5"></i>
+                                    DS kênh
+                                </a>
+                                <a href="/admin/bot/user?userId={{ user.id }}&username={{ user.username }}" class="action-btn action-btn-primary">
+                                    <i data-lucide="server" class="h-3.5 w-3.5"></i>
+                                    DS BOT
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+{% endblock %}

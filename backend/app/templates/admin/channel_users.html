@@ -1,0 +1,107 @@
+{% extends "admin/_layout.html" %}
+
+{% block content %}
+<section class="space-y-6">
+    {% include "admin/_admin_notice.html" %}
+
+    <div class="panel p-5">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div class="flex items-start gap-3">
+                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50">
+                    <i data-lucide="users" class="h-4.5 w-4.5 text-brand-600"></i>
+                </div>
+                <div>
+                    <h2 class="section-title">Danh sách người dùng của kênh {{ dashboard.target_channel.name }}</h2>
+                    <p class="section-note">Quản lý user đang có quyền với kênh và thêm user mới ngay trong cùng flow.</p>
+                </div>
+            </div>
+
+            <form method="post" action="/admin/channel/addUser" class="flex w-full max-w-[420px] flex-col gap-3 sm:flex-row">
+                <input type="hidden" name="channelId" value="{{ dashboard.target_channel.id }}">
+                <input type="hidden" name="channelName" value="{{ dashboard.target_channel.name }}">
+                <select name="userId" class="toolbar-select" required>
+                    <option value="">-- Chọn user --</option>
+                    {% for user in dashboard.available_users %}
+                    <option value="{{ user.id }}">{{ user.username }}</option>
+                    {% endfor %}
+                </select>
+                <button type="submit" class="action-btn action-btn-primary h-11 shrink-0 justify-center px-4 text-[13px]">
+                    <i data-lucide="plus" class="h-4 w-4"></i>
+                    Thêm user
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div class="panel overflow-hidden">
+        <div class="flex items-center justify-between gap-4 border-b border-slate-200/80 px-5 py-4">
+            <div>
+                <h3 class="section-title">User đang được cấp quyền</h3>
+                <p class="section-note">Giữ các liên kết chéo cũ: thêm kênh cho user, DS BOT của user và gỡ quyền khỏi kênh.</p>
+            </div>
+            <a href="/admin/channel/index" class="action-btn action-btn-slate">
+                <i data-lucide="arrow-left" class="h-3.5 w-3.5"></i>
+                Quay lại kênh
+            </a>
+        </div>
+
+        <div class="table-shell">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th class="w-14">STT</th>
+                        <th>User</th>
+                        <th>Số kênh</th>
+                        <th>Số BOT</th>
+                        <th class="text-right">Tác vụ</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in dashboard.users %}
+                    <tr>
+                        <td class="table-mono text-slate-500">{{ user.index }}</td>
+                        <td>
+                            <div class="min-w-[220px]">
+                                <p class="text-[13px] font-semibold text-slate-900">{{ user.display_name }}</p>
+                                <p class="table-meta table-mono">{{ user.username }}</p>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="inline-flex items-center rounded-full border border-brand-100 bg-brand-50 px-2.5 py-1 text-[10px] font-semibold text-brand-700">
+                                {{ user.total_channels }} kênh
+                            </span>
+                        </td>
+                        <td>
+                            <span class="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[10px] font-semibold text-sky-700">
+                                {{ user.total_bots }} BOT
+                            </span>
+                        </td>
+                        <td>
+                            <div class="flex items-center justify-end gap-2">
+                                <a href="/admin/channel/user?userId={{ user.id }}&username={{ user.username | urlencode }}" class="action-btn action-btn-primary">
+                                    <i data-lucide="link-2" class="h-3.5 w-3.5"></i>
+                                    Thêm kênh
+                                </a>
+                                <a href="/admin/bot/user?userId={{ user.id }}&username={{ user.username | urlencode }}" class="action-btn action-btn-sky">
+                                    <i data-lucide="server" class="h-3.5 w-3.5"></i>
+                                    DS BOT
+                                </a>
+                                <form method="post" action="/admin/channel/addUser" class="inline-flex">
+                                    <input type="hidden" name="channelId" value="{{ dashboard.target_channel.id }}">
+                                    <input type="hidden" name="channelName" value="{{ dashboard.target_channel.name }}">
+                                    <input type="hidden" name="userId" value="{{ user.id }}">
+                                    <button type="submit" class="action-btn action-btn-rose">
+                                        <i data-lucide="x-circle" class="h-3.5 w-3.5"></i>
+                                        Hủy
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+{% endblock %}

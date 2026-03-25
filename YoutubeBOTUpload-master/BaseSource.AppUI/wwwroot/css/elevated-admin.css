@@ -1,0 +1,689 @@
+/* ============================================================
+   ELEVATED ADMIN — SaaS Dashboard Design System Override
+   Đồng bộ visual với 13.html (Elevated SaaS Style)
+   ============================================================ */
+
+/* ─────────── GOOGLE FONTS (via link tags in layout) ─────────── */
+
+/* ─────────── CSS CUSTOM PROPERTIES ─────────── */
+:root {
+  --brand-50:  #eef2ff;
+  --brand-100: #e0e7ff;
+  --brand-500: #6b74f0;
+  --brand-600: #5d67df;
+  --brand-700: #4b56c9;
+  --bg-page:   #f3f5f9;
+  --bg-card:   #ffffff;
+  --text-primary:   #1e293b;
+  --text-secondary: #64748b;
+  --text-muted:     #94a3b8;
+  --border-color:   #e2e8f0;
+  --shadow-card:    0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06);
+  --shadow-lg:      0 4px 16px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04);
+  --shadow-xl:      0 10px 40px rgba(0,0,0,0.06), 0 2px 8px rgba(0,0,0,0.04);
+  --radius-lg:  10px;
+  --radius-xl:  16px;
+  --radius-full: 9999px;
+}
+
+/* ─────────── GLOBAL RESETS ─────────── */
+body {
+  background: var(--bg-page) !important;
+  font-family: 'Inter', 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, sans-serif !important;
+  color: var(--text-primary) !important;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: rgba(93, 103, 223, 0.14);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 7px; height: 7px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { 
+  background: #cbd5e1; 
+  border-radius: 99px; 
+}
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* ─────────── NAVBAR / HEADER ─────────── */
+.navbar-bg {
+  background: rgba(255,255,255,0.72) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-bottom: 1px solid rgba(226,232,240,0.6) !important;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.03) !important;
+  height: 64px !important;
+}
+
+.main-navbar {
+  background: transparent !important;
+  box-shadow: none !important;
+  height: 64px !important;
+}
+
+.main-navbar .nav-link {
+  color: var(--text-secondary) !important;
+  transition: color 0.2s !important;
+}
+
+.main-navbar .nav-link:hover {
+  color: var(--brand-600) !important;
+}
+
+.main-navbar .nav-link-user img {
+  width: 34px !important;
+  height: 34px !important;
+  border: 2px solid var(--brand-100) !important;
+}
+
+.dropdown-menu {
+  border: 1px solid var(--border-color) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-lg) !important;
+  padding: 6px !important;
+}
+
+.dropdown-item {
+  border-radius: 6px !important;
+  padding: 8px 14px !important;
+  font-size: 13px !important;
+  transition: background 0.15s !important;
+}
+
+.dropdown-item:hover {
+  background: var(--brand-50) !important;
+  color: var(--brand-700) !important;
+}
+
+/* ─────────── SIDEBAR ─────────── */
+.main-sidebar {
+  background: var(--bg-card) !important;
+  border-right: 1px solid var(--border-color) !important;
+  box-shadow: 1px 0 4px rgba(0,0,0,0.02) !important;
+}
+
+.main-sidebar .sidebar-brand {
+  background: transparent !important;
+  height: 64px !important;
+  display: flex !important;
+  align-items: center !important;
+  padding: 0 24px !important;
+  border-bottom: 1px solid var(--border-color) !important;
+}
+
+.main-sidebar .sidebar-brand a {
+  font-family: 'Be Vietnam Pro', sans-serif !important;
+  font-weight: 700 !important;
+  font-size: 18px !important;
+  color: var(--brand-600) !important;
+  letter-spacing: -0.02em !important;
+}
+
+.sidebar-menu {
+  padding: 16px 12px !important;
+}
+
+.sidebar-menu li {
+  margin-bottom: 2px !important;
+}
+
+.sidebar-menu li > a {
+  font-family: 'Inter', sans-serif !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  color: var(--text-secondary) !important;
+  padding: 10px 14px !important;
+  border-radius: 10px !important;
+  border-left: none !important;
+  transition: all 0.2s !important;
+}
+
+.sidebar-menu li > a i,
+.sidebar-menu li > a .fas,
+.sidebar-menu li > a .far,
+.sidebar-menu li > a .fab {
+  width: 20px !important;
+  text-align: center !important;
+  margin-right: 10px !important;
+  font-size: 14px !important;
+  color: var(--text-muted) !important;
+}
+
+.sidebar-menu li > a:hover {
+  background: var(--brand-50) !important;
+  color: var(--brand-600) !important;
+}
+
+.sidebar-menu li > a:hover i,
+.sidebar-menu li > a:hover .fas {
+  color: var(--brand-600) !important;
+}
+
+.sidebar-menu li.active > a {
+  background: linear-gradient(135deg, var(--brand-600), #6366f1) !important;
+  color: #fff !important;
+  box-shadow: 0 4px 12px rgba(93, 103, 223, 0.32) !important;
+}
+
+.sidebar-menu li.active > a i,
+.sidebar-menu li.active > a .fas {
+  color: rgba(255,255,255,0.9) !important;
+}
+
+/* ─────────── SECTION HEADERS ─────────── */
+.section .section-header {
+  border-bottom: none !important;
+  padding: 0 0 20px !important;
+  box-shadow: none !important;
+}
+
+.section .section-header h1 {
+  font-family: 'Be Vietnam Pro', sans-serif !important;
+  font-weight: 700 !important;
+  font-size: 20px !important;
+  color: var(--text-primary) !important;
+  letter-spacing: -0.01em !important;
+}
+
+/* ─────────── CARDS — ELEVATED ─────────── */
+.card {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: var(--radius-xl) !important;
+  box-shadow: var(--shadow-card) !important;
+  transition: box-shadow 0.25s !important;
+  overflow: hidden !important;
+}
+
+.card:hover {
+  box-shadow: var(--shadow-lg) !important;
+}
+
+.card .card-header {
+  background: transparent !important;
+  border-bottom: 1px solid var(--border-color) !important;
+  padding: 18px 24px !important;
+}
+
+.card .card-header h4 {
+  font-family: 'Be Vietnam Pro', sans-serif !important;
+  font-weight: 600 !important;
+  font-size: 15px !important;
+  color: var(--text-primary) !important;
+  margin: 0 !important;
+}
+
+.card .card-body {
+  padding: 24px !important;
+}
+
+/* ─────────── KPI STATS CARDS — BADGE STRIP ─────────── */
+.card-statistic-2,
+.card.card-statistic-2 {
+  border-radius: var(--radius-xl) !important;
+  box-shadow: var(--shadow-card) !important;
+  border: 1px solid var(--border-color) !important;
+  overflow: hidden !important;
+}
+
+.card-stats {
+  padding: 12px 0 !important;
+}
+
+.card-stats-title {
+  padding: 8px 24px 4px !important;
+  font-family: 'Be Vietnam Pro', sans-serif !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.06em !important;
+  color: var(--text-muted) !important;
+}
+
+.card-stats-items {
+  display: flex !important;
+  justify-content: space-around !important;
+  padding: 8px 16px !important;
+  gap: 0 !important;
+}
+
+.card-stats-item {
+  text-align: center !important;
+  position: relative !important;
+  padding: 8px 16px !important;
+  flex: 1 !important;
+}
+
+.card-stats-item::after {
+  content: '' !important;
+  position: absolute !important;
+  right: 0 !important;
+  top: 20% !important;
+  height: 60% !important;
+  width: 1px !important;
+  background: var(--border-color) !important;
+}
+
+.card-stats-item:last-child::after {
+  display: none !important;
+}
+
+.card-stats-item .card-stats-item-count {
+  font-family: 'Be Vietnam Pro', sans-serif !important;
+  font-weight: 700 !important;
+  font-size: 28px !important;
+  line-height: 1 !important;
+  color: var(--text-primary) !important;
+  margin-bottom: 6px !important;
+}
+
+.card-stats-item .card-stats-item-label {
+  margin-top: 4px !important;
+}
+
+.card-statistic-2 hr {
+  border-color: var(--border-color) !important;
+  margin: 4px 24px !important;
+  opacity: 0.5 !important;
+}
+
+/* ─────────── BADGES — PILL STYLE ─────────── */
+.badge {
+  font-family: 'Inter', sans-serif !important;
+  font-weight: 600 !important;
+  font-size: 11px !important;
+  padding: 4px 10px !important;
+  border-radius: var(--radius-full) !important;
+  letter-spacing: 0.01em !important;
+}
+
+.badge-primary {
+  background: rgba(93, 103, 223, 0.12) !important;
+  color: var(--brand-600) !important;
+}
+
+.badge-success {
+  background: rgba(16, 185, 129, 0.12) !important;
+  color: #059669 !important;
+}
+
+.badge-warning {
+  background: rgba(245, 158, 11, 0.12) !important;
+  color: #b45309 !important;
+}
+
+.badge-danger {
+  background: rgba(239, 68, 68, 0.12) !important;
+  color: #dc2626 !important;
+}
+
+.badge-info {
+  background: rgba(14, 165, 233, 0.12) !important;
+  color: #0284c7 !important;
+}
+
+.badge-secondary {
+  background: rgba(100, 116, 139, 0.1) !important;
+  color: var(--text-secondary) !important;
+}
+
+/* ─────────── TABLES — CLEAN MODERN ─────────── */
+.table {
+  font-size: 13px !important;
+  color: var(--text-primary) !important;
+  margin: 0 !important;
+}
+
+.table thead th {
+  font-family: 'Inter', sans-serif !important;
+  font-weight: 600 !important;
+  font-size: 11px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  color: var(--text-muted) !important;
+  background: #f8fafc !important;
+  border-bottom: 1px solid var(--border-color) !important;
+  border-top: none !important;
+  padding: 12px 16px !important;
+  white-space: nowrap !important;
+}
+
+.table tbody td {
+  padding: 14px 16px !important;
+  vertical-align: middle !important;
+  border-color: #f1f5f9 !important;
+  transition: background 0.15s !important;
+}
+
+.table-striped tbody tr:nth-of-type(odd) {
+  background: transparent !important;
+}
+
+.table tbody tr:hover td {
+  background: #f8fafc !important;
+}
+
+.table-responsive {
+  border-radius: 0 0 var(--radius-xl) var(--radius-xl) !important;
+  overflow: hidden !important;
+}
+
+/* DataTables override */
+.dataTables_wrapper .dataTables_length,
+.dataTables_wrapper .dataTables_filter,
+.dataTables_wrapper .dataTables_info,
+.dataTables_wrapper .dataTables_paginate {
+  font-family: 'Inter', sans-serif !important;
+  font-size: 13px !important;
+  color: var(--text-secondary) !important;
+  padding: 12px 16px !important;
+}
+
+.dataTables_wrapper .dataTables_filter input {
+  border: 1px solid var(--border-color) !important;
+  border-radius: 8px !important;
+  padding: 6px 12px !important;
+  font-size: 13px !important;
+  outline: none !important;
+  transition: border-color 0.2s, box-shadow 0.2s !important;
+}
+
+.dataTables_wrapper .dataTables_filter input:focus {
+  border-color: var(--brand-500) !important;
+  box-shadow: 0 0 0 3px rgba(93, 103, 223, 0.08) !important;
+}
+
+.dataTables_wrapper .dataTables_length select {
+  border: 1px solid var(--border-color) !important;
+  border-radius: 8px !important;
+  padding: 6px 12px !important;
+  font-size: 13px !important;
+}
+
+.dataTables_wrapper .dataTables_paginate .paginate_button {
+  border: 1px solid var(--border-color) !important;
+  border-radius: 8px !important;
+  padding: 5px 12px !important;
+  margin: 0 2px !important;
+  color: var(--text-secondary) !important;
+  background: var(--bg-card) !important;
+  transition: all 0.15s !important;
+}
+
+.dataTables_wrapper .dataTables_paginate .paginate_button:hover {
+  background: var(--brand-50) !important;
+  color: var(--brand-600) !important;
+  border-color: var(--brand-100) !important;
+}
+
+.dataTables_wrapper .dataTables_paginate .paginate_button.current,
+.dataTables_wrapper .dataTables_paginate .paginate_button.current:hover {
+  background: var(--brand-600) !important;
+  color: #fff !important;
+  border-color: var(--brand-600) !important;
+  box-shadow: 0 2px 6px rgba(93, 103, 223, 0.3) !important;
+}
+
+/* ─────────── BUTTONS — MODERN ─────────── */
+.btn {
+  font-family: 'Inter', sans-serif !important;
+  font-weight: 500 !important;
+  font-size: 13px !important;
+  border-radius: 8px !important;
+  padding: 7px 16px !important;
+  transition: all 0.2s !important;
+  border: none !important;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
+}
+
+.btn-sm {
+  font-size: 12px !important;
+  padding: 5px 12px !important;
+  border-radius: 6px !important;
+}
+
+.btn-primary {
+  background: var(--brand-600) !important;
+  color: #fff !important;
+}
+
+.btn-primary:hover {
+  background: var(--brand-700) !important;
+  box-shadow: 0 4px 10px rgba(93, 103, 223, 0.25) !important;
+}
+
+.btn-success {
+  background: #059669 !important;
+  color: #fff !important;
+}
+
+.btn-success:hover {
+  background: #047857 !important;
+  box-shadow: 0 4px 10px rgba(5, 150, 105, 0.25) !important;
+}
+
+.btn-danger {
+  background: #ef4444 !important;
+  color: #fff !important;
+}
+
+.btn-danger:hover {
+  background: #dc2626 !important;
+  box-shadow: 0 4px 10px rgba(239, 68, 68, 0.25) !important;
+}
+
+.btn-warning {
+  background: #f59e0b !important;
+  color: #fff !important;
+}
+
+.btn-warning:hover {
+  background: #d97706 !important;
+}
+
+.btn-info {
+  background: #0ea5e9 !important;
+  color: #fff !important;
+}
+
+.btn-info:hover {
+  background: #0284c7 !important;
+}
+
+.btn-secondary {
+  background: #f1f5f9 !important;
+  color: var(--text-secondary) !important;
+}
+
+.btn-secondary:hover {
+  background: #e2e8f0 !important;
+  color: var(--text-primary) !important;
+}
+
+/* ─────────── FORM INPUTS — MODERN ─────────── */
+.form-control {
+  font-family: 'Inter', sans-serif !important;
+  font-size: 13px !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: 8px !important;
+  padding: 8px 14px !important;
+  color: var(--text-primary) !important;
+  background: var(--bg-card) !important;
+  transition: border-color 0.2s, box-shadow 0.2s !important;
+  box-shadow: none !important;
+}
+
+.form-control:focus {
+  border-color: var(--brand-500) !important;
+  box-shadow: 0 0 0 3px rgba(93, 103, 223, 0.1) !important;
+  outline: none !important;
+}
+
+.form-control::placeholder {
+  color: var(--text-muted) !important;
+}
+
+label {
+  font-family: 'Inter', sans-serif !important;
+  font-weight: 500 !important;
+  font-size: 13px !important;
+  color: var(--text-secondary) !important;
+  margin-bottom: 6px !important;
+}
+
+/* Select2 override */
+.select2-container .select2-selection--single,
+.select2-container .select2-selection--multiple {
+  border: 1px solid var(--border-color) !important;
+  border-radius: 8px !important;
+  min-height: 38px !important;
+  font-size: 13px !important;
+}
+
+.select2-container--default .select2-selection--single:focus,
+.select2-container--default .select2-selection--multiple:focus {
+  border-color: var(--brand-500) !important;
+}
+
+.select2-container--default .select2-selection--multiple .select2-selection__choice {
+  background: var(--brand-50) !important;
+  color: var(--brand-600) !important;
+  border: 1px solid var(--brand-100) !important;
+  border-radius: 6px !important;
+  font-size: 12px !important;
+  padding: 3px 8px !important;
+}
+
+.select2-dropdown {
+  border: 1px solid var(--border-color) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-lg) !important;
+}
+
+.select2-results__option--highlighted {
+  background: var(--brand-50) !important;
+  color: var(--brand-600) !important;
+}
+
+/* ─────────── MODALS — MODERN ─────────── */
+.modal-content {
+  border: none !important;
+  border-radius: var(--radius-xl) !important;
+  box-shadow: var(--shadow-xl) !important;
+  overflow: hidden !important;
+}
+
+.modal-header {
+  background: transparent !important;
+  border-bottom: 1px solid var(--border-color) !important;
+  padding: 20px 24px !important;
+}
+
+.modal-title {
+  font-family: 'Be Vietnam Pro', sans-serif !important;
+  font-weight: 600 !important;
+  font-size: 16px !important;
+  color: var(--text-primary) !important;
+}
+
+.modal-body {
+  padding: 24px !important;
+}
+
+.modal-footer {
+  background: #f8fafc !important;
+  border-top: 1px solid var(--border-color) !important;
+  padding: 16px 24px !important;
+  border-radius: 0 0 var(--radius-xl) var(--radius-xl) !important;
+}
+
+.close {
+  font-size: 20px !important;
+  opacity: 0.5 !important;
+  transition: opacity 0.15s !important;
+}
+
+.close:hover {
+  opacity: 1 !important;
+}
+
+/* ─────────── FOOTER ─────────── */
+.main-footer {
+  background: transparent !important;
+  border-top: 1px solid var(--border-color) !important;
+  color: var(--text-muted) !important;
+  font-size: 12px !important;
+  padding: 16px 24px !important;
+}
+
+/* ─────────── MAIN CONTENT AREA ─────────── */
+.main-content {
+  background: var(--bg-page) !important;
+  padding-top: 20px !important;
+}
+
+.section .section-body {
+  padding: 0 !important;
+}
+
+/* ─────────── UTILITY CLASSES ─────────── */
+.elevated-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-card);
+}
+
+.text-brand { color: var(--brand-600) !important; }
+.bg-brand { background: var(--brand-600) !important; }
+.bg-brand-light { background: var(--brand-50) !important; }
+
+/* ─────────── ALERT / NOTIFICATION STYLING ─────────── */
+.alert {
+  border: none !important;
+  border-radius: var(--radius-lg) !important;
+  font-size: 13px !important;
+  padding: 14px 20px !important;
+}
+
+/* ─────────── BREADCRUMB / SECTION HEADER BREADCRUMB ─────────── */
+.section-header-breadcrumb {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+/* ─────────── ACTION BUTTONS IN TABLES ─────────── */
+td .btn {
+  margin: 1px 2px !important;
+  padding: 4px 10px !important;
+  font-size: 11px !important;
+}
+
+/* ─────────── AVATAR IN TABLES ─────────── */
+td img[width="35"] {
+  border-radius: 8px !important;
+  border: 1px solid var(--border-color) !important;
+}
+
+/* ─────────── LINK STYLING ─────────── */
+a {
+  color: var(--brand-600);
+  transition: color 0.15s;
+}
+
+a:hover {
+  color: var(--brand-700);
+  text-decoration: none;
+}
+
+/* ─────────── LOGIN PAGE ─────────── */
+.login-brand {
+  font-family: 'Be Vietnam Pro', sans-serif !important;
+  font-weight: 700 !important;
+  font-size: 22px !important;
+  color: var(--brand-600) !important;
+}

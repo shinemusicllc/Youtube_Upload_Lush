@@ -1,0 +1,50 @@
+# WORKLOG
+
+- 2026-03-23 22:45
+  - Started project bootstrap for architecture review and stack recommendation.
+  - Identified effective repo root as `YoutubeBOTUpload-master`.
+  - Detected solution split across API, AppUI, shared libraries, and a Windows-only WPF upload bot.
+- 2026-03-23 23:18
+  - Completed architecture review of current upload/render pipeline.
+  - Confirmed source media is provided as Google Drive / OneDrive links, then downloaded locally by the bot for FFmpeg render.
+  - Confirmed upload flow depends on Selenium + Chrome + YouTube Studio and fails on `ytcp-auth-confirmation-dialog`.
+  - Prepared migration recommendation toward VPS-friendly web API + worker architecture with OAuth-based YouTube uploads instead of browser automation.
+- 2026-03-23 23:31
+  - Compared greenfield rebuild options for long-term VPS deployment.
+  - Recommended `React + FastAPI + Postgres + Redis + Python worker` as the most practical fresh-start stack.
+  - Clarified that Python is stable enough for backend/worker roles, but not lighter than Go in RAM footprint.
+- 2026-03-23 23:42
+  - Explained YouTube OAuth account-connection flow versus Chrome-profile automation.
+  - Clarified that uploads would target the correct channel by selecting the stored token for that channel, not by switching browser sessions at runtime.
+- 2026-03-23 23:52
+  - Reviewed the operational question around VPS IP reputation and many-channel uploads.
+  - Recommended a compliance-first network strategy based on static business egress IPs and tenant isolation instead of anonymous/rotating proxy tactics.
+- 2026-03-24 00:01
+  - Inspected the old bot's Chrome/Selenium network behavior.
+  - Confirmed it uses persistent Chrome profile directories rather than incognito mode.
+  - Confirmed proxy support exists in code as an optional parameter, but current upload and channel-info call sites pass empty or null proxy values, so default egress is the machine/VPS IP.
+- 2026-03-24 00:08
+  - Produced a direct comparison between the legacy profile-based upload model and the proposed OAuth token-based model.
+  - Highlighted trade-offs across login flow, IP behavior, multi-account handling, reliability, VPS deployment, and operational risk.
+- 2026-03-24 00:17
+  - Evaluated the cost/performance concern around rendering large videos on VPS scratch storage.
+  - Recommended a hybrid deployment model: VPS for control plane and a strong local machine for render/upload worker execution.
+  - Clarified that tunnel/agent connectivity should carry control traffic only, while Drive download, local render, and YouTube upload should occur directly from the local worker.
+- 2026-03-24 00:29
+  - Inspected the provided VPS directly over SSH.
+  - Verified current resources: 6 vCPU, ~11 GiB RAM, ~81 GiB free disk on non-rotational storage, and roughly 503 MB/s sequential direct write in a quick scratch test.
+  - Concluded the VPS can handle single-job remux-style workloads better than heavy 4K re-encoding, and remains storage-constrained for large concurrent jobs.
+- 2026-03-24 00:36
+  - Refined the sizing assessment after clarifying the real workload is 4K loop extension by concat/remux, not heavy 4K transcoding.
+  - Noted that the legacy implementation already uses concat lists and `-c copy` heavily, which keeps CPU cost relatively low and makes disk capacity the main planning concern.
+- 2026-03-24 09:20
+  - Reviewed the legacy frontend structure to decide what can be reused for the new admin/user UX.
+  - Created `docs/UI_SYSTEM.md` because the project had no UI system summary yet.
+  - Concluded that old information architecture and workflow patterns are reusable, while the old visual system and jQuery-era layout should be replaced.
+- 2026-03-24 13:05
+  - Reviewed the real Razor views and layouts under `BaseSource.AppUI` to map old admin/user UI features from source instead of noisy exported HTML.
+  - Confirmed the old admin UX centers on manager filtering, user/bot/channel/render tables, and modal-based CRUD, while the old user UX centers on a combined create-job + render-history screen with live status and link validation.
+  - Updated project memory to reflect the new planning direction: central control-plane VPS, distributed worker VPS pool, and end-user self-service YouTube OAuth connection.
+- 2026-03-25 14:30
+  - Redesigned all Admin views and Login page to an Elevated SaaS dashboard style.
+  - Implemented badge KPI strips, frosted glass effects, modern action buttons across `Channel`, `Render`, `User`, `ManagerBOT` views without modifying existing backend logic or JS functions.

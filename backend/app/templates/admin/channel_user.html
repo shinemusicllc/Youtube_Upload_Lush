@@ -1,0 +1,108 @@
+{% extends "admin/_layout.html" %}
+
+{% block content %}
+<section class="space-y-6">
+    {% include "admin/_admin_notice.html" %}
+
+    <div class="panel p-5">
+        <div class="flex items-start gap-3">
+            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50">
+                <i data-lucide="link-2" class="h-4.5 w-4.5 text-brand-600"></i>
+            </div>
+            <div>
+                <h2 class="section-title">Thêm kênh cho người dùng {{ dashboard.target_user.username }}</h2>
+                <p class="section-note">Bật hoặc thu hồi quyền truy cập kênh cho user theo đúng flow quản trị cũ.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel overflow-hidden">
+        <div class="flex items-center justify-between gap-4 border-b border-slate-200/80 px-5 py-4">
+            <div>
+                <h3 class="section-title">Danh sách quyền kênh</h3>
+                <p class="section-note">Mỗi hàng cho biết user đang có quyền với kênh nào và cho phép đổi trạng thái ngay.</p>
+            </div>
+            <a href="/admin/user/index" class="action-btn action-btn-slate">
+                <i data-lucide="arrow-left" class="h-3.5 w-3.5"></i>
+                Quay lại user
+            </a>
+        </div>
+
+        <div class="table-shell">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th class="w-14">STT</th>
+                        <th>Kênh</th>
+                        <th>OAuth</th>
+                        <th>BOT</th>
+                        <th>Nhóm</th>
+                        <th>Trạng thái</th>
+                        <th>Quyền của user</th>
+                        <th class="text-right">Tác vụ</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for channel in dashboard.channels %}
+                    <tr>
+                        <td class="table-mono text-slate-500">{{ channel.index }}</td>
+                        <td>
+                            <div class="flex min-w-[250px] items-center gap-3">
+                                <div class="avatar-tile">
+                                    <img src="{{ channel.avatar_url }}" alt="{{ channel.name }}">
+                                </div>
+                                <div class="min-w-0">
+                                    <p class="truncate text-[13px] font-semibold text-slate-900">{{ channel.name }}</p>
+                                    <a href="{{ channel.channel_link }}" target="_blank" rel="noreferrer" class="table-meta table-mono inline-flex max-w-full items-center gap-1 truncate text-brand-700 hover:text-brand-800">
+                                        <i data-lucide="external-link" class="h-3.5 w-3.5"></i>
+                                        {{ channel.channel_id }}
+                                    </a>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="table-mono text-slate-700">{{ channel.gmail }}</td>
+                        <td class="text-[12px] font-semibold text-slate-800">{{ channel.worker_name }}</td>
+                        <td class="text-[12px] text-slate-600">{{ channel.group }}</td>
+                        <td><span class="{{ channel.status_class }}">{{ channel.status_label }}</span></td>
+                        <td>
+                            {% if channel.is_used %}
+                            <span class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold text-emerald-700">Đang dùng</span>
+                            {% else %}
+                            <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-600">Chưa cấp</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="flex items-center justify-end gap-2">
+                                <form method="post" action="/admin/channel/updateuserchannel" class="inline-flex">
+                                    <input type="hidden" name="userId" value="{{ dashboard.target_user.id }}">
+                                    <input type="hidden" name="username" value="{{ dashboard.target_user.username }}">
+                                    <input type="hidden" name="channelId" value="{{ channel.id }}">
+                                    <button type="submit" class="action-btn {% if channel.is_used %}action-btn-rose{% else %}action-btn-emerald{% endif %}">
+                                        <i data-lucide="{% if channel.is_used %}x-circle{% else %}check-circle-2{% endif %}" class="h-3.5 w-3.5"></i>
+                                        {% if channel.is_used %}Dừng{% else %}Thêm{% endif %}
+                                    </button>
+                                </form>
+                                <a href="/admin/channel/users?channelId={{ channel.id }}&channelName={{ channel.name | urlencode }}" class="action-btn action-btn-primary">
+                                    <i data-lucide="users" class="h-3.5 w-3.5"></i>
+                                    DS User
+                                </a>
+                                <form method="post" action="/admin/channel/updateprofile" class="inline-flex">
+                                    <input type="hidden" name="channelId" value="{{ channel.id }}">
+                                    <input type="hidden" name="redirect_to" value="/admin/channel/user">
+                                    <input type="hidden" name="userId" value="{{ dashboard.target_user.id }}">
+                                    <input type="hidden" name="username" value="{{ dashboard.target_user.username }}">
+                                    <button type="submit" class="action-btn action-btn-amber">
+                                        <i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>
+                                        Cập nhật
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+{% endblock %}

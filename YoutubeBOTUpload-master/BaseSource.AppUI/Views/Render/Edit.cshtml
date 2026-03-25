@@ -1,0 +1,90 @@
+﻿@using BaseSource.ViewModels.Render;
+@model RenderUpdateDto
+@{
+    ViewData["Title"] = "Chỉnh sửa Render";
+}
+
+<section class="section">
+    <div class="section-header">
+        <h1>Cấu hình</h1>
+        <div class="section-header-breadcrumb">
+            <div class="breadcrumb-item active"><a href="#">Dashboard</a></div>
+            <div class="breadcrumb-item"><a href="#">Cấu hình</a></div>
+            <div class="breadcrumb-item">@ViewData["Title"]</div>
+        </div>
+    </div>
+    <div class="section-body">
+        <div class="row">
+            <div class="col-12 col-md-12 col-lg-12">
+
+                <div class="card">
+                    <form asp-action="Edit" class="needs-validation" novalidate="">
+                        <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+                        <div class="card-header">
+                            <h4>Cấu hình</h4>
+                        </div>
+                        <div class="card-body">
+                            <div class="section-title">Cấu hình Render</div>
+
+
+                            <div class="form-group">
+                                <label>Link video Intro</label>
+                                <input asp-for="Intro" placeholder="Đặt tên để gợi nhớ" class="form-control">
+                                <span asp-validation-for="Intro" class="text-danger"></span>
+                            </div>
+
+
+
+                            <div class="form-group">
+                                <label>Link video loop <span class="text-danger"> * Bắt buộc</span> </label>
+                                <input class="form-control" required asp-for="VideoLoop" rows="1" />
+                                <span asp-validation-for="VideoLoop" class="text-danger"></span>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Link audio loop</label>
+                                <input class="form-control" asp-for="AudioLoop" rows="1" />
+                                <span asp-validation-for="AudioLoop" class="text-danger"></span>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Link Outro</label>
+                                <input class="form-control" name="Video" asp-for="Outtro" id="linkVideo" required />
+                                <span asp-validation-for="Outtro" class="text-danger"></span>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Thời gian Render</label>
+                                <input class="form-control" name="Video" asp-for="TimeRender" id="linkVideo" required />
+                                <span asp-validation-for="TimeRender" class="text-danger"></span>
+                            </div>
+
+                            <div class="form-group">
+                                <label>Tên video upload</label>
+                                <input class="form-control" name="Video" asp-for="VideoName" id="linkVideo" required />
+                                <span asp-validation-for="VideoName" class="text-danger"></span>
+                            </div>
+
+                        </div>
+                        <div class="card-footer text-left">
+                            <button class="btn btn-primary">Cập nhật</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+
+    </div>
+</section>
+@section Scripts{
+    <script>
+        function myFunction() {
+            $('#StartTimeLive').val('');
+            $('#EndTimeLive').val('');
+        }
+
+    </script>
+}
+
+

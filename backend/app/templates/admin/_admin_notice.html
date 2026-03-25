@@ -1,0 +1,8 @@
+{% if dashboard.notice %}
+<div class="notice {% if dashboard.notice_level == 'error' %}notice-error{% else %}notice-success{% endif %}">
+    <i data-lucide="{% if dashboard.notice_level == 'error' %}triangle-alert{% else %}badge-check{% endif %}" class="h-4 w-4 shrink-0"></i>
+    <div class="min-w-0">
+        <p class="font-medium">{{ dashboard.notice }}</p>
+    </div>
+</div>
+{% endif %}
