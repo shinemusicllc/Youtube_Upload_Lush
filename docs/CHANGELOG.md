@@ -241,3 +241,10 @@
 - Fixed: Loai bo nghi van “da push chua” bang cach xac nhan `origin/main` trung local HEAD; dong thoi chi ro file nao tren VPS con lech de sync co chu dich.
 - Affected files: `docs/WORKLOG.md`, `docs/CHANGELOG.md`
 - Impact/Risk: Thap; khong doi runtime, chi cap nhat git state va ket qua audit dong bo deployment.
+
+### 2026-03-26 21:35 - Sync host and worker-02 to current main
+- Added: Rollout co chu dich cac file con lech len host app va `worker-02`.
+- Changed: Host restart lai `youtube-upload-web.service`; `worker-02` restart lai `youtube-upload-worker.service` nhung van giu safety gate tat.
+- Fixed: Trang thai deployment tren VPS da dong bo voi local/GitHub o cac file da audit, khong con tinh trang host va worker-02 lech version.
+- Affected files: `backend/app/store.py`, `backend/app/routers/api_user.py`, `workers/agent/config.py`, `workers/agent/control_plane.py`, `workers/agent/job_runner.py`, `scripts/bootstrap_worker.sh`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`
+- Impact/Risk: Thap-trung binh; restart service co nhiep ngat ngan, nhung health/public va worker state da duoc verify sau sync.

@@ -126,3 +126,5 @@
 - [x] Them co che client-side de tu xoa `notice` va `notice_level` khoi URL sau khi user dashboard render xong, rollout `user_dashboard.js` len host va verify public health van `ok`.
 - [x] Commit local workspace thanh `768cc1a Add YouTube upload pipeline and harden host runtime` va push len `origin/main`; xac nhan `git ls-remote origin refs/heads/main` trung commit moi.
 - [x] Audit dong bo code giua local/GitHub/VPS bang hash file: host lech `backend/app/store.py` va `backend/app/routers/api_user.py`; `worker-01` khop toan bo file da doi chieu; `worker-02` lech `workers/agent/config.py`, `workers/agent/control_plane.py`, `workers/agent/job_runner.py`, `scripts/bootstrap_worker.sh`.
+- [x] Dong bo nốt file lech len host (`store.py`, `api_user.py`) va `worker-02` (`config.py`, `control_plane.py`, `job_runner.py`, `bootstrap_worker.sh`), restart service tuong ung va verify health/service `active`.
+- [x] Doi chieu lai hash sau sync: host va `worker-02` da khop local/GitHub o cac file truoc do bi lech; `worker-02` van giu `WORKER_EXECUTE_JOBS=false` va `WORKER_UPLOAD_TO_YOUTUBE=false`.
