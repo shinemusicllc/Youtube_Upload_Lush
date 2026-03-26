@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from ..schemas import (
@@ -135,3 +135,28 @@ async def get_worker_job_youtube_target(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     return payload.model_dump(mode="json")
+
+
+@router.post("/workers/jobs/{job_id}/thumbnail")
+async def upload_worker_job_thumbnail(
+    job_id: str,
+    request: Request,
+    x_worker_id: str = Header(...),
+    x_worker_secret: str = Header(...),
+    x_file_name: str = Header(default="preview.jpg"),
+    content_type: str | None = Header(default=None),
+):
+    payload = await request.body()
+    try:
+        return store.store_worker_job_preview_thumbnail(
+            job_id=job_id,
+            worker_id=x_worker_id,
+            shared_secret=x_worker_secret,
+            file_name=x_file_name,
+            content_type=content_type,
+            payload=payload,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="KhÃ´ng tÃ¬m tháº¥y job.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc

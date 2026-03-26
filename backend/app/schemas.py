@@ -19,7 +19,6 @@ class UserSummary(BaseModel):
     username: str
     display_name: str
     role: Role
-    password: str | None = None
     manager_id: str | None = None
     manager_name: str | None = None
     created_at: datetime | None = None
@@ -130,6 +129,7 @@ class RenderJobRecord(BaseModel):
     source_label: str
     source_file_name: str | None = None
     thumbnail_url: str | None = None
+    thumbnail_path: str | None = None
     can_cancel: bool = True
     assets: list[JobAsset] = Field(default_factory=list)
 
@@ -188,6 +188,7 @@ class UploadSessionCreateRequest(BaseModel):
 
 class UploadSessionRecord(BaseModel):
     session_id: str
+    owner_user_id: str | None = None
     slot: Literal["intro", "video_loop", "audio_loop", "outro"]
     file_name: str
     content_type: str | None = None

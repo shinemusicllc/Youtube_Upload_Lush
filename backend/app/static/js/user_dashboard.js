@@ -2,9 +2,26 @@
   const renderTable = document.querySelector(".render-table");
   const renderTableHeaders = renderTable ? Array.from(renderTable.querySelectorAll("thead th")) : [];
   const renderTableBody = renderTable ? renderTable.querySelector("tbody") : null;
-  const renderHeaderLabels = ["STT", "Thông tin job", "Kênh", "BOT", "Tiến độ", "Timeline", "Trạng thái", "Tác vụ"];
-  const originalRenderRows = renderTableBody ? Array.from(renderTableBody.querySelectorAll("tr")) : [];
+  const renderHeaderLabels = ["STT", "Thông tin job", "Kênh", "VPS", "Tiến độ", "Timeline", "Trạng thái", "Tác vụ"];
+  let originalRenderRows = renderTableBody ? Array.from(renderTableBody.querySelectorAll("tr")) : [];
   const renderSortState = { index: null, direction: "asc" };
+  const renderSearchInput = document.getElementById("jobSearchInput");
+  const dashboardSeedNode = document.getElementById("dashboard-seed");
+  let liveRefreshHandle = null;
+  let liveRefreshInFlight = false;
+  let lastLivePayloadSignature = "";
+
+  const escapeHtml = (value) =>
+    String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+
+  const syncOriginalRows = () => {
+    originalRenderRows = renderTableBody ? Array.from(renderTableBody.querySelectorAll("tr")) : [];
+  };
 
   const showFormMessage = (message, type = "info") => {
     const node = document.getElementById("jobFormMessage");
@@ -76,11 +93,12 @@
     if (!channelSelect) return;
 
     const channelTrigger = channelSelect.querySelector(".channel-select-trigger");
-    const channelAvatar = channelSelect.querySelector(".channel-select-avatar");
+    const channelAvatar = channelSelect.querySelector(".channel-select-trigger-avatar");
     const channelValue = channelSelect.querySelector(".channel-select-value");
+    const channelMeta = channelSelect.querySelector(".channel-select-meta");
     const channelOptions = Array.from(channelSelect.querySelectorAll(".channel-option"));
     const channelInput = channelSelect.querySelector("#selectedChannel");
-    if (!channelTrigger || !channelAvatar || !channelValue || !channelInput) return;
+    if (!channelTrigger || !channelAvatar || !channelValue || !channelMeta || !channelInput) return;
 
     const setChannelOpen = (open) => {
       channelSelect.dataset.open = open ? "true" : "false";
@@ -90,13 +108,21 @@
     const setChannelValue = (option) => {
       channelValue.textContent = option.dataset.label || "";
       channelValue.classList.toggle("is-placeholder", option.dataset.value === "");
+      channelMeta.textContent = option.dataset.meta || "";
+      channelMeta.classList.toggle("is-hidden", !option.dataset.meta || option.dataset.value === "");
       channelInput.value = option.dataset.value || "";
-      if (option.dataset.avatar) {
+      const avatarUrl = (option.dataset.avatarUrl || "").trim();
+      if (avatarUrl) {
+        channelAvatar.innerHTML = `<img src="${avatarUrl}" alt="${option.dataset.label || ""}" class="w-full h-full rounded-[inherit] object-cover" loading="lazy" referrerpolicy="no-referrer">`;
+        channelAvatar.className = "channel-select-trigger-avatar channel-select-avatar channel-avatar-media overflow-hidden";
+      } else if (option.dataset.avatar) {
+        channelAvatar.innerHTML = "";
         channelAvatar.textContent = option.dataset.avatar;
-        channelAvatar.className = `channel-select-avatar ${option.dataset.avatarClass || ""}`;
+        channelAvatar.className = `channel-select-trigger-avatar channel-select-avatar ${option.dataset.avatarClass || ""}`;
       } else {
+        channelAvatar.innerHTML = "";
         channelAvatar.textContent = "";
-        channelAvatar.className = "channel-select-avatar is-hidden";
+        channelAvatar.className = "channel-select-trigger-avatar channel-select-avatar is-hidden";
       }
       channelOptions.forEach((item) => {
         const active = item === option;
@@ -147,51 +173,264 @@
   };
 
   const initFileInputs = () => {
-    const assetFieldBySlot = {
-      intro: "introAssetId",
-      video_loop: "videoLoopAssetId",
-      audio_loop: "audioLoopAssetId",
-      outro: "outroAssetId",
-    };
-    const defaultStatus = "Có thể nhập link hoặc chọn file local.";
-
-    const setSlotStatus = (slot, message, tone = "neutral") => {
-      const node = document.querySelector(`[data-upload-status="${slot}"]`);
-      if (!node) return;
-      node.className = "mt-1.5 text-[11px]";
-      node.classList.add(
-        tone === "error"
-          ? "text-rose-600"
-          : tone === "success"
-            ? "text-emerald-600"
-            : tone === "uploading"
-              ? "text-brand-600"
-              : "text-slate-400"
-      );
-      node.textContent = message;
-    };
-
-    document.querySelectorAll(".file-input").forEach((input) => {
-      input.addEventListener("change", (event) => {
-        const targetId = event.target.getAttribute("data-target");
-        const file = event.target.files?.[0];
-        const slot = event.target.name.replace("_file", "");
-        if (!targetId) return;
-        const inputEl = document.getElementById(targetId);
-        if (inputEl && file) {
-          inputEl.value = file.name;
-        }
-        const hiddenAssetField = document.getElementById(assetFieldBySlot[slot]);
-        if (hiddenAssetField) {
-          hiddenAssetField.value = "";
-        }
-        if (file) {
-          setSlotStatus(slot, `Sẵn sàng upload: ${file.name}`, "neutral");
-        } else {
-          setSlotStatus(slot, defaultStatus, "neutral");
+    document.querySelectorAll("[data-upload-trigger]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const state = button.dataset.state || "idle";
+        if (state !== "idle") return;
+        const slot = button.getAttribute("data-upload-trigger");
+        const input = slot ? document.querySelector(`[data-upload-input="${slot}"]`) : null;
+        if (input instanceof HTMLInputElement) {
+          input.click();
         }
       });
     });
+  };
+
+  const applyRenderSearch = () => {
+    if (!renderTableBody || !renderSearchInput) return;
+    const query = renderSearchInput.value.trim().toLowerCase();
+    Array.from(renderTableBody.querySelectorAll("tr")).forEach((row) => {
+      const visible = row.innerText.toLowerCase().includes(query);
+      row.classList.toggle("hidden", !visible);
+    });
+  };
+
+  const applyRenderSort = () => {
+    if (!renderTableBody || renderSortState.index === null) return;
+    const rows = [...originalRenderRows].sort((rowA, rowB) => {
+      const valueA = getRenderSortValue(rowA, renderSortState.index);
+      const valueB = getRenderSortValue(rowB, renderSortState.index);
+      if (valueA === valueB) return 0;
+      const comparison = valueA > valueB ? 1 : -1;
+      return renderSortState.direction === "asc" ? comparison : -comparison;
+    });
+    renderTableBody.replaceChildren(...rows);
+    syncOriginalRows();
+  };
+
+  const renderJobPreviewMarkup = (job) => {
+    if (job.preview_url) {
+      if (job.preview_kind === "image") {
+        return `
+          <div class="w-24 aspect-[4/3] bg-slate-100 border border-slate-200 rounded-xl relative shrink-0 overflow-hidden">
+            <img src="${escapeHtml(job.preview_url)}" alt="${escapeHtml(job.title)}" class="job-preview-media" loading="lazy" referrerpolicy="no-referrer">
+            <div class="absolute inset-x-0 bottom-0 h-[2px] bg-brand-600"></div>
+          </div>
+        `;
+      }
+      return `
+        <div class="w-24 aspect-[4/3] bg-slate-100 border border-slate-200 rounded-xl relative shrink-0 overflow-hidden">
+          <video class="job-preview-media" src="${escapeHtml(job.preview_url)}" muted playsinline preload="metadata"></video>
+          <div class="absolute inset-x-0 bottom-0 h-[2px] bg-brand-600"></div>
+        </div>
+      `;
+    }
+
+    if (job.icon) {
+      return `
+        <div class="w-24 aspect-[4/3] bg-slate-100 border border-slate-200 rounded-xl relative shrink-0 flex items-center justify-center">
+          <i data-lucide="${escapeHtml(job.icon)}" class="w-6 h-6 ${escapeHtml(job.icon_class || "")}"></i>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="w-24 aspect-[4/3] bg-slate-900 rounded-xl relative border border-slate-800 flex justify-center items-center overflow-hidden shrink-0">
+        <div class="text-[7px] text-white/80 font-mono">${escapeHtml(job.preview_text || "Preview")}</div>
+        <div class="absolute bottom-0 w-full h-[2px] bg-brand-600"></div>
+      </div>
+    `;
+  };
+
+  const renderChannelAvatarMarkup = (job) => {
+    if (job.channel_avatar_url) {
+      return `<img src="${escapeHtml(job.channel_avatar_url)}" alt="${escapeHtml(job.channel_name)}" class="channel-avatar-media w-7 h-7 rounded-[6px] object-cover shrink-0" loading="lazy" referrerpolicy="no-referrer">`;
+    }
+    return `<div class="w-7 h-7 bg-emerald-800 text-white rounded-[4px] flex items-center justify-center text-[10px] font-bold shrink-0">${escapeHtml(job.channel_avatar || "?")}</div>`;
+  };
+
+  const renderJobActionsMarkup = (job) => `
+    <div class="flex flex-nowrap items-center justify-end gap-2 whitespace-nowrap">
+      ${job.youtube_watch_url ? `
+        <a href="${escapeHtml(job.youtube_watch_url)}" target="_blank" rel="noopener noreferrer" class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-sky-700 bg-sky-50 border border-sky-200 rounded-lg hover:bg-sky-100 hover:text-sky-800 hover:shadow-sm transition-all" title="Mở YouTube">
+          <i data-lucide="external-link" class="w-3 h-3"></i> Xem
+        </a>
+      ` : ""}
+      <button type="button" class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 rounded-lg hover:bg-emerald-100 hover:text-emerald-900 hover:shadow-sm transition-all" title="Sửa"><i data-lucide="edit-2" class="w-3 h-3"></i> Sửa</button>
+      ${job.can_cancel ? `
+        <button type="button" data-job-action="cancel" data-job-id="${escapeHtml(job.id)}" class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 hover:text-amber-800 hover:shadow-sm transition-all" title="Huỷ"><i data-lucide="x-circle" class="w-3 h-3"></i> Huỷ</button>
+      ` : ""}
+      <button type="button" data-job-action="delete" data-job-id="${escapeHtml(job.id)}" class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 hover:text-rose-800 hover:shadow-sm transition-all" title="Xóa"><i data-lucide="trash" class="w-3 h-3"></i> Xóa</button>
+    </div>
+  `;
+
+  const renderJobRowMarkup = (job) => `
+    <tr class="hover:bg-slate-50 transition-colors group" data-job-id="${escapeHtml(job.id)}">
+      <td class="px-3 py-5 text-center font-mono text-xs text-slate-500">${escapeHtml(job.index)}</td>
+      <td class="pl-3 pr-5 py-5 align-middle">
+        <div class="flex items-end gap-4 min-w-0">
+          ${renderJobPreviewMarkup(job)}
+          <div class="min-w-0 flex-1 pb-0.5">
+            <p class="text-[10px] font-semibold tracking-[0.12em] uppercase ${escapeHtml(job.kind_class)}">${escapeHtml(job.kind)}</p>
+            <p class="mt-1 font-semibold ${job.kind === "Upload" ? "text-violet-700" : "text-brand-700"} text-[15px] leading-snug truncate" title="${escapeHtml(job.title)}">${escapeHtml(job.title)}</p>
+            <p class="mt-1 text-[11px] text-slate-600 font-mono truncate" title="${escapeHtml(`${job.meta || ""}${job.job_id || ""}`)}">${escapeHtml(job.meta)} <span class="${job.kind === "Upload" ? "text-violet-500" : "text-brand-500"}">${escapeHtml(job.job_id)}</span></p>
+            ${job.description ? `<p class="mt-1 text-[11px] text-slate-500 truncate" title="${escapeHtml(job.description)}">${escapeHtml(job.description)}</p>` : ""}
+          </div>
+        </div>
+      </td>
+      <td class="px-5 py-4 align-middle">
+        <div class="flex items-center gap-3">
+          ${renderChannelAvatarMarkup(job)}
+          <div class="min-w-0">
+            <p class="text-[12px] font-bold text-slate-900 leading-none mb-1 truncate">${escapeHtml(job.channel_name)}</p>
+            <p class="text-[10px] text-emerald-600 font-medium">${escapeHtml(job.queue_label)}</p>
+          </div>
+        </div>
+      </td>
+      <td class="px-5 py-4 align-middle">
+        <div class="min-w-0">
+          <p class="font-bold text-[12px] text-slate-900 leading-none mb-1 truncate">${escapeHtml(job.bot)}</p>
+          <p class="text-[10px] text-brand-600 font-mono truncate">${escapeHtml(job.bot_meta || job.owner || "-")}</p>
+        </div>
+      </td>
+      <td class="progress-cell px-6 pt-3 pb-3">
+        <div class="w-[118px] mx-auto flex flex-col justify-start gap-1 pt-0">
+          <div style="margin-top: 6px;">
+            <div class="flex items-center justify-between gap-2 text-[9px] font-mono font-semibold uppercase tracking-[0.08em] text-emerald-700">
+              <span>Render</span>
+              <span>${escapeHtml(job.render_progress)}%</span>
+            </div>
+            <div class="mt-0.5 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+              <div class="h-full bg-emerald-500" style="width: ${Number(job.render_progress) || 0}%;"></div>
+            </div>
+          </div>
+          <div style="margin-top: 1px;">
+            <div class="flex items-center justify-between gap-2 text-[9px] font-mono font-semibold uppercase tracking-[0.08em] text-amber-700">
+              <span>Upload</span>
+              <span>${escapeHtml(job.upload_progress)}%</span>
+            </div>
+            <div class="mt-0.5 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+              <div class="h-full bg-amber-500" style="width: ${Number(job.upload_progress) || 0}%;"></div>
+            </div>
+          </div>
+        </div>
+      </td>
+      <td class="px-6 py-4 align-middle text-[10px] text-slate-500 font-mono leading-relaxed">
+        <p class="truncate"><span class="text-slate-500">Tạo:</span> <span class="text-slate-700">${escapeHtml(job.created_at)}</span></p>
+        <p class="truncate mt-0.5"><span class="text-slate-500">Render:</span> <span class="text-slate-700">${escapeHtml(job.render_at)}</span></p>
+        <p class="truncate mt-0.5"><span class="text-slate-500">Upload:</span> <span class="text-slate-700">${escapeHtml(job.uploaded_at)}</span></p>
+      </td>
+      <td class="px-6 py-4 align-middle">
+        <span class="inline-flex justify-center items-center px-2.5 py-1 ${escapeHtml(job.status_class)} text-[10px] font-bold border rounded-full whitespace-nowrap">${escapeHtml(job.status)}</span>
+      </td>
+      <td class="px-5 py-4 align-middle text-right whitespace-nowrap">
+        ${renderJobActionsMarkup(job)}
+      </td>
+    </tr>
+  `;
+
+  const updateRenderDashboard = (payload) => {
+    if (!payload || !renderTableBody) return;
+
+    if (Array.isArray(payload.kpis)) {
+      payload.kpis.forEach((kpi, index) => {
+        const card = document.querySelector(`[data-kpi-index="${index}"]`);
+        if (!card) return;
+        const valueNode = card.querySelector("[data-kpi-value]");
+        const accentNode = card.querySelector("[data-kpi-accent]");
+        const barNode = card.querySelector("[data-kpi-bar]");
+        if (valueNode) {
+          valueNode.textContent = kpi.value;
+          valueNode.className = `text-[28px] font-display font-bold ${kpi.value_class || kpi.accent_class} leading-none tracking-tight`;
+        }
+        if (accentNode) {
+          accentNode.textContent = kpi.accent;
+          accentNode.className = `inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold ${kpi.accent_badge_class}`;
+        }
+        if (barNode) {
+          barNode.className = `absolute bottom-0 left-1/2 -translate-x-1/2 w-12 h-[3px] rounded-full ${kpi.bar_class}`;
+        }
+      });
+    }
+
+    if (Array.isArray(payload.render_tabs)) {
+      payload.render_tabs.forEach((tab, index) => {
+        const tabButton = document.querySelector(`[data-render-tab-index="${index}"]`);
+        if (!tabButton) return;
+        tabButton.textContent = `${tab.label} (${tab.count})`;
+      });
+    }
+
+    const summaryNode = document.getElementById("renderSummaryText");
+    if (summaryNode) {
+      summaryNode.textContent = payload.render_summary || "";
+    }
+
+    renderTableBody.innerHTML = Array.isArray(payload.render_jobs)
+      ? payload.render_jobs.map((job) => renderJobRowMarkup(job)).join("")
+      : "";
+
+    syncOriginalRows();
+    applyRenderSort();
+    applyRenderSearch();
+    initJobActions();
+    initJobPreviewVideos();
+    if (window.lucide) window.lucide.createIcons();
+  };
+
+  const buildLivePayloadSignature = (payload) => {
+    if (!payload) return "";
+    const compact = {
+      kpis: Array.isArray(payload.kpis)
+        ? payload.kpis.map((item) => [item.value, item.accent, item.value_class, item.bar_class])
+        : [],
+      render_tabs: Array.isArray(payload.render_tabs)
+        ? payload.render_tabs.map((item) => [item.label, item.count, item.active])
+        : [],
+      render_summary: payload.render_summary || "",
+      render_jobs: Array.isArray(payload.render_jobs)
+        ? payload.render_jobs.map((job) => [
+            job.id,
+            job.status,
+            job.status_class,
+            job.render_progress,
+            job.upload_progress,
+            job.created_at,
+            job.render_at,
+            job.uploaded_at,
+            job.queue_label,
+            job.bot,
+            job.owner,
+            job.preview_url,
+            job.channel_avatar_url,
+            job.youtube_watch_url,
+            job.can_cancel,
+          ])
+        : [],
+    };
+    return JSON.stringify(compact);
+  };
+
+  const pollLiveDashboard = async () => {
+    if (liveRefreshInFlight) return;
+    liveRefreshInFlight = true;
+    try {
+      const response = await fetch("/api/user/dashboard/live", {
+        headers: { Accept: "application/json", "Cache-Control": "no-cache" },
+      });
+      if (!response.ok) return;
+      const payload = await response.json();
+      const nextSignature = buildLivePayloadSignature(payload);
+      if (nextSignature && nextSignature === lastLivePayloadSignature) {
+        return;
+      }
+      lastLivePayloadSignature = nextSignature;
+      updateRenderDashboard(payload);
+    } catch (_error) {
+      // Keep current UI state if polling fails transiently.
+    } finally {
+      liveRefreshInFlight = false;
+    }
   };
 
   const initForm = () => {
@@ -213,6 +452,8 @@
       .filter(Boolean);
     const maxUploadBytes = Number(form.dataset.maxUploadBytes || 0);
     const fallbackChunkBytes = Number(form.dataset.chunkBytes || 8388608);
+    const uploadCircumference = 43.98;
+    const uploadState = new Map();
 
     const setSlotStatus = (slot, message, tone = "neutral") => {
       const node = document.querySelector(`[data-upload-status="${slot}"]`);
@@ -246,6 +487,56 @@
       return `ytlush-upload:${slot}:${file.name}:${file.size}:${file.lastModified}`;
     };
 
+    const getSlotNodes = (slot) => ({
+      trigger: document.querySelector(`[data-upload-trigger="${slot}"]`),
+      ring: document.querySelector(`[data-upload-ring="${slot}"]`),
+      center: document.querySelector(`[data-upload-center="${slot}"]`),
+      input: document.querySelector(`[data-upload-input="${slot}"]`),
+      path: document.querySelector(`[data-upload-slot="${slot}"] input[type="text"]`),
+      asset: document.getElementById(slotToAssetField[slot]),
+    });
+
+    const setUploadVisual = (slot, state, options = {}) => {
+      const { progress = 0 } = options;
+      const nodes = getSlotNodes(slot);
+      if (!(nodes.trigger instanceof HTMLElement)) return;
+      nodes.trigger.dataset.state = state;
+      if (nodes.ring instanceof SVGCircleElement) {
+        const clamped = Math.max(0, Math.min(1, progress));
+        nodes.ring.style.strokeDasharray = String(uploadCircumference);
+        nodes.ring.style.strokeDashoffset = String(uploadCircumference * (1 - clamped));
+      }
+    };
+
+    const clearSlotUpload = async (slot, options = {}) => {
+      const { preservePath = false, preserveStatus = false, skipRemoteAbort = false } = options;
+      const nodes = getSlotNodes(slot);
+      const runtime = uploadState.get(slot);
+
+      if (runtime?.controller) {
+        runtime.controller.abort();
+      }
+
+      if (!skipRemoteAbort && runtime?.sessionId) {
+        try {
+          await fetch(`/api/user/uploads/sessions/${runtime.sessionId}`, { method: "DELETE" });
+        } catch (_error) {
+          // Ignore cleanup failure; UI should still recover locally.
+        }
+      }
+
+      if (runtime?.storageKey) {
+        window.localStorage.removeItem(runtime.storageKey);
+      }
+
+      uploadState.delete(slot);
+      if (nodes.asset) nodes.asset.value = "";
+      if (nodes.input instanceof HTMLInputElement) nodes.input.value = "";
+      if (!preservePath && nodes.path instanceof HTMLInputElement) nodes.path.value = "";
+      if (!preserveStatus) setSlotStatus(slot, defaultStatus, "neutral");
+      setUploadVisual(slot, "idle", { progress: 0 });
+    };
+
     const validateLocalFile = (file) => {
       const extension = `.${String(file.name || "").split(".").pop() || ""}`.toLowerCase();
       if (allowedExtensions.length && !allowedExtensions.includes(extension)) {
@@ -256,11 +547,11 @@
       }
     };
 
-    const getOrCreateUploadSession = async (slot, file) => {
+    const getOrCreateUploadSession = async (slot, file, signal) => {
       const storageKey = buildUploadStorageKey(slot, file);
       const cachedSessionId = window.localStorage.getItem(storageKey);
       if (cachedSessionId) {
-        const statusResponse = await fetch(`/api/user/uploads/sessions/${cachedSessionId}`);
+        const statusResponse = await fetch(`/api/user/uploads/sessions/${cachedSessionId}`, { signal });
         if (statusResponse.ok) {
           const payload = await statusResponse.json();
           if (payload.file_name === file.name || payload.file_name === file.name.replace(/[^A-Za-z0-9._-]+/g, "-")) {
@@ -273,6 +564,7 @@
       const response = await fetch("/api/user/uploads/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal,
         body: JSON.stringify({
           slot,
           file_name: file.name,
@@ -288,7 +580,8 @@
       return { storageKey, session: payload };
     };
 
-    const uploadLocalFile = async (slot, file) => {
+    const uploadLocalFile = async (slot, file, options = {}) => {
+      const { signal, onProgress, onSession } = options;
       validateLocalFile(file);
       const assetField = document.getElementById(slotToAssetField[slot]);
       if (!assetField) {
@@ -296,18 +589,21 @@
       }
       assetField.value = "";
 
-      const { storageKey, session: initialSession } = await getOrCreateUploadSession(slot, file);
+      const { storageKey, session: initialSession } = await getOrCreateUploadSession(slot, file, signal);
       let session = initialSession;
+      onSession?.(session, storageKey);
       if (session.status === "completed" && session.asset_id) {
         assetField.value = session.asset_id;
         setSlotStatus(slot, `Đã sẵn sàng: ${file.name}`, "success");
-        return session.asset_id;
+        onProgress?.(1, session);
+        return { assetId: session.asset_id, session, storageKey };
       }
 
       const chunkBytes = Number(session.chunk_size || fallbackChunkBytes);
       let offset = Number(session.received_bytes || 0);
       while (offset < file.size) {
         const nextChunk = file.slice(offset, Math.min(offset + chunkBytes, file.size));
+        onProgress?.(file.size > 0 ? offset / file.size : 0, session);
         setSlotStatus(
           slot,
           `Đang upload ${file.name}: ${Math.floor((offset / file.size) * 100)}% (${formatBytes(offset)}/${formatBytes(file.size)})`,
@@ -319,6 +615,7 @@
             "Content-Type": "application/octet-stream",
             "x-upload-offset": String(offset),
           },
+          signal,
           body: nextChunk,
         });
         const payload = await response.json();
@@ -326,6 +623,7 @@
           throw new Error(payload.detail || `Upload ${file.name} thất bại.`);
         }
         session = payload;
+        onSession?.(session, storageKey);
         offset = Number(payload.received_bytes || 0);
       }
 
@@ -334,16 +632,109 @@
       }
       assetField.value = session.asset_id;
       window.localStorage.setItem(storageKey, session.session_id);
+      onProgress?.(1, session);
       setSlotStatus(slot, `Hoàn tất: ${file.name} (${formatBytes(file.size)})`, "success");
-      return session.asset_id;
+      return { assetId: session.asset_id, session, storageKey };
     };
+
+    const startSlotUpload = async (slot, file) => {
+      const nodes = getSlotNodes(slot);
+      if (!(nodes.input instanceof HTMLInputElement) || !(nodes.path instanceof HTMLInputElement)) return;
+
+      await clearSlotUpload(slot, { preserveStatus: true, skipRemoteAbort: false });
+      nodes.path.value = file.name;
+      setSlotStatus(slot, `Đang chuẩn bị upload: ${file.name}`, "uploading");
+      setUploadVisual(slot, "uploading", { progress: 0 });
+
+      const controller = new AbortController();
+      uploadState.set(slot, {
+        state: "uploading",
+        controller,
+        sessionId: null,
+        storageKey: null,
+        fileName: file.name,
+      });
+
+      try {
+        const result = await uploadLocalFile(slot, file, {
+          signal: controller.signal,
+          onSession: (session, storageKey) => {
+            const current = uploadState.get(slot) || {};
+            uploadState.set(slot, {
+              ...current,
+              state: session.status === "completed" ? "success" : "uploading",
+              sessionId: session.session_id,
+              storageKey,
+              fileName: file.name,
+            });
+          },
+          onProgress: (progress) => {
+            setUploadVisual(slot, "uploading", { progress });
+          },
+        });
+
+        uploadState.set(slot, {
+          state: "success",
+          controller: null,
+          sessionId: result.session.session_id,
+          storageKey: result.storageKey,
+          fileName: file.name,
+        });
+        nodes.input.value = "";
+        setUploadVisual(slot, "success", { progress: 1 });
+      } catch (error) {
+        if (error?.name === "AbortError") {
+          await clearSlotUpload(slot, { skipRemoteAbort: false });
+          setSlotStatus(slot, "Đã hủy upload file local.", "neutral");
+          return;
+        }
+        await clearSlotUpload(slot, { preservePath: true, skipRemoteAbort: false });
+        setSlotStatus(slot, error.message || "Upload file local thất bại.", "error");
+      }
+    };
+
+    document.querySelectorAll("[data-upload-input]").forEach((input) => {
+      input.addEventListener("change", async (event) => {
+        const target = event.currentTarget;
+        if (!(target instanceof HTMLInputElement)) return;
+        const slot = target.dataset.uploadInput;
+        const file = target.files?.[0];
+        if (!slot || !file) return;
+        await startSlotUpload(slot, file);
+      });
+    });
+
+    document.querySelectorAll("[data-upload-trigger]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const slot = button.getAttribute("data-upload-trigger");
+        if (!slot) return;
+        const state = button.dataset.state || "idle";
+        if (state === "idle") return;
+        await clearSlotUpload(slot, { skipRemoteAbort: false });
+      });
+    });
+
+    document.querySelectorAll("[data-upload-slot] input[type='text']").forEach((input) => {
+      input.addEventListener("input", async (event) => {
+        const target = event.currentTarget;
+        if (!(target instanceof HTMLInputElement)) return;
+        const slotRoot = target.closest("[data-upload-slot]");
+        const slot = slotRoot?.getAttribute("data-upload-slot");
+        if (!slot) return;
+        const assetField = document.getElementById(slotToAssetField[slot]);
+        const runtime = uploadState.get(slot);
+        if ((assetField && assetField.value) || runtime) {
+          await clearSlotUpload(slot, { preservePath: true, skipRemoteAbort: false });
+        }
+      });
+    });
 
     const setSubmitting = (submitting) => {
       submitButton.disabled = submitting;
       submitButton.textContent = submitting ? "Đang tạo..." : "Tạo job render";
     };
 
-    resetButton.addEventListener("click", () => {
+    resetButton.addEventListener("click", async () => {
       form.reset();
       const channelInput = document.getElementById("selectedChannel");
       if (channelInput) {
@@ -353,11 +744,11 @@
       if (placeholderOption) {
         placeholderOption.click();
       }
-      Object.entries(slotToAssetField).forEach(([slot, fieldId]) => {
+      for (const [slot, fieldId] of Object.entries(slotToAssetField)) {
         const field = document.getElementById(fieldId);
         if (field) field.value = "";
-        setSlotStatus(slot, defaultStatus, "neutral");
-      });
+        await clearSlotUpload(slot, { skipRemoteAbort: false });
+      }
       showFormMessage("Đã đặt lại form.", "info");
     });
 
@@ -378,6 +769,11 @@
       const title = String(formData.get("title") || "").trim();
       if (!title) {
         showFormMessage("Tên video là bắt buộc.", "error");
+        return;
+      }
+
+      if ([...uploadState.values()].some((item) => item?.state === "uploading")) {
+        showFormMessage("Đang có file local chưa upload xong. Hoàn tất hoặc hủy upload trước khi tạo job.", "error");
         return;
       }
 
@@ -512,16 +908,9 @@
   };
 
   const initSearch = () => {
-    const input = document.getElementById("jobSearchInput");
-    if (!input || !renderTableBody) return;
-
-    const rows = Array.from(renderTableBody.querySelectorAll("tr"));
-    input.addEventListener("input", () => {
-      const query = input.value.trim().toLowerCase();
-      rows.forEach((row) => {
-        const visible = row.innerText.toLowerCase().includes(query);
-        row.classList.toggle("hidden", !visible);
-      });
+    if (!renderSearchInput || !renderTableBody) return;
+    renderSearchInput.addEventListener("input", () => {
+      applyRenderSearch();
     });
   };
 
@@ -540,8 +929,58 @@
     window.history.replaceState({}, document.title, nextUrl);
   };
 
+  const initTransientNotice = () => {
+    const notice = document.querySelector("[data-transient-notice]");
+    if (!notice) {
+      clearTransientNoticeParams();
+      return;
+    }
+
+    let dismissed = false;
+    const dismiss = () => {
+      if (dismissed) return;
+      dismissed = true;
+      notice.classList.add("opacity-0", "-translate-y-1");
+      window.setTimeout(() => {
+        notice.remove();
+      }, 200);
+      clearTransientNoticeParams();
+    };
+
+    notice.querySelector("[data-notice-close]")?.addEventListener("click", dismiss);
+
+    const autoHideMs = Number(notice.getAttribute("data-notice-autohide") || 0);
+    if (autoHideMs > 0) {
+      window.setTimeout(dismiss, autoHideMs);
+    }
+  };
+
+  const initJobPreviewVideos = () => {
+    document.querySelectorAll(".job-preview-media[src]").forEach((node) => {
+      if (!(node instanceof HTMLVideoElement)) return;
+      node.addEventListener("loadeddata", () => {
+        try {
+          if (node.readyState >= 2) {
+            node.currentTime = Math.min(0.1, Number(node.duration || 0.1));
+          }
+        } catch (_error) {
+          // Ignore preview seek failures; fallback is still acceptable.
+        }
+      }, { once: true });
+    });
+  };
+
   if (window.lucide) {
     window.lucide.createIcons();
+  }
+
+  if (dashboardSeedNode?.textContent) {
+    try {
+      const dashboardSeed = JSON.parse(dashboardSeedNode.textContent);
+      lastLivePayloadSignature = buildLivePayloadSignature(dashboardSeed);
+    } catch (_error) {
+      lastLivePayloadSignature = "";
+    }
   }
 
   renderTableHeaders.forEach((th, index) => {
@@ -551,6 +990,7 @@
   });
 
   bindRenderSortButtons();
+  syncOriginalRows();
   initChannelSelect();
   initFlatpickr();
   initFileInputs();
@@ -559,5 +999,8 @@
   initJobActions();
   initChannelActions();
   initSearch();
-  clearTransientNoticeParams();
+  initJobPreviewVideos();
+  initTransientNotice();
+  pollLiveDashboard();
+  liveRefreshHandle = window.setInterval(pollLiveDashboard, 5000);
 })();

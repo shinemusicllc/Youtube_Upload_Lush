@@ -7,95 +7,490 @@
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Cg fill='%23ff5528'%3E%3Cpath d='M58 22c-7 0-12 5-12 12v116c0 56 45 102 101 102h54c7 0 12-5 12-12s-5-12-12-12h-54c-43 0-77-35-77-78V34c0-7-5-12-12-12z'/%3E%3Cpath d='M106 66c0-5 3-9 8-11 5-2 10-1 14 3l34 35 34-35c3-4 9-5 14-3 5 2 8 6 8 11v109c0 7-5 12-12 12s-12-5-12-12V95l-24 24c-5 5-12 5-17 0l-24-24v80c0 7-5 12-12 12s-12-5-12-12V66z'/%3E%3Crect x='181' y='119' width='14' height='78' rx='7'/%3E%3Ccircle cx='188' cy='205' r='28'/%3E%3C/g%3E%3C/svg%3E">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: "#eef2ff",
+                            100: "#e0e7ff",
+                            200: "#c7d2fe",
+                            300: "#a5b4fc",
+                            400: "#818cf8",
+                            500: "#6b74f0",
+                            600: "#5d67df",
+                            700: "#4b56c9",
+                            800: "#3730a3",
+                            900: "#312e81",
+                        },
+                    },
+                    fontFamily: {
+                        sans: ["Inter", "sans-serif"],
+                        display: ["Be Vietnam Pro", "sans-serif"],
+                    },
+                },
+            },
+        };
+    </script>
+    <script src="https://unpkg.com/lucide@latest"></script>
     <style>
-      body {
-        font-family: Inter, sans-serif;
-        background: #f3f5f9;
-        color: #0f172a;
-      }
+        * {
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        body {
+            min-height: 100vh;
+            background: #f0f2f7;
+            overflow: hidden;
+            position: relative;
+            font-family: Inter, sans-serif;
+            color: #0f172a;
+        }
+
+        .grid-canvas {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            background-image:
+                linear-gradient(rgba(148, 163, 184, 0.1) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(148, 163, 184, 0.1) 1px, transparent 1px);
+            background-size: 60px 60px;
+        }
+
+        .bg-glow {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        .bg-glow::before,
+        .bg-glow::after {
+            content: "";
+            position: absolute;
+            border-radius: 9999px;
+            filter: blur(120px);
+            opacity: 0.35;
+        }
+
+        .bg-glow::before {
+            width: 500px;
+            height: 500px;
+            top: -100px;
+            left: -60px;
+            background: radial-gradient(circle, rgba(93, 103, 223, 0.25) 0%, transparent 70%);
+        }
+
+        .bg-glow::after {
+            width: 420px;
+            height: 420px;
+            right: -40px;
+            bottom: -80px;
+            background: radial-gradient(circle, rgba(139, 92, 246, 0.18) 0%, transparent 70%);
+        }
+
+        .geo-shapes {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            overflow: hidden;
+        }
+
+        .geo-rect {
+            position: absolute;
+            border-radius: 6px;
+        }
+
+        .geo-rect.r1 {
+            width: 340px;
+            height: 260px;
+            bottom: 8%;
+            left: 50%;
+            transform: translateX(-40%);
+            background: rgba(203, 213, 225, 0.25);
+            border: 1px solid rgba(148, 163, 184, 0.15);
+            border-radius: 14px;
+        }
+
+        .geo-rect.r2 {
+            width: 140px;
+            height: 120px;
+            top: 18%;
+            right: 28%;
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(79, 70, 229, 0.07) 100%);
+            border: 1px solid rgba(99, 102, 241, 0.12);
+        }
+
+        .geo-rect.r3 {
+            width: 90px;
+            height: 80px;
+            top: 25%;
+            left: 30%;
+            background: rgba(203, 213, 225, 0.3);
+            border: 1px solid rgba(148, 163, 184, 0.15);
+        }
+
+        .geo-rect.r4 {
+            width: 60px;
+            height: 55px;
+            top: 12%;
+            left: 44%;
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.12) 0%, rgba(99, 102, 241, 0.1) 100%);
+            border: 1px solid rgba(59, 130, 246, 0.15);
+        }
+
+        .geo-rect.r5 {
+            width: 40px;
+            height: 35px;
+            top: 30%;
+            left: 15%;
+            background: rgba(226, 232, 240, 0.5);
+            border: 1px solid rgba(148, 163, 184, 0.12);
+        }
+
+        .geo-rect.r6 {
+            width: 200px;
+            height: 50px;
+            bottom: 18%;
+            left: 48%;
+            background: rgba(226, 232, 240, 0.35);
+            border: 1px solid rgba(148, 163, 184, 0.1);
+            border-radius: 8px;
+        }
+
+        .geo-rect.r7 {
+            width: 50px;
+            height: 45px;
+            top: 38%;
+            right: 18%;
+            background: rgba(226, 232, 240, 0.4);
+            border: 1px solid rgba(148, 163, 184, 0.1);
+        }
+
+        .geo-rect.r8 {
+            width: 420px;
+            height: 320px;
+            top: 15%;
+            left: 20%;
+            background: transparent;
+            border: 1px solid rgba(148, 163, 184, 0.1);
+            border-radius: 12px;
+        }
+
+        .geo-rect.r9 {
+            width: 120px;
+            height: 100px;
+            top: 35%;
+            left: 42%;
+            background: rgba(199, 210, 254, 0.15);
+            border: 1px solid rgba(99, 102, 241, 0.08);
+        }
+
+        .geo-rect.r10 {
+            width: 70px;
+            height: 65px;
+            top: 15%;
+            right: 22%;
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(99, 102, 241, 0.08) 100%);
+            border: 1px solid rgba(59, 130, 246, 0.12);
+        }
+
+        .login-card {
+            background: rgba(255, 255, 255, 0.88);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 0.7);
+            box-shadow:
+                0 1px 3px rgba(15, 23, 42, 0.04),
+                0 4px 16px rgba(15, 23, 42, 0.06),
+                0 20px 48px rgba(15, 23, 42, 0.08);
+            border-radius: 20px;
+            overflow: hidden;
+        }
+
+        .brand-panel {
+            background: linear-gradient(160deg, #1e3a5f 0%, #1a3355 60%, #15294a 100%);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .brand-panel::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background:
+                radial-gradient(circle at 30% 70%, rgba(59, 130, 246, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 70% 30%, rgba(96, 165, 250, 0.08) 0%, transparent 50%);
+        }
+
+        .brand-grid {
+            position: absolute;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(148, 163, 184, 0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(148, 163, 184, 0.05) 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+
+        .brand-rect {
+            position: absolute;
+            border-radius: 4px;
+        }
+
+        .brand-rect.br1 {
+            width: 80px;
+            height: 70px;
+            top: 20%;
+            right: 10%;
+            background: rgba(93, 103, 223, 0.12);
+            border: 1px solid rgba(93, 103, 223, 0.15);
+        }
+
+        .brand-rect.br2 {
+            width: 50px;
+            height: 50px;
+            bottom: 30%;
+            left: 8%;
+            background: rgba(56, 189, 248, 0.08);
+            border: 1px solid rgba(56, 189, 248, 0.1);
+        }
+
+        .brand-rect.br3 {
+            width: 110px;
+            height: 35px;
+            bottom: 15%;
+            right: 15%;
+            background: rgba(148, 163, 184, 0.04);
+            border: 1px solid rgba(148, 163, 184, 0.06);
+            border-radius: 6px;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 13px 44px 13px 44px;
+            background: #f8fafc;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 500;
+            color: #0f172a;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+
+        .form-input::placeholder {
+            color: #94a3b8;
+            font-weight: 400;
+        }
+
+        .form-input:focus {
+            background: #ffffff;
+            border-color: #5d67df;
+            box-shadow: 0 0 0 3px rgba(93, 103, 223, 0.12);
+        }
+
+        .btn-login {
+            width: 100%;
+            padding: 14px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #5d67df 0%, #4f46e5 100%);
+            color: #ffffff;
+            font-weight: 700;
+            font-size: 14px;
+            letter-spacing: 0.02em;
+            border: none;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.25s ease;
+            box-shadow: 0 4px 14px rgba(93, 103, 223, 0.35);
+        }
+
+        .btn-login:hover {
+            box-shadow: 0 8px 24px rgba(93, 103, 223, 0.5);
+            transform: translateY(-1px);
+        }
+
+        .feature-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 11px;
+            font-weight: 600;
+        }
     </style>
 </head>
-<body class="min-h-screen">
-    <div class="grid min-h-screen lg:grid-cols-[320px_minmax(0,1fr)]">
-        <aside class="hidden border-r border-slate-200 bg-white lg:flex lg:flex-col lg:justify-between">
-            <div class="p-10">
-                <div class="flex items-center gap-3">
-                    <div class="flex h-11 w-11 items-center justify-center text-[#ff5528]">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" class="h-11 w-11" aria-hidden="true">
-                            <g fill="currentColor">
-                                <path d="M58 22c-7 0-12 5-12 12v116c0 56 45 102 101 102h54c7 0 12-5 12-12s-5-12-12-12h-54c-43 0-77-35-77-78V34c0-7-5-12-12-12z"/>
-                                <path d="M106 66c0-5 3-9 8-11 5-2 10-1 14 3l34 35 34-35c3-4 9-5 14-3 5 2 8 6 8 11v109c0 7-5 12-12 12s-12-5-12-12V95l-24 24c-5 5-12 5-17 0l-24-24v80c0 7-5 12-12 12s-12-5-12-12V66z"/>
-                                <rect x="181" y="119" width="14" height="78" rx="7"/>
-                                <circle cx="188" cy="205" r="28"/>
-                            </g>
-                        </svg>
+<body class="antialiased">
+    <div class="bg-glow"></div>
+    <div class="grid-canvas"></div>
+    <div class="geo-shapes">
+        <div class="geo-rect r8"></div>
+        <div class="geo-rect r1"></div>
+        <div class="geo-rect r9"></div>
+        <div class="geo-rect r3"></div>
+        <div class="geo-rect r4"></div>
+        <div class="geo-rect r2"></div>
+        <div class="geo-rect r10"></div>
+        <div class="geo-rect r5"></div>
+        <div class="geo-rect r6"></div>
+        <div class="geo-rect r7"></div>
+    </div>
+
+    <div class="relative z-10 flex min-h-screen items-center justify-center px-4 py-12">
+        <div class="login-card flex w-full max-w-[920px] flex-col md:flex-row">
+            <aside class="brand-panel flex w-full shrink-0 flex-col justify-between p-10 text-white md:w-[400px] lg:p-12">
+                <div class="brand-grid"></div>
+                <div class="brand-rect br1"></div>
+                <div class="brand-rect br2"></div>
+                <div class="brand-rect br3"></div>
+
+                <div class="relative z-10">
+                    <div class="mb-14 flex items-center gap-3">
+                        <div class="flex h-11 w-11 shrink-0 items-center justify-center text-[#ff5528]">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" class="h-11 w-11" aria-hidden="true">
+                                <g fill="currentColor">
+                                    <path d="M58 22c-7 0-12 5-12 12v116c0 56 45 102 101 102h54c7 0 12-5 12-12s-5-12-12-12h-54c-43 0-77-35-77-78V34c0-7-5-12-12-12z"/>
+                                    <path d="M106 66c0-5 3-9 8-11 5-2 10-1 14 3l34 35 34-35c3-4 9-5 14-3 5 2 8 6 8 11v109c0 7-5 12-12 12s-12-5-12-12V95l-24 24c-5 5-12 5-17 0l-24-24v80c0 7-5 12-12 12s-12-5-12-12V66z"/>
+                                    <rect x="181" y="119" width="14" height="78" rx="7"/>
+                                    <circle cx="188" cy="205" r="28"/>
+                                </g>
+                            </svg>
+                        </div>
+                        <div>
+                            <div class="font-display text-[17px] font-bold leading-none tracking-tight text-white">Upload YouTube</div>
+                            <p class="mt-1 text-[10px] font-medium uppercase tracking-wide text-slate-400">{{ hero_context_label | default('Control Plane') }}</p>
+                        </div>
                     </div>
-                    <div>
-                        <p class="font-['Be_Vietnam_Pro'] text-[20px] font-bold tracking-tight text-slate-900">Youtube Upload Lush</p>
-                        <p class="mt-1 text-[12px] text-slate-500">Admin workspace</p>
+
+                    <h1 class="font-display text-[30px] font-extrabold leading-[1.15] tracking-tight text-white">
+                        Chào mừng<br>trở lại
+                        <span class="ml-1 mt-1 inline-block h-2 w-2 rounded-full bg-emerald-400 align-top"></span>
+                    </h1>
+                    <p class="mt-4 max-w-[280px] text-[13px] font-medium leading-relaxed text-slate-400">
+                        Hệ thống điều phối render, quản lý upload video tự động lên đa nền tảng.
+                    </p>
+
+                    <div class="mt-10 flex flex-wrap gap-2">
+                        <span class="feature-chip"><i data-lucide="zap" class="h-3 w-3 text-amber-400"></i> Auto Render</span>
+                        <span class="feature-chip"><i data-lucide="cloud-upload" class="h-3 w-3 text-sky-400"></i> Upload</span>
+                        <span class="feature-chip"><i data-lucide="shield-check" class="h-3 w-3 text-emerald-400"></i> OAuth</span>
                     </div>
                 </div>
-            </div>
 
-            <div class="border-t border-slate-200 px-10 py-8">
-                <p class="text-[12px] font-medium text-slate-500">Phan he quan tri</p>
-                <p class="mt-2 text-[14px] leading-6 text-slate-700">Dang nhap bang tai khoan `admin` hoac `manager` de truy cap cac module quan ly user, BOT, kenh va render.</p>
-            </div>
-        </aside>
+                <div class="relative z-10 mt-12">
+                    <div class="flex items-center gap-2.5">
+                        <div class="h-2 w-2 rounded-full bg-emerald-400 shadow-lg shadow-emerald-400/40"></div>
+                        <span class="text-[11px] font-semibold tracking-wide text-slate-500">{{ hero_status_label | default('System Online · Admin Dashboard') }}</span>
+                    </div>
+                </div>
+            </aside>
 
-        <main class="flex items-center justify-center px-6 py-10">
-            <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-[0_12px_32px_rgba(15,23,42,0.05)]">
-                <div>
-                    <p class="text-[12px] font-semibold uppercase tracking-[0.08em] text-slate-400">Dang nhap quan tri</p>
-                    <h1 class="mt-3 font-['Be_Vietnam_Pro'] text-[28px] font-bold tracking-tight text-slate-900">Truy cap control plane</h1>
-                    <p class="mt-2 text-[14px] leading-6 text-slate-500">Giữ nguyên luong admin hien tai, bo sung session that va role enforcement de tiep tuc parity backend.</p>
+            <main class="flex flex-1 flex-col justify-center bg-white p-10 lg:p-14">
+                <div class="mb-10">
+                    <p class="mb-3 text-[11px] font-bold uppercase tracking-widest text-[#ff5528]">{{ login_badge | default('Đăng nhập quản trị') }}</p>
+                    <h2 class="font-display text-[26px] font-bold tracking-tight text-slate-900">{{ login_heading | default('Truy cập hệ thống') }}</h2>
+                    <p class="mt-2 text-[13px] font-medium leading-relaxed text-slate-500">
+                        {{ login_description | default('Nhập thông tin tài khoản admin hoặc manager để tiếp tục.') }}
+                    </p>
                 </div>
 
                 {% if notice %}
-                <div class="mt-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] font-medium text-rose-700">
+                <div class="mb-6 rounded-[14px] border px-4 py-3 text-[13px] font-medium {% if notice_level == 'error' %}border-rose-200 bg-rose-50 text-rose-700{% else %}border-emerald-200 bg-emerald-50 text-emerald-700{% endif %}">
                     {{ notice }}
                 </div>
                 {% endif %}
 
-                <form method="post" action="/admin/login" class="mt-6 space-y-4">
+                <form method="post" action="{{ form_action | default('/admin/login') }}">
                     <input type="hidden" name="next" value="{{ next_url }}">
 
-                    <label class="block">
-                        <span class="mb-2 block text-[12px] font-semibold text-slate-700">UserName</span>
-                        <input
-                            class="h-11 w-full rounded-[10px] border border-slate-300 px-3 text-[14px] text-slate-900 outline-none transition focus:border-[#5d67df] focus:ring-2 focus:ring-[#5d67df]/10"
-                            type="text"
-                            name="username"
-                            placeholder="Nhap username"
-                            required
-                            autofocus
-                        >
-                    </label>
+                    <div class="space-y-5">
+                        <label class="block">
+                            <span class="mb-2 block text-[12px] font-semibold tracking-wide text-slate-600">Tên đăng nhập</span>
+                            <div class="relative">
+                                <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5">
+                                    <i data-lucide="user" class="h-[18px] w-[18px] text-slate-400"></i>
+                                </div>
+                                <input
+                                    type="text"
+                                    name="username"
+                                    value="{{ form_data.username }}"
+                                    class="form-input"
+                                    placeholder="Nhập tài khoản"
+                                    required
+                                    autofocus
+                                >
+                            </div>
+                        </label>
 
-                    <label class="block">
-                        <span class="mb-2 block text-[12px] font-semibold text-slate-700">Password</span>
-                        <input
-                            class="h-11 w-full rounded-[10px] border border-slate-300 px-3 text-[14px] text-slate-900 outline-none transition focus:border-[#5d67df] focus:ring-2 focus:ring-[#5d67df]/10"
-                            type="password"
-                            name="password"
-                            placeholder="Nhap password"
-                            required
-                        >
-                    </label>
-
-                    <div class="flex items-center justify-between gap-3 pt-2">
-                        <a href="/app" class="inline-flex h-11 items-center rounded-[10px] border border-slate-200 px-4 text-[13px] font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900">
-                            Ve workspace user
-                        </a>
-                        <button type="submit" class="inline-flex h-11 items-center rounded-[10px] bg-[#5d67df] px-4 text-[13px] font-semibold text-white transition hover:bg-[#4b56c9]">
-                            Dang nhap
-                        </button>
+                        <label class="block">
+                            <span class="mb-2 block text-[12px] font-semibold tracking-wide text-slate-600">Mật khẩu</span>
+                            <div class="relative">
+                                <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5">
+                                    <i data-lucide="lock" class="h-[18px] w-[18px] text-slate-400"></i>
+                                </div>
+                                <input
+                                    id="admin-login-password"
+                                    type="password"
+                                    name="password"
+                                    class="form-input"
+                                    placeholder="Nhập mật khẩu"
+                                    required
+                                >
+                                <button id="admin-login-toggle" type="button" class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 transition-colors hover:text-slate-600" aria-label="Hiện hoặc ẩn mật khẩu">
+                                    <i data-lucide="eye" class="h-[18px] w-[18px]"></i>
+                                </button>
+                            </div>
+                        </label>
                     </div>
+
+                    <button type="submit" class="btn-login mt-8">
+                        <span>{{ submit_label | default('Đăng nhập hệ thống') }}</span>
+                        <i data-lucide="arrow-right" class="h-4 w-4"></i>
+                    </button>
                 </form>
-            </div>
-        </main>
+
+                <div class="mt-10 flex items-center justify-between gap-4 border-t border-slate-100 pt-6">
+                    {% if switch_href and switch_label %}
+                    <a href="{{ switch_href }}" class="text-[12px] font-semibold text-slate-500 transition-colors hover:text-slate-900">{{ switch_label }}</a>
+                    {% else %}
+                    <span></span>
+                    {% endif %}
+                    <p class="text-right text-[11px] font-medium text-slate-400">© 2026 Upload YouTube</p>
+                </div>
+            </main>
+        </div>
     </div>
+
+    <script>
+        lucide.createIcons();
+
+        const passwordInput = document.getElementById("admin-login-password");
+        const toggleButton = document.getElementById("admin-login-toggle");
+
+        if (passwordInput && toggleButton) {
+            toggleButton.addEventListener("click", () => {
+                const isPassword = passwordInput.type === "password";
+                passwordInput.type = isPassword ? "text" : "password";
+                const icon = toggleButton.querySelector("i");
+                if (icon) {
+                    icon.setAttribute("data-lucide", isPassword ? "eye-off" : "eye");
+                    lucide.createIcons();
+                }
+            });
+        }
+    </script>
 </body>
 </html>

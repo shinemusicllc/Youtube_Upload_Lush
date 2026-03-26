@@ -1,4 +1,4 @@
-# Project Context: YouTube Upload Tool
+﻿# Project Context: YouTube Upload Tool
 
 ## Overview
 Du an dang duoc rebuild lai theo huong `FastAPI + Python backend` va UI HTML/CSS co san, thay vi tiep tuc frontend React/Vite cu.
@@ -51,8 +51,10 @@ Du an dang duoc rebuild lai theo huong `FastAPI + Python backend` va UI HTML/CSS
 - Da sua bug Google Drive downloader tren worker: cac asset co link `/file/d/.../view` gio duoc tai vao thu muc rieng theo `slot`, tranh bi ghi de nhau khi `video_loop` va `audio_loop` cung co ten file tam mac dinh la `view`.
 - `worker-01` da xu ly thanh cong mot job Drive that `job-40a682dd` voi 1 link video + 1 link audio Google Drive, output 60 giay tai `/opt/youtube-upload-lush/worker-data/outputs/job-40a682dd-Worker01-Drive-Real-Links-Retry-20260326.mp4`.
 - Control plane da co route worker-authenticated de worker lay YouTube OAuth upload target theo job/channel; worker da co module upload YouTube bang `refresh token -> resumable upload API`.
-- Rollout hien tai dang khoa upload YouTube bang `WORKER_UPLOAD_TO_YOUTUBE=false` tren ca `worker-01` va `worker-02` cho toi khi host co `GOOGLE_CLIENT_ID/SECRET` hop le va channel da connect refresh token that.
-- Sau khi deploy code upload YouTube, da verify lai luong render khong regression bang job `job-e667631b`, complete thanh cong va tra `worker://...` output nhu ky vong khi upload gate dang tat.
+- Rollout YouTube upload da duoc mo khoa rieng cho `worker-01`; `worker-02` van giu `WORKER_UPLOAD_TO_YOUTUBE=false` de standby. Host/control plane da co `GOOGLE_CLIENT_ID/SECRET` hop le va channel test da co refresh token that.
+- Sau khi deploy code upload YouTube, da verify lai luong render khong regression bang job `job-e667631b`; sau do da rollout upload that tren `worker-01` va upload thanh cong job `job-777d9f0a` len YouTube.
+- User dashboard da duoc tach view-state cho job: `completed` khong con hien chung la `Hoan tat`, ma phan biet ro `Render hoan tat` va `Da upload YouTube` dua tren `output_url` + moc thoi gian upload; timeline hien rieng `Render` va `Upload`.
+- User dashboard da co live endpoint `GET /api/user/dashboard/live`; frontend poll 5 giay/lần de cap nhat KPI, tab count va render queue realtime ma khong can refresh trang.
 - Admin da co:
   - login/logout qua session cookie
   - role gate `admin`, `manager`
@@ -60,3 +62,4 @@ Du an dang duoc rebuild lai theo huong `FastAPI + Python backend` va UI HTML/CSS
   - API/admin contract theo module
   - persistence local bang `backend/app/data/app_state.db`
 - Data target van la `Postgres + Redis`, nhung hien tai local bootstrap dang dung SQLite snapshot de giu state qua restart.
+

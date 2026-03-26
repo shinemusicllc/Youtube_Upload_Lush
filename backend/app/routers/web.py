@@ -11,12 +11,16 @@ from fastapi.templating import Jinja2Templates
 
 from ..auth import (
     AdminSessionUser,
+    AppSessionUser,
     GOOGLE_OAUTH_STATE_SESSION_KEY,
+    clear_app_session,
     clear_admin_session,
+    get_app_session_user,
     get_admin_session_user,
     normalize_manager_filter_ids,
     require_admin_access,
     require_admin_only,
+    set_app_session_user,
     set_admin_session_user,
 )
 from ..store import store
@@ -37,6 +41,58 @@ def _admin_identity_payload(current_user: AdminSessionUser) -> dict:
     }
 
 
+def _app_login_template_payload(
+    *,
+    request: Request,
+    page_title: str,
+    next_url: str,
+    notice: str | None,
+    notice_level: str,
+    form_data: dict[str, str],
+    form_action: str,
+    login_badge: str,
+    login_heading: str,
+    login_description: str,
+    submit_label: str,
+    switch_href: str | None,
+    switch_label: str | None,
+    hero_context_label: str,
+    hero_status_label: str,
+) -> dict[str, object]:
+    return {
+        "request": request,
+        "page_title": page_title,
+        "next_url": next_url,
+        "notice": notice,
+        "notice_level": notice_level,
+        "form_data": form_data,
+        "form_action": form_action,
+        "login_badge": login_badge,
+        "login_heading": login_heading,
+        "login_description": login_description,
+        "submit_label": submit_label,
+        "switch_href": switch_href,
+        "switch_label": switch_label,
+        "hero_context_label": hero_context_label,
+        "hero_status_label": hero_status_label,
+    }
+
+
+def _default_home_for_role(role: str) -> str:
+    return "/app" if role == "user" else "/admin/user/index"
+
+
+def _resolve_login_redirect(role: str, requested_next: str | None) -> str:
+    candidate = (requested_next or "").strip()
+    if role == "user":
+        if candidate.startswith("/app") or candidate.startswith("/auth/google"):
+            return candidate
+        return "/app"
+    if candidate.startswith("/admin"):
+        return candidate
+    return "/admin/user/index"
+
+
 def _render(request: Request, dashboard: dict, status_code: int = 200):
     current_user = getattr(request.state, "admin_user", None) or get_admin_session_user(request)
     if current_user:
@@ -53,6 +109,13 @@ def _redirect_with_notice(path: str, message: str, level: str = "success", **que
     payload = {"notice": message, "notice_level": level}
     payload.update({key: value for key, value in query.items() if value})
     return RedirectResponse(url=f"{path}?{urlencode(payload)}", status_code=303)
+
+
+def _sanitize_next_url(value: str | None, *, default_path: str) -> str:
+    candidate = str(value or "").strip()
+    if not candidate.startswith("/") or candidate.startswith("//"):
+        return default_path
+    return candidate
 
 
 def _resolve_user_id(user_id: str | None = None, username: str | None = None) -> str:
@@ -105,18 +168,94 @@ def _admin_forbidden_redirect(path: str = "/admin/user/index") -> RedirectRespon
 
 
 @router.get("/", response_class=HTMLResponse)
-async def root(
+async def root(request: Request):
+    if get_app_session_user(request):
+        return RedirectResponse(url="/app", status_code=302)
+    if get_admin_session_user(request):
+        return RedirectResponse(url="/admin/user/index", status_code=302)
+    return RedirectResponse(url="/login", status_code=302)
+
+
+@router.get("/login", response_class=HTMLResponse)
+async def app_login_page(
     request: Request,
+    next: str | None = None,
     notice: str | None = None,
-    notice_level: str = "success",
 ):
+    current_app_user = get_app_session_user(request)
+    if current_app_user:
+        return RedirectResponse(url="/app", status_code=302)
+    current_admin_user = get_admin_session_user(request)
+    if current_admin_user:
+        return RedirectResponse(url="/admin/user/index", status_code=302)
+    next_url = _sanitize_next_url(next, default_path="/app")
     return templates.TemplateResponse(
-        "user_dashboard.html",
-        {
-            "request": request,
-            "dashboard": store.get_user_dashboard_view(notice=notice, notice_level=notice_level),
-        },
+        "admin/login.html",
+        _app_login_template_payload(
+            request=request,
+            page_title="Đăng nhập hệ thống",
+            next_url=next_url,
+            notice=notice,
+            notice_level="error" if notice else "success",
+            form_data={"username": ""},
+            form_action="/login",
+            login_badge="Đăng nhập hệ thống",
+            login_heading="Truy cập nền tảng",
+            login_description="Nhập tài khoản một lần. User sẽ vào workspace làm việc, admin hoặc manager sẽ vào khu quản trị.",
+            submit_label="Đăng nhập",
+            switch_href=None,
+            switch_label=None,
+            hero_context_label="Unified Access",
+            hero_status_label="System Online · Unified Access",
+        ),
     )
+
+
+@router.post("/login")
+async def app_login_submit(request: Request):
+    form = await request.form()
+    username = str(form.get("username") or "").strip()
+    password = str(form.get("password") or "").strip()
+    next_url = _sanitize_next_url(form.get("next"), default_path="/app")
+
+    try:
+        session_payload = store.authenticate_login_user(username, password)
+    except ValueError as exc:
+        return templates.TemplateResponse(
+            "admin/login.html",
+            _app_login_template_payload(
+                request=request,
+                page_title="Đăng nhập hệ thống",
+                next_url=next_url,
+                notice=str(exc),
+                notice_level="error",
+                form_data={"username": username},
+                form_action="/login",
+                login_badge="Đăng nhập hệ thống",
+                login_heading="Truy cập nền tảng",
+                login_description="Nhập tài khoản một lần. User sẽ vào workspace làm việc, admin hoặc manager sẽ vào khu quản trị.",
+                submit_label="Đăng nhập",
+                switch_href=None,
+                switch_label=None,
+                hero_context_label="Unified Access",
+                hero_status_label="System Online · Unified Access",
+            ),
+            status_code=400,
+        )
+
+    clear_app_session(request)
+    clear_admin_session(request)
+    if session_payload["role"] == "user":
+        set_app_session_user(request, AppSessionUser(**session_payload))
+    else:
+        set_admin_session_user(request, AdminSessionUser(**session_payload))
+    return RedirectResponse(url=_resolve_login_redirect(session_payload["role"], next_url), status_code=303)
+
+
+@router.post("/logout")
+async def app_logout(request: Request):
+    clear_app_session(request)
+    return RedirectResponse(url="/login", status_code=303)
 
 
 @router.get("/app", response_class=HTMLResponse)
@@ -125,11 +264,21 @@ async def user_dashboard(
     notice: str | None = None,
     notice_level: str = "success",
 ):
+    current_user = get_app_session_user(request)
+    if not current_user and get_admin_session_user(request):
+        return RedirectResponse(url="/admin/user/index", status_code=302)
+    if not current_user:
+        return RedirectResponse(url="/login?next=/app", status_code=302)
+    store.assert_app_session_user(current_user.id, current_user.role)
     return templates.TemplateResponse(
         "user_dashboard.html",
         {
             "request": request,
-            "dashboard": store.get_user_dashboard_view(notice=notice, notice_level=notice_level),
+            "dashboard": store.get_user_dashboard_view(
+                user_id=current_user.id,
+                notice=notice,
+                notice_level=notice_level,
+            ),
         },
     )
 
@@ -141,32 +290,44 @@ async def google_oauth_callback(
     state: str | None = None,
     error: str | None = None,
 ):
+    current_user = get_app_session_user(request)
+    if not current_user:
+        return _redirect_with_notice("/login", "Vui long dang nhap lai de tiep tuc Google OAuth.", "error", next="/app")
+    store.assert_app_session_user(current_user.id, current_user.role)
     expected_state = str(request.session.pop(GOOGLE_OAUTH_STATE_SESSION_KEY, "") or "")
     if error:
-        return _redirect_with_notice("/app", f"Google OAuth bi tu choi: {error}", "error")
+        return _redirect_with_notice("/app", f"Google OAuth b\u1ecb t\u1eeb ch\u1ed1i: {error}", "error")
 
     if not code or not state:
-        return _redirect_with_notice("/app", "Google OAuth callback thieu code hoac state.", "error")
+        return _redirect_with_notice("/app", "Google OAuth callback thi\u1ebfu code ho\u1eb7c state.", "error")
     if not expected_state or state != expected_state:
-        return _redirect_with_notice("/app", "State OAuth khong hop le hoac da het han.", "error")
+        return _redirect_with_notice("/app", "State OAuth kh\u00f4ng h\u1ee3p l\u1ec7 ho\u1eb7c \u0111\u00e3 h\u1ebft h\u1ea1n.", "error")
 
     try:
-        result = store.complete_google_oauth(code=code, base_url=str(request.base_url).rstrip("/"))
+        result = store.complete_google_oauth(
+            user_id=current_user.id,
+            code=code,
+            base_url=str(request.base_url).rstrip("/"),
+        )
     except ValueError as exc:
         return _redirect_with_notice("/app", str(exc), "error")
+    except Exception:
+        return _redirect_with_notice("/app", "OAuth callback g\u1eb7p l\u1ed7i n\u1ed9i b\u1ed9. Ki\u1ec3m tra l\u1ea1i v\u00e0 th\u1eed k\u1ebft n\u1ed1i l\u1ea1i k\u00eanh.", "error")
 
     return _redirect_with_notice(
         "/app",
-        f"Da ket noi kenh {result['channel_name']} ({result['youtube_channel_id']}).",
+        f"\u0110\u00e3 k\u1ebft n\u1ed1i k\u00eanh {result['channel_name']} ({result['youtube_channel_id']}).",
         "success",
     )
 
 
 @router.get("/admin", response_class=HTMLResponse)
 async def admin_dashboard(request: Request):
+    if get_app_session_user(request):
+        return RedirectResponse(url="/app", status_code=302)
     if not get_admin_session_user(request):
         next_url = request.url.path
-        return RedirectResponse(url=f"/admin/login?next={next_url}", status_code=302)
+        return RedirectResponse(url=f"/login?next={next_url}", status_code=302)
     return RedirectResponse(url="/admin/user/index", status_code=302)
 
 
@@ -176,48 +337,22 @@ async def admin_login_page(
     next: str | None = None,
     notice: str | None = None,
 ):
-    if get_admin_session_user(request):
-        return RedirectResponse(url=next or "/admin/user/index", status_code=302)
-    return templates.TemplateResponse(
-        "admin/login.html",
-        {
-            "request": request,
-            "page_title": "Dang nhap quan tri",
-            "next_url": next or "/admin/user/index",
-            "notice": notice,
-        },
-    )
+    target = _sanitize_next_url(next, default_path="/admin/user/index")
+    payload = {"next": target}
+    if notice:
+        payload["notice"] = notice
+    return RedirectResponse(url=f"/login?{urlencode(payload)}", status_code=302)
 
 
 @router.post("/admin/login")
 async def admin_login_submit(request: Request):
-    form = await request.form()
-    username = str(form.get("username") or "").strip()
-    password = str(form.get("password") or "").strip()
-    next_url = str(form.get("next") or "/admin/user/index").strip() or "/admin/user/index"
-
-    try:
-        session_payload = store.authenticate_admin_user(username, password)
-    except ValueError as exc:
-        return templates.TemplateResponse(
-            "admin/login.html",
-            {
-                "request": request,
-                "page_title": "Dang nhap quan tri",
-                "next_url": next_url,
-                "notice": str(exc),
-            },
-            status_code=400,
-        )
-
-    set_admin_session_user(request, AdminSessionUser(**session_payload))
-    return RedirectResponse(url=next_url, status_code=303)
+    return RedirectResponse(url="/login?next=/admin/user/index", status_code=303)
 
 
 @router.post("/admin/logout")
 async def admin_logout(request: Request):
     clear_admin_session(request)
-    return RedirectResponse(url="/admin/login", status_code=303)
+    return RedirectResponse(url="/login", status_code=303)
 
 
 @router.post("/admin/UpdateSession")
@@ -290,7 +425,6 @@ async def admin_user_create_submit(request: Request):
         dashboard = store.get_admin_user_create_context(
             form_data={
                 "username": username,
-                "password": password,
                 "manager_id": manager_id or "",
             },
             error=str(exc),

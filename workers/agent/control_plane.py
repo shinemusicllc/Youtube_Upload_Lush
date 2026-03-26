@@ -169,3 +169,24 @@ def get_job_youtube_target(client: httpx.Client, config: WorkerConfig, job_id: s
         refresh_token=str(payload["refresh_token"]),
         token_uri=str(payload.get("token_uri") or "https://oauth2.googleapis.com/token"),
     )
+
+
+def upload_job_thumbnail(
+    client: httpx.Client,
+    config: WorkerConfig,
+    job_id: str,
+    *,
+    file_name: str,
+    content_type: str,
+    payload: bytes,
+) -> None:
+    response = client.post(
+        f"/api/workers/jobs/{job_id}/thumbnail",
+        headers={
+            **worker_auth_headers(config),
+            "x-file-name": file_name,
+            "content-type": content_type,
+        },
+        content=payload,
+    )
+    response.raise_for_status()
