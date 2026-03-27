@@ -872,3 +872,9 @@
 - Fixed: Tra visual sort state ve dung kieu cu ma user da chot cho bang render.
 - Affected files: backend/app/templates/user_dashboard.html, final_user_ui.html, docs/UI_SYSTEM.md
 - Impact/Risk: Chi doi markup/CSS bieu tuong sort, khong tac dong logic sort runtime.
+### 2026-03-27 20:38 - Commit branch and prepare VPS rollout
+- Added: Commit moi tren branch rollout de co moc on dinh truoc khi deploy VPS.
+- Changed: Day branch `codex/user-workspace-ui-copy-sync` len GitHub voi commit `0c88c39`.
+- Fixed: Lam ro blocker deploy live hien tai la thieu credential SSH hop le tren may dang lam viec, khong phai loi code/runtime moi.
+- Affected files: docs/WORKLOG.md, docs/CHANGELOG.md
+- Impact/Risk: Branch da an toan de review/rollback; rollout VPS can credential host roi moi tiep tuc.

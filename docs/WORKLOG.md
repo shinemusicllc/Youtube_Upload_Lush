@@ -618,3 +618,8 @@ ode --check backend/app/static/js/user_dashboard.js, va TestClient login demo-us
 - [x] Dieu chinh lai render-list sort header ve giao dien cu trong `backend/app/templates/user_dashboard.html`: bo stack chevron doc va doi ve cap `arrow-up/arrow-down` inline ngay sau label.
 - [x] Sync nhip CSS sort-arrows trong `final_user_ui.html` de source of truth khong lech voi template runtime.
 - [x] Verify bang `TestClient` va Playwright: HTML `/app` co `data-lucide="arrow-up"`, `data-lucide="arrow-down"`, khong con `sort-arrows flex flex-col`; local `/app` tren 127.0.0.1:8000 render on dinh, console khong co error.
+### 2026-03-27 20:38
+- [x] Stage va commit toan bo thay doi user workspace/UI runtime tren branch `codex/user-workspace-ui-copy-sync` voi commit `0c88c39`.
+- [x] Push branch `codex/user-workspace-ui-copy-sync` len `origin` thanh cong de co diem rollback/an toan truoc khi rollout VPS.
+- [!] Thu rollout live len VPS `82.197.71.6` nhung bi chan o buoc truy cap host: `ssh -o BatchMode=yes root@82.197.71.6` va `deploy@82.197.71.6` deu tra `Permission denied (publickey,password)` trong may hien tai, nen chua the deploy tu phien nay.
+- [x] Giu nguyen cac file copy untracked (`final_user_ui - Copy.html`, `login_preview - Copy*.html`) ngoai commit va ngoai rollout scope.
