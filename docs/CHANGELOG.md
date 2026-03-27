@@ -732,3 +732,71 @@
 - Fixed: Reduced rollback risk for upcoming workspace UI edits by preserving the current integrated state.
 - Affected files: docs/WORKLOG.md, docs/CHANGELOG.md, git branch state.
 - Impact/Risk: Safe backup only; no deploy or production impact.
+### 2026-03-27 14:45 - Align render workspace lanes to updated final_user_ui shell
+- Added: Updated lane shell treatments for Render Config, Quick Settings, and My Channel headers based on the latest `final_user_ui.html` reference.
+- Changed: Refined input, upload-action, and footer action styling so Render Config and Quick Settings match the new source-of-truth layout while preserving live upload UX hooks.
+- Fixed: Replaced noisy default helper text under upload fields with quiet status slots and repaired the channel select placeholder literal in the render form.
+- Affected files: `D:\Youtube_BOT_UPLOAD\backend\app\templates\user_dashboard.html`, `D:\Youtube_BOT_UPLOAD\docs\WORKLOG.md`, `D:\Youtube_BOT_UPLOAD\docs\CHANGELOG.md`.
+- Impact/Risk: Local-only UI alignment; no VPS deploy and no worker/backend contract changes.
+### 2026-03-27 16:36 - Ổn định layout bảng render workspace
+- Added: Thêm colgroup cho bảng render workspace để khóa nhịp cột.
+- Changed: Chuyển bảng render sang width ổn định hơn bằng 	able-fixed + min-width rõ ràng.
+- Fixed: Hạn chế hiện tượng list render bị vỡ layout sau khi chỉnh lại 3 lane phía trên.
+- Affected files: backend/app/templates/user_dashboard.html
+- Impact/Risk: Chỉ ảnh hưởng local UI workspace; chưa deploy live.
+### 2026-03-27 16:45 - Siết lại width bảng render và bump cache local
+- Added: Bump version asset workspace để tránh giữ cache cũ của trình duyệt.
+- Changed: Chuyển bảng render về cấu trúc 	able-fixed ổn định hơn với colgroup và cột info co giãn.
+- Fixed: Giảm hiện tượng render list bị tràn và giãn nhịp cột sai sau đợt polish UI.
+- Affected files: backend/app/templates/user_dashboard.html
+- Impact/Risk: Chỉ ảnh hưởng local UI workspace; chưa deploy live.
+### 2026-03-27 17:15 - Đồng bộ workspace theo final_user_ui.html
+- Added: Thêm elevated-card-panel và sync layout workspace theo file mẫu.
+- Changed: Đồng bộ KPI strip, Render Config, Quick Settings, My Channel, và wording/action button với inal_user_ui.html.
+- Fixed: Giữ logic backend hiện có nhưng đổi cấu trúc hiển thị về đúng nhịp của file nguồn, đồng thời đổi KPI live update sang text-line.
+- Affected files: backend/app/templates/user_dashboard.html, backend/app/static/js/user_dashboard.js
+- Impact/Risk: Chỉ ảnh hưởng local UI workspace; chưa deploy live.
+
+### 2026-03-27 16:27 - Xac nhan runtime local sau su co /app
+- Added: Ghi nhan ket qua kiem tra runtime local sau khi user bao app sap.
+- Changed: Khong co thay doi code.
+- Fixed: Xac nhan /app va /api/health dang tra 200/ok tren local.
+- Affected files: docs/WORKLOG.md, docs/CHANGELOG.md
+- Impact/Risk: Neu loi tai hien, can bat traceback foreground vi hien chua tai lap duoc.
+
+### 2026-03-27 15:26 - Add KPI pills to final user UI reference
+- Added: Semantic KPI pill treatment for the summary strip in `final_user_ui.html` to match the app summary style.
+- Changed: Removed the floating `Created By Deerflow` credit and updated `docs/UI_SYSTEM.md` to allow the compact KPI pill variant.
+- Fixed: Visual mismatch between the source-of-truth HTML and the app's KPI summary treatment.
+- Affected files: `D:\Youtube_BOT_UPLOAD\final_user_ui.html`, `D:\Youtube_BOT_UPLOAD\docs\UI_SYSTEM.md`, `D:\Youtube_BOT_UPLOAD\docs\WORKLOG.md`, `D:\Youtube_BOT_UPLOAD\docs\CHANGELOG.md`.
+- Impact/Risk: Local-only source-of-truth UI update; no backend contract or deploy behavior changed.
+### 2026-03-27 15:38 - Deepen My Channel card treatment in final user UI
+- Added: Header badge `Da them 3 kenh` and stronger channel-row card treatment for the `My Channel` panel in `final_user_ui.html`.
+- Changed: Swapped the channel connection status icon to Lucide `check-circle-2` and restyled subtitle/meta text as a compact blue badge.
+- Fixed: Made the channel list feel less flat by adding clearer border depth and aligning the panel closer to the provided reference image.
+- Affected files: `D:\Youtube_BOT_UPLOAD\final_user_ui.html`, `D:\Youtube_BOT_UPLOAD\docs\UI_SYSTEM.md`, `D:\Youtube_BOT_UPLOAD\docs\WORKLOG.md`, `D:\Youtube_BOT_UPLOAD\docs\CHANGELOG.md`.
+- Impact/Risk: Local-only source-of-truth UI refinement; no backend contract, API, or deploy behavior changed.
+### 2026-03-27 15:44 - Revert My Channel depth pass and keep only connected badge
+- Added: No new UI surface added; retained only the compact `Da ket noi` status badge for channel rows.
+- Changed: Removed the `Da them 3 kenh` header badge and the extra depth styling that made the channel list feel heavier than the prior design.
+- Fixed: Restored the earlier `My Channel` look while preserving the clearer connected-status chip.
+- Affected files: `D:\Youtube_BOT_UPLOAD\final_user_ui.html`, `D:\Youtube_BOT_UPLOAD\docs\UI_SYSTEM.md`, `D:\Youtube_BOT_UPLOAD\docs\WORKLOG.md`, `D:\Youtube_BOT_UPLOAD\docs\CHANGELOG.md`.
+- Impact/Risk: Local-only source-of-truth UI rollback; no backend, API, or deploy behavior changed.
+### 2026-03-27 15:52 - Add light card borders to My Channel rows
+- Added: Light card-border treatment for each channel row in `final_user_ui.html` so individual channels separate more clearly from the panel background.
+- Changed: Removed `Bot-*` from the `My Channel` meta line so each row now shows only the channel link plus the connected badge.
+- Fixed: Matched the reference image more closely without reintroducing the heavier depth pass that was reverted earlier.
+- Affected files: `D:\Youtube_BOT_UPLOAD\final_user_ui.html`, `D:\Youtube_BOT_UPLOAD\docs\UI_SYSTEM.md`, `D:\Youtube_BOT_UPLOAD\docs\WORKLOG.md`, `D:\Youtube_BOT_UPLOAD\docs\CHANGELOG.md`.
+- Impact/Risk: Local-only source-of-truth UI refinement; no backend, API, or deploy behavior changed.
+### 2026-03-27 16:03 - Strengthen My Channel row borders and remove bot labels
+- Added: Clearer bordered-card treatment for each `My Channel` row in `final_user_ui.html`, with only a very light shadow for separation.
+- Changed: Removed `Bot-*` from channel meta text in both the `My Channel` panel and channel-select option metadata so the UI shows only the channel link.
+- Fixed: Brought the channel rows closer to the provided reference image without changing the rest of the shell.
+- Affected files: `D:\Youtube_BOT_UPLOAD\final_user_ui.html`, `D:\Youtube_BOT_UPLOAD\docs\WORKLOG.md`, `D:\Youtube_BOT_UPLOAD\docs\CHANGELOG.md`.
+- Impact/Risk: Local-only source-of-truth UI refinement; no backend, API, or deploy behavior changed.
+### 2026-03-27 16:17 - Finalize user workspace copy-sync branch
+- Added: Synced final_user_ui.html to the newly provided final_user_ui - Copy.html reference and restored the Created By Deerflow footer on the user workspace.
+- Changed: Updated the user workspace to use text-line KPI accents and the My Channel row pattern with inline channel_id | Bot-* meta plus badge-check status.
+- Fixed: Rebuilt broken user_dashboard.html blocks while preserving the existing FastAPI, session, and API wiring.
+- Affected files: D:\Youtube_BOT_UPLOAD\backend\app\templates\user_dashboard.html, D:\Youtube_BOT_UPLOAD\backend\app\static\js\user_dashboard.js, D:\Youtube_BOT_UPLOAD\final_user_ui.html, D:\Youtube_BOT_UPLOAD\docs\UI_SYSTEM.md, D:\Youtube_BOT_UPLOAD\docs\WORKLOG.md, D:\Youtube_BOT_UPLOAD\docs\CHANGELOG.md.
+- Impact/Risk: Visual pass only for the user workspace; no deploy, data, or API contract change in this session.

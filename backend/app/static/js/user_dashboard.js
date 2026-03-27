@@ -535,10 +535,10 @@
           valueNode.textContent = kpi.value;
           valueNode.className = `text-[28px] font-display font-bold ${kpi.value_class || kpi.accent_class} leading-none tracking-tight`;
         }
-        if (accentNode) {
-          accentNode.textContent = kpi.accent;
-          accentNode.className = `inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold ${kpi.accent_badge_class}`;
-        }
+          if (accentNode) {
+            accentNode.textContent = kpi.accent;
+            accentNode.className = `text-[11px] font-semibold ${(kpi.accent_class || kpi.value_class || "")} mt-2.5`;
+          }
         if (barNode) {
           barNode.className = `absolute bottom-0 left-1/2 -translate-x-1/2 w-12 h-[3px] rounded-full ${kpi.bar_class}`;
         }

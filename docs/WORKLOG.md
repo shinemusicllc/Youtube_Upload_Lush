@@ -509,3 +509,60 @@
 - [x] Verify local bang `python -m compileall backend/app`; khong deploy VPS.
 ### 2026-03-27 14:20
 - [x] Tao branch backup truoc khi chinh frontend va chuan bi commit snapshot hien tai len GitHub de co diem quay lai ro rang.
+### 2026-03-27 14:45
+- [x] Bam lai `Render Config` va `Quick Settings` theo `final_user_ui.html`: top accent, shell lane, header icon box, hierarchy tieu de/phu de, input border-shadow/focus, va cum action cuoi panel.
+- [x] Giu nguyen cac thay doi moi cua row `My Channel`, chi cap nhat shell/header cua panel nay theo file mau (top accent, icon box, subtitle xuong 2 dong).
+- [x] Khong copy mu quang flow cu: giu upload local action/progress/error hien tai, chi doi visual shell cua input va nut upload de gan mau hon voi file mau.
+- [x] Rut helper text mac dinh duoi 4 field upload ve trang thai rong co `min-height`, de giam noise nhung van giu slot thong bao cho JS khi can.
+- [x] Verify local bang `python -m compileall backend/app`; chua deploy VPS.
+### 2026-03-27 16:36 - Ổn định layout bảng render workspace
+- Khóa lại bảng render theo 	able-fixed + colgroup để tránh vỡ layout sau khi polish các lane phía trên.
+- Giữ nguyên flow và visual hiện có của row render, chỉ siết nhịp cột để bảng ổn định hơn ở viewport lớn.
+- Chưa deploy VPS, chỉ áp dụng local để kiểm tra tiếp.
+### 2026-03-27 16:45 - Siết lại width bảng render và bump cache local
+- Bỏ min-width cứng của bảng render workspace, chuyển Thông tin job thành cột co giãn chính.
+- Đồng bộ width header với colgroup để browser không suy diễn lệch nhịp cột.
+- Bump version script user_dashboard.js để trình duyệt local lấy lại asset mới.
+- Chưa deploy VPS, chỉ áp dụng local.
+### 2026-03-27 17:15 - Đồng bộ workspace theo final_user_ui.html
+- Kéo user_dashboard.html về sát layout của inal_user_ui.html cho KPI strip, shell form và My Channel.
+- Giữ binding backend hiện có cho form/job/channel, chỉ thay lớp hiển thị và wording để khớp file mẫu.
+- My Channel quay về row phẳng theo file mẫu nhưng vẫn giữ badge BOT và icon trạng thái Lucide mới.
+- Cập nhật user_dashboard.js để KPI live refresh đổi từ pill sang text-line như file mẫu.
+- Chưa deploy VPS, chỉ áp dụng local.
+
+### 2026-03-27 16:27
+- [x] Xac nhan runtime local tren 127.0.0.1:8000 van song sau su co user bao Internal Server Error; kiem tra process listen PID 41752, /api/health = ok, /app = 200 va HTML workspace render dung.
+### 2026-03-27 15:26
+- [x] Dong bo `final_user_ui.html` voi pattern KPI pill dang dung trong app: giu KPI strip ngang, doi accent text thanh semantic pill gon bang CSS hook `kpi-strip`.
+- [x] Xoa credit `Created By Deerflow` khoi file mau de shell sach hon va khop giao dien app hien tai.
+- [x] Cap nhat `docs/UI_SYSTEM.md` de ghi nhan KPI accent co the dung semantic pill trong summary strip.
+### 2026-03-27 15:38
+- [x] Tang do tach lop cho row `My Channel` trong `final_user_ui.html` bang border + shadow nhe theo huong card trong card, giu visual compact nhu anh mau.
+- [x] Them badge `Da them 3 kenh` o header panel va giu icon system bang Lucide.
+- [x] Doi icon trang thai kenh sang `check-circle-2` va cap nhat `docs/UI_SYSTEM.md` de ghi nhan pattern inner-card cho list `My Channel`.
+### 2026-03-27 15:44
+- [x] Rollback pass `My Channel` vua sua trong `final_user_ui.html`: bo badge `Da them 3 kenh` va go CSS lam row kenh bi nang tay.
+- [x] Giu lai duy nhat badge trang thai `Da ket noi` tren tung kenh, van dung icon Lucide `check-circle-2`.
+- [x] Xoa ghi chu `inner-card` khoi `docs/UI_SYSTEM.md` de source of truth quay lai visual cu cho list kenh.
+### 2026-03-27 15:52
+- [x] Them border/shadow nhe cho tung row `My Channel` trong `final_user_ui.html` de card kenh tach khoi nen ro hon nhung van giu nhiep compact.
+- [x] Bo `Bot-*` khoi 3 dong meta cua panel `My Channel`, giu lai duy nhat link kenh va badge `Da ket noi`.
+- [x] Cap nhat `docs/UI_SYSTEM.md` de ghi nhan row card nhe cho list `My Channel`.
+### 2026-03-27 16:03
+- [x] Tang vien card cua tung row `My Channel` trong `final_user_ui.html` theo huong ro border hon, shadow rat nhe va radius mem nhu anh user dua.
+- [x] Bo `Bot-*` khoi meta cua panel `My Channel` va dropdown/select kenh, giu lai chi link kenh.
+- [x] Khong doi shell/header khac; giu nguyen badge `Da ket noi` bang Lucide.
+### 2026-03-27 16:16
+- [x] Ra soat PROJECT_CONTEXT, DECISIONS, WORKLOG, UI_SYSTEM, rule root/subfolder va file mau inal_user_ui - Copy.html truoc khi sua user workspace.
+- [x] Tao branch codex/user-workspace-ui-copy-sync de co lap pass UI moi khoi nhanh dang dung.
+- [x] Sua ackend/app/templates/user_dashboard.html theo file mau moi: KPI accent chuyen ve text-line, panel form giu shell elevated-card-panel, My Channel doi meta sang channel_id | Bot-*, status dung adge-check, footer them credit Created By Deerflow, va don block HTML/Jinja bi vo do pass local truoc do.
+- [x] Giu logic hien co cua workspace trong ackend/app/static/js/user_dashboard.js, chi cap nhat live KPI refresh de match accent text moi.
+- [x] Dong bo inal_user_ui.html = inal_user_ui - Copy.html de source of truth trong repo khong mau thuan voi giao dien app vua ap.
+- [x] Cap nhat docs/UI_SYSTEM.md cho KPI accent text-line va pattern My Channel meta channel_id | Bot-* + adge-check.
+- [x] Verify bang python -m compileall backend/app, 
+ode --check backend/app/static/js/user_dashboard.js, va TestClient login demo-user/demo123 -> /app tra 200, render du marker moi (Render Config, My Channel, adge-check, Created By Deerflow).
+### 2026-03-27 16:17
+- [x] Chot user workspace theo file mau moi final_user_ui - Copy.html va login-smoke duong /app bang demo-user/demo123.
+- [x] Dong bo final_user_ui.html voi file mau moi de source of truth trong repo khop giao dien app.
+- [x] Hoan tat branch rieng codex/user-workspace-ui-copy-sync de commit va push len GitHub ma khong dong vao nhanh dang dung.

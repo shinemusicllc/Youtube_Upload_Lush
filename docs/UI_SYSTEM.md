@@ -106,6 +106,7 @@
 - Logo, avatar sidebar và nút `Đăng xuất` phải được polish lại để đạt chất SaaS hơn, nhưng vẫn phải bám layout và component rhythm của `final_user_ui.html`.
 
 ### 2. KPI Strip
+- KPI accent uu tien la text line nho cung mau semantic dat ngay duoi gia tri; khong quay lai pill khi source of truth hien tai khong dung.
 - Pattern chuẩn là `một dải KPI ngang`, chia cột bằng divider.
 - Mỗi KPI gồm:
   - label nhỏ
@@ -137,6 +138,8 @@
   - chọn channel
 
 ### 6. Data Table / Queue Table
+- List `My Channel` co the dung row card nhe voi border ro hon va shadow rat mong de tach tung kenh, nhung khong bien thanh card-noi-card nang tay.
+- Meta cua `My Channel` co the hien tren mot dong `channel_id | Bot-*`; badge trang thai ket noi dung icon `badge-check` va hover moi mo nut xoa.
 - Bảng là thành phần trung tâm.
 - Header nhỏ, sắc, rõ sort state.
 - Row cần có hierarchy thông tin, không chỉ là text phẳng.
