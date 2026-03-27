@@ -2,6 +2,8 @@
 
 {% block content %}
 <section class="space-y-6">
+    {% include "admin/_admin_notice.html" %}
+
     <div class="panel p-5">
         <div class="flex flex-col gap-5">
             <div class="flex items-start gap-3">
@@ -10,7 +12,7 @@
                 </div>
                 <div>
                     <h2 class="section-title">{{ dashboard.heading }}</h2>
-                    <p class="section-note">Trang role list giữ logic cũ: nhập username để thêm role và gỡ role trực tiếp trên từng dòng.</p>
+                    <p class="section-note">Nhập username để cấp quyền nhanh và quản lý danh sách tài khoản đang có role {{ dashboard.role_label }}.</p>
                 </div>
             </div>
             {% include "admin/_user_tabs.html" %}
@@ -19,7 +21,7 @@
 
     <div class="panel p-6">
         <form method="post" action="{{ dashboard.action_route }}" class="grid gap-3 md:grid-cols-[1fr_auto]">
-            <input class="toolbar-input" type="text" name="username" placeholder="Nhập username cần gán role {{ dashboard.role_label }}">
+            <input class="toolbar-input" type="text" name="username" placeholder="Nhập username cần gán role {{ dashboard.role_label }}" autocomplete="off">
             <button type="submit" class="action-btn action-btn-emerald h-11 justify-center px-4 text-[13px]">
                 <i data-lucide="plus" class="h-4 w-4"></i>
                 Thêm role {{ dashboard.role_label }}
@@ -30,11 +32,11 @@
     <div class="panel overflow-hidden">
         <div class="border-b border-slate-200/80 px-5 py-4">
             <h3 class="section-title">{{ dashboard.heading }}</h3>
-            <p class="section-note">Danh sách hiện tại của role {{ dashboard.role_label }} trong hệ thống.</p>
+            <p class="section-note">Danh sách hiện tại của các tài khoản đang có quyền {{ dashboard.role_label }} trong hệ thống.</p>
         </div>
 
         <div class="table-shell">
-            <table class="admin-table">
+            <table class="admin-table" data-admin-list-table>
                 <thead>
                     <tr>
                         <th class="w-14">STT</th>
@@ -53,7 +55,7 @@
                         <td class="table-meta">{{ row.updated_meta }}</td>
                         <td>
                             <div class="flex items-center justify-end gap-2">
-                                <form method="post" action="{{ dashboard.action_route }}" onsubmit="return confirm('Gỡ role {{ dashboard.role_label }} khỏi user này?');">
+                                <form method="post" action="{{ dashboard.action_route }}" data-bulk-delete-form onsubmit="return confirm('Gỡ role {{ dashboard.role_label }} khỏi user này?');">
                                     <input type="hidden" name="username" value="{{ row.username }}">
                                     <button type="submit" class="action-btn action-btn-rose">
                                         <i data-lucide="shield-off" class="h-3.5 w-3.5"></i>

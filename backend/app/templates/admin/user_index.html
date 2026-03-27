@@ -16,12 +16,8 @@
                     <p class="section-note">Manager filter, KPI strip, reset password, edit manager và gán BOT theo user.</p>
                 </div>
             </div>
-            <form method="get" action="/admin/user/index" class="grid gap-3 lg:min-w-[560px] lg:grid-cols-[1fr_auto_auto]">
+            <form method="get" action="/admin/user/index" class="grid gap-3 lg:min-w-[560px] lg:grid-cols-[1fr_auto]" data-manager-auto-submit="true">
                 {% include "admin/_manager_picker.html" %}
-                <button type="submit" class="action-btn action-btn-primary h-11 justify-center px-4 text-[13px]">
-                    <i data-lucide="search" class="h-4 w-4"></i>
-                    Search
-                </button>
                 <a href="/admin/user/create" class="action-btn action-btn-emerald h-11 justify-center px-4 text-[13px]">
                     <i data-lucide="user-plus" class="h-4 w-4"></i>
                     Tạo mới
@@ -35,11 +31,11 @@
     <div class="panel overflow-hidden">
         <div class="border-b border-slate-200/80 px-5 py-4">
             <h3 class="section-title">Danh sách người dùng</h3>
-            <p class="section-note">Giữ route cũ nhưng chuyển action sang form thật thay vì stub UI.</p>
+            <p class="section-note">Theo dõi tài khoản, phân quyền và quản lý thông tin người dùng trong hệ thống.</p>
         </div>
 
         <div class="table-shell">
-            <table class="admin-table">
+            <table class="admin-table" data-admin-list-table>
                 <thead>
                     <tr>
                         <th class="w-14">STT</th>
@@ -106,10 +102,12 @@
                                     class="action-btn action-btn-emerald"
                                     data-dialog-open="edit-user-dialog"
                                     data-user-id="{{ user.id }}"
+                                    data-username="{{ user.username }}"
                                     data-display-name="{{ user.display_name }}"
                                     data-telegram="{{ user.telegram }}"
                                     data-manager-id="{{ user.manager_id }}"
                                     data-role="{{ user.role }}"
+                                    data-can-edit-username="{{ 'true' if dashboard.current_user.role == 'admin' or (dashboard.current_user.role == 'manager' and user.role == 'user') else 'false' }}"
                                 >
                                     <i data-lucide="pencil" class="h-3.5 w-3.5"></i>
                                     Sửa
@@ -124,6 +122,9 @@
                                     <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
                                     Xóa
                                 </button>
+                                <form method="post" action="/admin/user/delete" data-bulk-delete-form class="hidden">
+                                    <input type="hidden" name="userId" value="{{ user.id }}">
+                                </form>
                             </div>
                         </td>
                     </tr>
@@ -139,12 +140,17 @@
         <form method="post" action="/admin/user/updatetelegram">
             <div class="border-b border-slate-200 px-5 py-4">
                 <h3 class="section-title">Cập nhật user</h3>
-                <p class="section-note">Sửa tên hiển thị, Telegram và manager của user.</p>
+                <p class="section-note">Sửa tên đăng nhập, tên hiển thị, Telegram và manager của user.</p>
             </div>
             <div class="space-y-4 px-5 py-5">
                 <input type="hidden" name="UserId" id="edit-user-id">
                 <div>
-                    <label class="field-label" for="edit-display-name">Display name</label>
+                    <label class="field-label" for="edit-username">Tên đăng nhập</label>
+                    <input class="toolbar-input" id="edit-username" name="UserName" required>
+                    <p id="edit-username-note" class="mt-2 text-[11px] text-slate-500">Tên đăng nhập dùng cho đăng nhập hệ thống.</p>
+                </div>
+                <div>
+                    <label class="field-label" for="edit-display-name">Tên hiển thị</label>
                     <input class="toolbar-input" id="edit-display-name" name="DisplayName" required>
                 </div>
                 <div>
@@ -222,14 +228,26 @@
     const resetDialog = document.getElementById('reset-password-dialog');
     const deleteDialog = document.getElementById('delete-user-dialog');
     const editManagerWrap = document.getElementById('edit-manager-wrap');
+    const editUsernameInput = document.getElementById('edit-username');
+    const editUsernameNote = document.getElementById('edit-username-note');
 
     document.querySelectorAll('[data-dialog-open="edit-user-dialog"]').forEach(function (button) {
       button.addEventListener('click', function () {
         document.getElementById('edit-user-id').value = button.dataset.userId || '';
+        editUsernameInput.value = button.dataset.username || '';
         document.getElementById('edit-display-name').value = button.dataset.displayName || '';
         document.getElementById('edit-telegram').value = button.dataset.telegram || '';
-        document.getElementById('edit-manager-id').value = button.dataset.managerId || '';
+        const managerSelect = document.getElementById('edit-manager-id');
+        managerSelect.value = button.dataset.managerId || '';
+        managerSelect.dispatchEvent(new Event('change', { bubbles: true }));
         const role = button.dataset.role || 'user';
+        const canEditUsername = button.dataset.canEditUsername === 'true';
+        editUsernameInput.readOnly = !canEditUsername;
+        editUsernameInput.classList.toggle('bg-slate-50', !canEditUsername);
+        editUsernameInput.classList.toggle('text-slate-500', !canEditUsername);
+        editUsernameNote.textContent = canEditUsername
+          ? 'Tên đăng nhập dùng cho đăng nhập hệ thống.'
+          : 'Username của tài khoản này chỉ admin mới được phép đổi.';
         editManagerWrap.style.display = role === 'user' ? 'block' : 'none';
       });
     });

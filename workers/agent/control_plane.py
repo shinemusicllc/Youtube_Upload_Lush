@@ -2,12 +2,22 @@ from __future__ import annotations
 
 import os
 import shutil
+import time
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
 
 from .config import WorkerConfig
+
+
+@dataclass
+class _NetworkSample:
+    captured_at: float
+    total_bytes: int
+
+
+_NETWORK_SAMPLE: _NetworkSample | None = None
 
 
 def _load_percent() -> int:
@@ -24,6 +34,67 @@ def _disk_usage() -> tuple[float, float]:
     total_gb = round(usage.total / (1024 ** 3), 2)
     used_gb = round((usage.total - usage.free) / (1024 ** 3), 2)
     return used_gb, total_gb
+
+
+def _network_total_bytes() -> int | None:
+    try:
+        with open("/proc/net/dev", "r", encoding="utf-8") as file_obj:
+            lines = file_obj.readlines()
+    except OSError:
+        return None
+
+    total = 0
+    for raw_line in lines[2:]:
+        line = raw_line.strip()
+        if not line or ":" not in line:
+            continue
+        interface, values = line.split(":", 1)
+        interface = interface.strip()
+        if interface == "lo":
+            continue
+        parts = values.split()
+        if len(parts) < 9:
+            continue
+        try:
+            received = int(parts[0])
+            transmitted = int(parts[8])
+        except ValueError:
+            continue
+        total += received + transmitted
+    return total
+
+
+def _prime_network_sample() -> None:
+    global _NETWORK_SAMPLE
+
+    total_bytes = _network_total_bytes()
+    if total_bytes is None:
+        _NETWORK_SAMPLE = None
+        return
+    _NETWORK_SAMPLE = _NetworkSample(captured_at=time.monotonic(), total_bytes=total_bytes)
+
+
+def _bandwidth_kbps() -> float:
+    global _NETWORK_SAMPLE
+
+    total_bytes = _network_total_bytes()
+    if total_bytes is None:
+        _NETWORK_SAMPLE = None
+        return 0.0
+
+    now = time.monotonic()
+    previous = _NETWORK_SAMPLE
+    _NETWORK_SAMPLE = _NetworkSample(captured_at=now, total_bytes=total_bytes)
+    if previous is None:
+        return 0.0
+
+    elapsed = now - previous.captured_at
+    if elapsed <= 0.5:
+        return 0.0
+
+    delta_bytes = max(0, total_bytes - previous.total_bytes)
+    kilobytes_per_second = delta_bytes / elapsed / 1024
+    return round(kilobytes_per_second, 2)
 
 
 def worker_auth_headers(config: WorkerConfig) -> dict[str, str]:
@@ -47,8 +118,9 @@ class YouTubeUploadTarget:
     token_uri: str
 
 
-def register_worker(client: httpx.Client, config: WorkerConfig) -> None:
+def register_worker(client: httpx.Client, config: WorkerConfig) -> dict[str, Any]:
     _, total_gb = _disk_usage()
+    _prime_network_sample()
     response = client.post(
         "/api/workers/register",
         json={
@@ -63,9 +135,10 @@ def register_worker(client: httpx.Client, config: WorkerConfig) -> None:
         },
     )
     response.raise_for_status()
+    return response.json()
 
 
-def heartbeat_worker(client: httpx.Client, config: WorkerConfig) -> None:
+def heartbeat_worker(client: httpx.Client, config: WorkerConfig) -> dict[str, Any]:
     used_gb, total_gb = _disk_usage()
     response = client.post(
         "/api/workers/heartbeat",
@@ -73,7 +146,7 @@ def heartbeat_worker(client: httpx.Client, config: WorkerConfig) -> None:
             "worker_id": config.worker_id,
             "shared_secret": config.shared_secret,
             "load_percent": _load_percent(),
-            "bandwidth_kbps": 0,
+            "bandwidth_kbps": _bandwidth_kbps(),
             "disk_used_gb": used_gb,
             "disk_total_gb": total_gb,
             "threads": config.threads,
@@ -190,3 +263,4 @@ def upload_job_thumbnail(
         content=payload,
     )
     response.raise_for_status()
+    return response.json()

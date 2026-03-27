@@ -241,6 +241,20 @@ async def delete_user_job(request: Request, job_id: str):
     return {"status": "deleted", "job_id": job_id}
 
 
+@router.post("/user/jobs/actions/bulk-delete")
+async def delete_user_jobs_bulk(request: Request, payload: dict = Body(...)):
+    job_ids = payload.get("job_ids")
+    if not isinstance(job_ids, list):
+        raise HTTPException(status_code=422, detail="job_ids phai la danh sach.")
+
+    deleted_ids = store.delete_jobs(job_ids, user_id=_current_app_user_id(request))
+    return {
+        "status": "deleted",
+        "deleted_count": len(deleted_ids),
+        "job_ids": deleted_ids,
+    }
+
+
 @router.delete("/user/channels/{channel_id}")
 async def delete_user_channel(request: Request, channel_id: str):
     try:

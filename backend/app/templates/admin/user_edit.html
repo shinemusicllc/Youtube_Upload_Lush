@@ -10,7 +10,7 @@
                 </div>
                 <div>
                     <h2 class="section-title">Cập nhật user</h2>
-                    <p class="section-note">Form này thay cho modal cũ, giữ trọng tâm vào gán manager và metadata quản trị của user.</p>
+                    <p class="section-note">Form này thay cho modal cũ, giữ trọng tâm vào tên đăng nhập, gán manager và metadata quản trị của user.</p>
                 </div>
             </div>
             {% include "admin/_user_tabs.html" %}
@@ -27,8 +27,22 @@
 
             <div class="grid gap-5 md:grid-cols-2">
                 <div>
-                    <span class="mb-2 block text-[12px] font-semibold text-slate-700">UserName</span>
-                    <div class="toolbar-input flex items-center bg-slate-50 text-slate-600">{{ dashboard.user_record.username }}</div>
+                    <span class="mb-2 block text-[12px] font-semibold text-slate-700">Tên đăng nhập</span>
+                    <input
+                        class="toolbar-input {% if dashboard.current_user.role != 'admin' and dashboard.user_record.role != 'user' %}bg-slate-50 text-slate-500{% endif %}"
+                        type="text"
+                        name="username"
+                        value="{{ dashboard.user_record.username }}"
+                        {% if dashboard.current_user.role != 'admin' and dashboard.user_record.role != 'user' %}readonly{% endif %}
+                        required
+                    >
+                    <p class="mt-2 text-[11px] text-slate-500">
+                        {% if dashboard.current_user.role == 'admin' or dashboard.user_record.role == 'user' %}
+                        Tên đăng nhập dùng cho đăng nhập hệ thống.
+                        {% else %}
+                        Username của tài khoản này chỉ admin mới được phép đổi.
+                        {% endif %}
+                    </p>
                 </div>
                 <div>
                     <span class="mb-2 block text-[12px] font-semibold text-slate-700">Vai trò hiện tại</span>
@@ -36,6 +50,12 @@
                 </div>
             </div>
 
+            <label class="block">
+                <span class="mb-2 block text-[12px] font-semibold text-slate-700">Tên hiển thị</span>
+                <input class="toolbar-input" type="text" name="display_name" value="{{ dashboard.user_record.display_name }}" required>
+            </label>
+
+            {% if dashboard.user_record.role == 'user' %}
             <label class="block">
                 <span class="mb-2 block text-[12px] font-semibold text-slate-700">Manager phụ trách</span>
                 <select class="toolbar-select" name="manager_id">
@@ -45,6 +65,7 @@
                     {% endfor %}
                 </select>
             </label>
+            {% endif %}
 
             <label class="block">
                 <span class="mb-2 block text-[12px] font-semibold text-slate-700">Link Telegram</span>

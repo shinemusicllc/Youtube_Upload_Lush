@@ -3,10 +3,10 @@ from __future__ import annotations
 import csv
 from io import StringIO
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from ..auth import (
@@ -143,7 +143,8 @@ def _resolve_user_id(user_id: str | None = None, username: str | None = None) ->
         for user in store.users:
             if user.username == username:
                 return user.id
-    raise KeyError("user")
+        raise ValueError("Không tìm thấy tài khoản với username đã nhập.")
+    raise ValueError("Tên đăng nhập là bắt buộc.")
 
 
 def _resolve_role_action(user_id: str, role_name: str, action: str | None) -> bool:
@@ -528,7 +529,7 @@ async def admin_user_index(
 ):
     selected_manager_ids = _resolve_manager_ids(request, manager_ids)
     dashboard = store.get_admin_user_index_context(
-        manager_ids=selected_manager_ids or None,
+        manager_ids=selected_manager_ids,
         notice=notice,
         notice_level=notice_level,
     )
@@ -619,6 +620,9 @@ async def admin_user_update(request: Request):
     user_id = str(form.get("UserId") or form.get("user_id") or "").strip()
     _enforce_user_scope(current_admin, user_id)
     target_user = next((item for item in store.users if item.id == user_id), None)
+    username = str(form.get("UserName") or form.get("username") or "").strip() or (
+        target_user.username if target_user else ""
+    )
     display_name = str(form.get("DisplayName") or form.get("display_name") or "").strip() or (
         target_user.display_name if target_user else ""
     )
@@ -626,13 +630,17 @@ async def admin_user_update(request: Request):
     manager_id = _force_manager_binding(current_admin, str(form.get("UserIdManager") or form.get("manager_id") or "").strip() or None)
 
     try:
-        store.update_admin_user(
+        updated_user = store.update_admin_user(
             user_id=user_id,
+            username=username,
             display_name=display_name,
             telegram=telegram,
             manager_id=manager_id,
+            actor_role=current_admin.role,
             updated_by=current_admin.username,
         )
+        if current_admin.id == updated_user.id:
+            set_admin_session_user(request, AdminSessionUser(**store._build_session_payload(updated_user)))
         return _redirect_with_notice("/admin/user/index", "Đã cập nhật user.", "success")
     except (KeyError, ValueError) as exc:
         return _redirect_with_notice("/admin/user/index", str(exc), "error")
@@ -702,12 +710,12 @@ async def admin_manager_list(
 async def admin_manager_toggle(request: Request):
     current_admin = require_admin_only(request)
     form = await request.form()
-    user_id = _resolve_user_id(
-        user_id=str(form.get("userId") or "").strip() or None,
-        username=str(form.get("username") or form.get("userName") or "").strip() or None,
-    )
-    promote = _resolve_role_action(user_id, "manager", str(form.get("action") or "").strip() or None)
     try:
+        user_id = _resolve_user_id(
+            user_id=str(form.get("userId") or "").strip() or None,
+            username=str(form.get("username") or form.get("userName") or "").strip() or None,
+        )
+        promote = _resolve_role_action(user_id, "manager", str(form.get("action") or "").strip() or None)
         store.update_role_manager(user_id, promote=promote, updated_by=current_admin.username)
         return _redirect_with_notice("/admin/user/manager", "Đã cập nhật quyền manager.", "success")
     except (KeyError, ValueError) as exc:
@@ -731,12 +739,12 @@ async def admin_admins_list(
 async def admin_admin_toggle(request: Request):
     current_admin = require_admin_only(request)
     form = await request.form()
-    user_id = _resolve_user_id(
-        user_id=str(form.get("userId") or "").strip() or None,
-        username=str(form.get("username") or form.get("userName") or "").strip() or None,
-    )
-    promote = _resolve_role_action(user_id, "admin", str(form.get("action") or "").strip() or None)
     try:
+        user_id = _resolve_user_id(
+            user_id=str(form.get("userId") or "").strip() or None,
+            username=str(form.get("username") or form.get("userName") or "").strip() or None,
+        )
+        promote = _resolve_role_action(user_id, "admin", str(form.get("action") or "").strip() or None)
         store.update_role_admin(user_id, promote=promote, updated_by=current_admin.username)
         return _redirect_with_notice("/admin/user/admins", "Đã cập nhật quyền admin.", "success")
     except (KeyError, ValueError) as exc:
@@ -825,7 +833,7 @@ async def admin_bot_index(
     return _render(
         request,
         store.get_admin_bot_index_context(
-            manager_ids=selected_manager_ids or None,
+            manager_ids=selected_manager_ids,
             notice=notice,
             notice_level=notice_level,
         ),
@@ -869,7 +877,7 @@ async def admin_bot_update_thread(request: Request):
     thread = int(str(form.get("Thread") or form.get("thread") or "0"))
     try:
         store.update_bot_thread(worker_id, thread)
-        return _redirect_with_notice("/admin/ManagerBOT/index", "Đã cập nhật số luồng BOT.", "success")
+        return _redirect_with_notice("/admin/ManagerBOT/index", "Đã cập nhật số luồng tối đa của BOT.", "success")
     except (KeyError, ValueError) as exc:
         return _redirect_with_notice("/admin/ManagerBOT/index", str(exc), "error")
 
@@ -926,7 +934,7 @@ async def admin_channel_index(
     return _render(
         request,
         store.get_admin_channel_index_context(
-            manager_ids=selected_manager_ids or None,
+            manager_ids=selected_manager_ids,
             user_id=userId,
             bot_id=botId,
             notice=notice,
@@ -1082,9 +1090,13 @@ async def admin_channel_export(request: Request):
     writer = csv.DictWriter(buffer, fieldnames=fieldnames)
     writer.writeheader()
     writer.writerows(rows)
-    payload = StringIO(buffer.getvalue())
-    headers = {"Content-Disposition": 'attachment; filename="bao-cao-channel-youtube.csv"'}
-    return StreamingResponse(iter([payload.getvalue()]), media_type="text/csv; charset=utf-8", headers=headers)
+    filename = "bao-cao-channel-youtube.csv"
+    headers = {
+        "Content-Disposition": f'attachment; filename="{filename}"; filename*=UTF-8\'\'{quote(filename)}',
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+    }
+    return Response(content="\ufeff" + buffer.getvalue(), media_type="text/csv; charset=utf-8", headers=headers)
 
 
 @router.get("/admin/channel/delete")
@@ -1128,7 +1140,7 @@ async def admin_render_index(
     return _render(
         request,
         store.get_admin_render_index_context(
-            manager_ids=selected_manager_ids or None,
+            manager_ids=selected_manager_ids,
             notice=notice,
             notice_level=notice_level,
         ),
@@ -1148,7 +1160,7 @@ async def admin_render_of_channel(
     return _render(
         request,
         store.get_admin_render_index_context(
-            manager_ids=selected_manager_ids or None,
+            manager_ids=selected_manager_ids,
             channel_id=channelId,
             notice=notice,
             notice_level=notice_level,

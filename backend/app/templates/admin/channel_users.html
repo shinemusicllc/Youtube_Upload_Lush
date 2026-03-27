@@ -46,7 +46,7 @@
         </div>
 
         <div class="table-shell">
-            <table class="admin-table">
+            <table class="admin-table" data-admin-list-table>
                 <thead>
                     <tr>
                         <th class="w-14">STT</th>
@@ -86,7 +86,7 @@
                                     <i data-lucide="server" class="h-3.5 w-3.5"></i>
                                     DS BOT
                                 </a>
-                                <form method="post" action="/admin/channel/addUser" class="inline-flex">
+                                <form method="post" action="/admin/channel/addUser" data-bulk-delete-form class="inline-flex">
                                     <input type="hidden" name="channelId" value="{{ dashboard.target_channel.id }}">
                                     <input type="hidden" name="channelName" value="{{ dashboard.target_channel.name }}">
                                     <input type="hidden" name="userId" value="{{ user.id }}">

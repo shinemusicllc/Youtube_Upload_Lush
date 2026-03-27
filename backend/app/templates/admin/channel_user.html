@@ -29,7 +29,7 @@
         </div>
 
         <div class="table-shell">
-            <table class="admin-table">
+            <table class="admin-table" data-admin-list-table>
                 <thead>
                     <tr>
                         <th class="w-14">STT</th>
@@ -73,7 +73,7 @@
                         </td>
                         <td>
                             <div class="flex items-center justify-end gap-2">
-                                <form method="post" action="/admin/channel/updateuserchannel" class="inline-flex">
+                                <form method="post" action="/admin/channel/updateuserchannel" {% if channel.is_used %}data-bulk-delete-form{% endif %} class="inline-flex">
                                     <input type="hidden" name="userId" value="{{ dashboard.target_user.id }}">
                                     <input type="hidden" name="username" value="{{ dashboard.target_user.username }}">
                                     <input type="hidden" name="channelId" value="{{ channel.id }}">

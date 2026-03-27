@@ -10,7 +10,7 @@
                 </div>
                 <div>
                     <h2 class="section-title">Tạo tài khoản user</h2>
-                    <p class="section-note">Giữ đúng luồng cũ: tạo username, password và chọn manager phụ trách ngay từ đầu.</p>
+                    <p class="section-note">Khởi tạo username, mật khẩu và chọn manager phụ trách ngay từ đầu.</p>
                 </div>
             </div>
             {% include "admin/_user_tabs.html" %}
@@ -18,7 +18,7 @@
     </div>
 
     <div class="panel max-w-3xl p-6">
-        <form method="post" action="/admin/user/create" class="space-y-5">
+        <form method="post" action="/admin/user/create" class="space-y-5" autocomplete="off">
             {% if dashboard.error %}
             <div class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] font-medium text-rose-700">{{ dashboard.error }}</div>
             {% endif %}
@@ -26,11 +26,11 @@
             <div class="grid gap-5 md:grid-cols-2">
                 <label class="block">
                     <span class="mb-2 block text-[12px] font-semibold text-slate-700">Tên đăng nhập</span>
-                    <input class="toolbar-input" type="text" name="username" value="{{ dashboard.form.username }}" placeholder="Ví dụ: user-alpha" required>
+                    <input class="toolbar-input" type="text" name="username" value="{{ dashboard.form.username }}" placeholder="Ví dụ: user-alpha" autocomplete="off" autocapitalize="off" spellcheck="false" required>
                 </label>
                 <label class="block">
                     <span class="mb-2 block text-[12px] font-semibold text-slate-700">Mật khẩu</span>
-                    <input class="toolbar-input" type="password" name="password" value="" placeholder="Nhập mật khẩu khởi tạo" required>
+                    <input class="toolbar-input" type="text" name="password" value="" placeholder="Nhập mật khẩu khởi tạo" autocomplete="off" autocapitalize="off" spellcheck="false" required>
                 </label>
             </div>
 
@@ -44,7 +44,7 @@
                 </select>
                 {% if dashboard.manager_binding_locked %}
                 <input type="hidden" name="manager_id" value="{{ dashboard.form.manager_id }}">
-                <p class="mt-2 text-[11px] text-slate-500">Manager scope duoc khoa theo tai khoan dang dang nhap.</p>
+                <p class="mt-2 text-[11px] text-slate-500">Manager scope được khóa theo tài khoản đang đăng nhập.</p>
                 {% endif %}
             </label>
 

@@ -104,6 +104,147 @@
         padding-bottom: 8px;
       }
 
+      .admin-select-shell {
+        position: relative;
+        min-width: 0;
+      }
+
+      .admin-select-native {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .admin-select-button {
+        width: 100%;
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 0 14px;
+        border: 1px solid rgb(203 213 225);
+        border-radius: 10px;
+        background: #ffffff;
+        color: rgb(15 23 42);
+        font-size: 13px;
+        text-align: left;
+        transition: border-color 120ms ease, box-shadow 120ms ease, color 120ms ease;
+      }
+
+      .admin-select-shell[data-open="true"] .admin-select-button,
+      .admin-select-button:focus-visible {
+        border-color: rgba(93, 103, 223, 0.72);
+        box-shadow: 0 0 0 2px rgba(93, 103, 223, 0.1);
+        outline: none;
+      }
+
+      .admin-select-button:disabled {
+        background: rgb(248 250 252);
+        color: rgb(100 116 139);
+        cursor: not-allowed;
+      }
+
+      .admin-select-value {
+        min-width: 0;
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-weight: 600;
+      }
+
+      .admin-select-value.is-placeholder {
+        color: rgb(100 116 139);
+        font-weight: 500;
+      }
+
+      .admin-select-chevron {
+        flex-shrink: 0;
+        color: rgb(148 163 184);
+        transition: transform 120ms ease, color 120ms ease;
+      }
+
+      .admin-select-shell[data-open="true"] .admin-select-chevron {
+        transform: rotate(180deg);
+        color: rgb(93 103 223);
+      }
+
+      .admin-select-menu {
+        display: none;
+        position: absolute;
+        top: calc(100% + 8px);
+        left: 0;
+        right: 0;
+        z-index: 40;
+        overflow: hidden;
+        border: 1px solid rgb(226 232 240);
+        border-radius: 10px;
+        background: #ffffff;
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+      }
+
+      .admin-select-shell[data-open="true"] .admin-select-menu {
+        display: block;
+      }
+
+      .admin-select-option {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 11px 14px;
+        border: 0;
+        background: transparent;
+        color: rgb(15 23 42);
+        font-size: 13px;
+        text-align: left;
+        transition: background-color 120ms ease, color 120ms ease;
+        cursor: pointer;
+      }
+
+      .admin-select-option + .admin-select-option {
+        border-top: 1px solid rgb(241 245 249);
+      }
+
+      .admin-select-option:hover {
+        background: rgb(248 250 252);
+      }
+
+      .admin-select-option.is-active {
+        background: rgba(93, 103, 223, 0.05);
+      }
+
+      .admin-select-option.is-placeholder .admin-select-option-label {
+        color: rgb(100 116 139);
+        font-weight: 500;
+      }
+
+      .admin-select-option-value {
+        min-width: 0;
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .admin-select-option-label {
+        font-weight: 600;
+      }
+
+      .admin-select-option-check {
+        opacity: 0;
+        flex-shrink: 0;
+        color: rgb(93 103 223);
+        transition: opacity 120ms ease;
+      }
+
+      .admin-select-option.is-active .admin-select-option-check {
+        opacity: 1;
+      }
+
       .manager-picker {
         position: relative;
         min-width: 0;
@@ -113,13 +254,13 @@
         display: flex;
         min-height: 44px;
         width: 100%;
-        align-items: flex-start;
+        align-items: center;
         justify-content: space-between;
         gap: 12px;
         border: 1px solid rgb(203 213 225);
         border-radius: 10px;
         background: #ffffff;
-        padding: 8px 12px;
+        padding: 6px 12px;
         font-size: 13px;
         color: rgb(15 23 42);
         transition: border-color 120ms ease, box-shadow 120ms ease;
@@ -139,6 +280,7 @@
         flex-wrap: wrap;
         align-items: center;
         gap: 6px;
+        min-height: 30px;
       }
 
       .manager-picker-placeholder {
@@ -148,11 +290,13 @@
         white-space: nowrap;
         text-align: left;
         color: rgb(15 23 42);
+        line-height: 1.35;
       }
 
       .manager-picker-tags {
         display: flex;
         flex-wrap: wrap;
+        align-items: center;
         gap: 6px;
       }
 
@@ -167,8 +311,9 @@
         gap: 6px;
         max-width: 180px;
         border-radius: 8px;
-        background: rgb(93 103 223);
-        color: #ffffff;
+        border: 1px solid rgb(199 210 254);
+        background: rgb(238 242 255);
+        color: rgb(79 70 229);
         padding: 6px 8px;
         font-size: 12px;
         font-weight: 600;
@@ -188,13 +333,16 @@
         align-items: center;
         justify-content: center;
         border-radius: 999px;
-        color: rgba(255, 255, 255, 0.88);
+        cursor: pointer;
+        color: rgb(99 102 241);
         transition: background-color 120ms ease, color 120ms ease;
       }
 
+      .manager-picker-tag-remove:focus-visible,
       .manager-picker-tag-remove:hover {
-        background: rgba(255, 255, 255, 0.16);
-        color: #ffffff;
+        background: rgba(93, 103, 223, 0.12);
+        color: rgb(67 56 202);
+        outline: none;
       }
 
       .manager-picker-tag-clear {
@@ -209,6 +357,13 @@
         font-size: 12px;
         font-weight: 600;
         line-height: 1;
+        cursor: pointer;
+      }
+
+      .manager-picker-tag-clear:focus-visible,
+      .manager-picker-tag-clear:hover {
+        background: rgb(255 228 230);
+        outline: none;
       }
 
       .manager-picker-panel {
@@ -334,6 +489,158 @@
         overflow-x: auto;
       }
 
+      .admin-table-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 20px;
+      }
+
+      .admin-table-header-copy {
+        min-width: 0;
+        flex: 1 1 auto;
+      }
+
+      .admin-table-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 16px;
+      }
+
+      .admin-table-toolbar.is-inline {
+        width: min(320px, 100%);
+        flex: 0 0 auto;
+      }
+
+      .admin-table-toolbar.is-block {
+        border-bottom: 1px solid rgba(226, 232, 240, 0.72);
+        padding: 16px 20px;
+      }
+
+      .admin-table-search-shell {
+        position: relative;
+        display: flex;
+        width: 100%;
+        min-width: 220px;
+        align-items: center;
+      }
+
+      .admin-table-search-shell i,
+      .admin-table-search-shell svg {
+        position: absolute;
+        left: 14px;
+        pointer-events: none;
+      }
+
+      .admin-table-search-input {
+        width: 100%;
+        min-height: 42px;
+        border: 1px solid rgb(203 213 225);
+        border-radius: 10px;
+        background: #ffffff;
+        padding: 0 14px 0 40px;
+        font-size: 13px;
+        color: rgb(15 23 42);
+        outline: none;
+        transition: border-color 120ms ease, box-shadow 120ms ease;
+      }
+
+      .admin-table-search-input:focus {
+        border-color: rgba(93, 103, 223, 0.72);
+        box-shadow: 0 0 0 2px rgba(93, 103, 223, 0.1);
+      }
+
+      .admin-table-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        border-top: 1px solid rgb(226 232 240);
+        padding: 16px 20px;
+      }
+
+      .admin-table-summary {
+        font-size: 13px;
+        color: rgb(100 116 139);
+      }
+
+      .admin-table-footer-actions {
+        margin-left: auto;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 12px;
+      }
+
+      .admin-table-pagination {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .admin-table-page-btn {
+        display: inline-flex;
+        min-width: 36px;
+        height: 36px;
+        align-items: center;
+        justify-content: center;
+        border-radius: 10px;
+        border: 1px solid rgb(226 232 240);
+        background: #ffffff;
+        padding: 0 10px;
+        font-size: 13px;
+        font-weight: 600;
+        color: rgb(71 85 105);
+        transition: border-color 120ms ease, background-color 120ms ease, color 120ms ease;
+      }
+
+      .admin-table-page-btn:hover:not(:disabled) {
+        border-color: rgb(203 213 225);
+        background: rgb(248 250 252);
+        color: rgb(15 23 42);
+      }
+
+      .admin-table-page-btn.is-active {
+        border-color: rgb(93 103 223);
+        background: rgb(93 103 223);
+        color: #ffffff;
+        box-shadow: 0 10px 24px rgba(93, 103, 223, 0.2);
+      }
+
+      .admin-table-page-btn.is-ghost {
+        min-width: 28px;
+        border-color: transparent;
+        background: transparent;
+      }
+
+      .admin-table-page-btn:disabled {
+        cursor: not-allowed;
+        color: rgb(148 163 184);
+      }
+
+      .admin-table-delete-page:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+
+      .admin-table-extra-actions {
+        display: inline-flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 12px;
+      }
+
+      .admin-table-empty {
+        padding: 24px 18px !important;
+        text-align: center;
+        font-size: 13px;
+        font-weight: 600;
+        color: rgb(100 116 139);
+      }
+
       .admin-table {
         width: 100%;
         border-collapse: separate;
@@ -343,14 +650,9 @@
 
       .admin-table thead th {
         position: relative;
-        padding: 14px 18px;
+        padding: 0;
         border-bottom: 1px solid rgb(226 232 240);
         background: rgba(248, 250, 252, 0.72);
-        text-align: left;
-        font-size: 11px;
-        font-weight: 600;
-        letter-spacing: 0.02em;
-        color: rgb(71 85 105);
       }
 
       .admin-table thead th:not(:last-child)::after {
@@ -380,6 +682,50 @@
         margin-top: 4px;
         font-size: 11px;
         color: rgb(100 116 139);
+      }
+
+      .sortable-button {
+        display: flex;
+        width: 100%;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 6px;
+        padding: 14px 18px;
+        text-align: left;
+        font-size: 11px;
+        font-weight: 600;
+        color: rgb(71 85 105);
+        letter-spacing: 0.02em;
+        transition: color 120ms ease;
+      }
+
+      .sortable-button:hover {
+        color: rgb(15 23 42);
+      }
+
+      .sortable-button.is-end {
+        justify-content: flex-end;
+      }
+
+      .sortable-button.is-active {
+        color: rgb(79 70 229);
+      }
+
+      .sortable-button-label {
+        min-width: 0;
+      }
+
+      .sort-arrows {
+        display: inline-flex;
+        flex-direction: row;
+        gap: 1px;
+        font-size: 10px;
+        color: rgb(148 163 184);
+      }
+
+      .sort-up.is-on,
+      .sort-down.is-on {
+        color: rgb(79 70 229);
       }
 
       .table-mono {
@@ -538,6 +884,24 @@
       .admin-dialog::backdrop {
         background: rgba(15, 23, 42, 0.42);
       }
+
+      @media (max-width: 767px) {
+        .admin-table-header,
+        .admin-table-toolbar,
+        .admin-table-footer {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .admin-table-search-shell {
+          width: 100%;
+        }
+
+        .admin-table-footer-actions {
+          margin-left: 0;
+          justify-content: space-between;
+        }
+      }
     </style>
 </head>
 <body class="min-h-screen overflow-hidden bg-[#f3f5f9] font-sans antialiased text-slate-800">
@@ -556,7 +920,7 @@
                         </svg>
                     </div>
                     <div>
-                        <p class="font-display text-[17px] font-bold leading-none tracking-tight text-slate-900">Youtube Upload Lush</p>
+                        <p class="font-display text-[17px] font-bold leading-none tracking-tight text-slate-900">Youtube Upload</p>
                         <p class="mt-1 text-[11px] text-slate-500">Admin workspace</p>
                     </div>
                 </a>
@@ -645,15 +1009,44 @@
           const options = Array.from(picker.querySelectorAll('[data-manager-option]'));
           const checkboxes = Array.from(picker.querySelectorAll('.manager-picker-checkbox'));
           const placeholder = picker.dataset.placeholder || 'Tất cả manager';
+          const hostForm = picker.closest('form[data-manager-auto-submit="true"]');
 
           function selectedCheckboxes() {
             return checkboxes.filter(function (checkbox) { return checkbox.checked; });
           }
 
+          function submitFilterForm() {
+            if (!hostForm) {
+              return;
+            }
+            if (typeof hostForm.requestSubmit === 'function') {
+              hostForm.requestSubmit();
+              return;
+            }
+            hostForm.submit();
+          }
+
+          function bindInlineAction(node, handler) {
+            node.addEventListener('click', function (event) {
+              event.preventDefault();
+              event.stopPropagation();
+              handler();
+            });
+            node.addEventListener('keydown', function (event) {
+              if (event.key !== 'Enter' && event.key !== ' ') {
+                return;
+              }
+              event.preventDefault();
+              event.stopPropagation();
+              handler();
+            });
+          }
+
           function syncHiddenInputs() {
             hiddenInputs.innerHTML = '';
             const selected = selectedCheckboxes();
-            if (!selected.length) {
+            const showAllState = !selected.length;
+            if (showAllState) {
               const blank = document.createElement('input');
               blank.type = 'hidden';
               blank.name = 'manager_ids';
@@ -673,47 +1066,51 @@
 
           function syncSummary() {
             const selected = selectedCheckboxes();
+            const showAllState = !selected.length;
             tagsNode.innerHTML = '';
             placeholderNode.textContent = placeholder;
-            placeholderNode.classList.toggle('is-hidden', selected.length > 0);
+            placeholderNode.classList.toggle('is-hidden', !showAllState);
 
-            selected.forEach(function (checkbox) {
-              const option = checkbox.closest('[data-manager-option]');
-              const name = option ? option.querySelector('.manager-picker-name') : null;
-              const tag = document.createElement('span');
-              tag.className = 'manager-picker-tag';
-              tag.innerHTML =
-                '<span class="manager-picker-tag-label"></span>' +
-                '<button type="button" class="manager-picker-tag-remove" aria-label="Bỏ chọn">x</button>';
-              tag.querySelector('.manager-picker-tag-label').textContent = name ? name.textContent.trim() : checkbox.value;
-              tag.querySelector('.manager-picker-tag-remove').addEventListener('click', function (event) {
-                event.preventDefault();
-                event.stopPropagation();
-                checkbox.checked = false;
-                syncHiddenInputs();
-                syncSummary();
+            if (!showAllState) {
+              selected.forEach(function (checkbox) {
+                const option = checkbox.closest('[data-manager-option]');
+                const name = option ? option.querySelector('.manager-picker-name') : null;
+                const tag = document.createElement('span');
+                tag.className = 'manager-picker-tag';
+                tag.innerHTML =
+                  '<span class="manager-picker-tag-label"></span>' +
+                  '<span class="manager-picker-tag-remove" role="button" tabindex="0" aria-label="Bỏ chọn">&times;</span>';
+                tag.querySelector('.manager-picker-tag-label').textContent = name ? name.textContent.trim() : checkbox.value;
+                bindInlineAction(tag.querySelector('.manager-picker-tag-remove'), function () {
+                  checkbox.checked = false;
+                  syncHiddenInputs();
+                  syncSummary();
+                  submitFilterForm();
+                });
+                tagsNode.appendChild(tag);
               });
-              tagsNode.appendChild(tag);
-            });
+            }
 
-            if (selected.length > 1) {
-              const clearTag = document.createElement('button');
-              clearTag.type = 'button';
+            if (!showAllState && selected.length > 1) {
+              const clearTag = document.createElement('span');
               clearTag.className = 'manager-picker-tag-clear';
+              clearTag.setAttribute('role', 'button');
+              clearTag.setAttribute('tabindex', '0');
               clearTag.textContent = 'Xóa tất cả';
-              clearTag.addEventListener('click', function (event) {
-                event.preventDefault();
-                event.stopPropagation();
+              bindInlineAction(clearTag, function () {
                 checkboxes.forEach(function (checkbox) {
                   checkbox.checked = false;
                 });
                 syncHiddenInputs();
                 syncSummary();
+                submitFilterForm();
               });
               tagsNode.appendChild(clearTag);
             }
 
-            count.textContent = selected.length + '/' + checkboxes.length + ' manager';
+            count.textContent = showAllState
+              ? placeholder
+              : selected.length + '/' + checkboxes.length + ' manager';
           }
 
           function filterOptions() {
@@ -741,6 +1138,8 @@
             checkbox.addEventListener('change', function () {
               syncHiddenInputs();
               syncSummary();
+              setOpen(false);
+              submitFilterForm();
             });
           });
 
@@ -750,6 +1149,8 @@
             });
             syncHiddenInputs();
             syncSummary();
+            setOpen(false);
+            submitFilterForm();
           });
 
           search.addEventListener('input', filterOptions);
@@ -770,12 +1171,108 @@
           syncSummary();
           filterOptions();
         });
+
+        document.querySelectorAll('select.toolbar-select:not([multiple])').forEach(function (select) {
+          if (select.dataset.adminSelectEnhanced === 'true') {
+            return;
+          }
+
+          select.dataset.adminSelectEnhanced = 'true';
+          const shell = document.createElement('div');
+          shell.className = 'admin-select-shell';
+          select.parentNode.insertBefore(shell, select);
+          shell.appendChild(select);
+          select.classList.add('admin-select-native');
+
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'admin-select-button';
+          button.innerHTML =
+            '<span class="admin-select-value"></span>' +
+            '<span class="admin-select-chevron" aria-hidden="true">&#9662;</span>';
+
+          const menu = document.createElement('div');
+          menu.className = 'admin-select-menu';
+
+          shell.appendChild(button);
+          shell.appendChild(menu);
+
+          const valueNode = button.querySelector('.admin-select-value');
+
+          function setOpen(open) {
+            shell.dataset.open = !button.disabled && open ? 'true' : 'false';
+          }
+
+          function buildOptions() {
+            menu.innerHTML = '';
+            Array.from(select.options).forEach(function (option) {
+              const item = document.createElement('button');
+              item.type = 'button';
+              item.className = 'admin-select-option';
+              if (option.selected) {
+                item.classList.add('is-active');
+              }
+              if (!option.value) {
+                item.classList.add('is-placeholder');
+              }
+              if (option.disabled) {
+                item.disabled = true;
+              }
+              item.innerHTML =
+                '<span class="admin-select-option-value"><span class="admin-select-option-label"></span></span>' +
+                '<span class="admin-select-option-check" aria-hidden="true">&#10003;</span>';
+              item.querySelector('.admin-select-option-label').textContent = (option.textContent || '').trim();
+              item.addEventListener('click', function (event) {
+                event.preventDefault();
+                if (option.disabled) {
+                  return;
+                }
+                select.value = option.value;
+                select.dispatchEvent(new Event('change', { bubbles: true }));
+                setOpen(false);
+                button.focus();
+              });
+              menu.appendChild(item);
+            });
+          }
+
+          function syncButton() {
+            const selectedOption = select.options[select.selectedIndex] || select.options[0];
+            valueNode.textContent = selectedOption ? (selectedOption.textContent || '').trim() : '';
+            valueNode.classList.toggle('is-placeholder', !select.value);
+            button.disabled = select.disabled;
+            buildOptions();
+          }
+
+          button.addEventListener('click', function () {
+            setOpen(shell.dataset.open !== 'true');
+          });
+
+          select.addEventListener('change', function () {
+            syncButton();
+          });
+
+          document.addEventListener('click', function (event) {
+            if (!shell.contains(event.target)) {
+              setOpen(false);
+            }
+          });
+
+          document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape') {
+              setOpen(false);
+            }
+          });
+
+          syncButton();
+        });
       });
 
       function reloadPage() {
         location.reload();
       }
     </script>
+    <script defer src="{{ request.url_for('static', path='js/admin_tables.js') }}?v=20260327-admin-table-suite-v3"></script>
     {% block page_scripts %}{% endblock %}
 </body>
 </html>

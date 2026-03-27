@@ -5,27 +5,29 @@
     {% include "admin/_admin_notice.html" %}
 
     <div class="panel p-5">
-        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div class="flex flex-col gap-4">
             <div class="flex items-start gap-3">
                 <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50">
                     <i data-lucide="file-text" class="h-4.5 w-4.5 text-brand-600"></i>
                 </div>
                 <div>
                     <h2 class="section-title">Chi tiết tiến trình render</h2>
-                    <p class="section-note">Màn readonly bám đúng flow detail cấu hình của app cũ.</p>
+                    <p class="section-note">Xem nhanh cấu hình nguồn, thời lượng và lịch chạy của job render đang chọn.</p>
                 </div>
             </div>
-            <a href="/admin/render/index" class="action-btn action-btn-slate">
-                <i data-lucide="arrow-left" class="h-3.5 w-3.5"></i>
-                Quay lại danh sách render
-            </a>
         </div>
     </div>
 
     <div class="panel p-5">
-        <div class="mb-5">
-            <h3 class="section-title">Cấu hình chi tiết</h3>
-            <p class="section-note">Job: {{ dashboard.render_detail.title }} • {{ dashboard.render_detail.id }}</p>
+        <div class="mb-5 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+                <h3 class="section-title">Cấu hình chi tiết</h3>
+                <p class="section-note">Job: {{ dashboard.render_detail.title }} • {{ dashboard.render_detail.id }}</p>
+            </div>
+            <a href="/admin/render/index" class="action-btn action-btn-slate self-start">
+                <i data-lucide="arrow-left" class="h-3.5 w-3.5"></i>
+                Quay lại danh sách render
+            </a>
         </div>
 
         <div class="grid gap-5 lg:grid-cols-2">

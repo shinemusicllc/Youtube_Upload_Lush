@@ -16,14 +16,10 @@
                 </div>
             </div>
 
-            <form method="get" action="/admin/channel/index" class="flex w-full min-w-0 flex-col gap-3 xl:max-w-[760px] xl:flex-row xl:items-center xl:justify-end">
+            <form method="get" action="/admin/channel/index" class="flex w-full min-w-0 flex-col gap-3 xl:max-w-[760px] xl:flex-row xl:items-center xl:justify-end" data-manager-auto-submit="true">
                 <div class="min-w-0 flex-1">
                     {% include "admin/_manager_picker.html" %}
                 </div>
-                <button type="submit" class="action-btn action-btn-primary h-11 shrink-0 justify-center px-4 text-[13px]">
-                    <i data-lucide="search" class="h-4 w-4"></i>
-                    Search
-                </button>
                 <a href="/admin/channel/export" class="action-btn action-btn-emerald h-11 shrink-0 justify-center px-4 text-[13px]">
                     <i data-lucide="file-output" class="h-4 w-4"></i>
                     Export
@@ -48,16 +44,15 @@
     {% include "admin/_summary_strip.html" %}
 
     <div class="panel overflow-hidden">
-        <div class="flex items-center justify-between gap-4 border-b border-slate-200/80 px-5 py-4">
+        <div class="border-b border-slate-200/80 px-5 py-4">
             <div>
                 <h3 class="section-title">Danh sách kênh</h3>
-                <p class="section-note">Giữ workflow cũ: DS User, DS Render, cập nhật profile, xóa kết nối và export báo cáo.</p>
+                <p class="section-note">Theo dõi kênh đã kết nối, user được cấp quyền, BOT đang gán và các thao tác điều phối chính.</p>
             </div>
-            <div class="text-[12px] text-slate-500">Hiển thị {{ dashboard.channels|length }} kênh</div>
         </div>
 
         <div class="table-shell">
-            <table class="admin-table">
+            <table class="admin-table" data-admin-list-table>
                 <thead>
                     <tr>
                         <th class="w-14">STT</th>
@@ -136,7 +131,7 @@
                                         Cập nhật
                                     </button>
                                 </form>
-                                <a href="/admin/channel/delete?channelId={{ channel.id }}{% if dashboard.filtered_bot %}&botId={{ dashboard.filtered_bot.id }}{% endif %}" class="action-btn action-btn-rose" onclick="return confirm('Xóa kênh này khỏi hệ thống?');">
+                                <a href="/admin/channel/delete?channelId={{ channel.id }}{% if dashboard.filtered_bot %}&botId={{ dashboard.filtered_bot.id }}{% endif %}" class="action-btn action-btn-rose" data-bulk-delete-link onclick="return confirm('Xóa kênh này khỏi hệ thống?');">
                                     <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
                                     Xóa
                                 </a>

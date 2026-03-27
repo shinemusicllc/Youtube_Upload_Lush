@@ -331,6 +331,34 @@
             font-size: 11px;
             font-weight: 600;
         }
+
+        .login-notice {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .login-notice-close {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            margin: -2px -4px -2px 0;
+            border-radius: 8px;
+            border: 1px solid transparent;
+            background: transparent;
+            color: currentColor;
+            opacity: 0.72;
+            transition: background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+        }
+
+        .login-notice-close:hover {
+            opacity: 1;
+            background: rgba(255, 255, 255, 0.16);
+            border-color: rgba(255, 255, 255, 0.16);
+        }
     </style>
 </head>
 <body class="antialiased">
@@ -408,8 +436,11 @@
                 </div>
 
                 {% if notice %}
-                <div class="mb-6 rounded-[14px] border px-4 py-3 text-[13px] font-medium {% if notice_level == 'error' %}border-rose-200 bg-rose-50 text-rose-700{% else %}border-emerald-200 bg-emerald-50 text-emerald-700{% endif %}">
-                    {{ notice }}
+                <div data-login-notice class="login-notice mb-6 rounded-[14px] border px-4 py-3 text-[13px] font-medium {% if notice_level == 'error' %}border-rose-200 bg-rose-50 text-rose-700{% else %}border-emerald-200 bg-emerald-50 text-emerald-700{% endif %}">
+                    <p class="min-w-0 flex-1 pr-1 leading-5">{{ notice }}</p>
+                    <button type="button" data-login-notice-close class="login-notice-close shrink-0" aria-label="Đóng thông báo">
+                        <i data-lucide="x" class="h-4 w-4"></i>
+                    </button>
                 </div>
                 {% endif %}
 
@@ -489,6 +520,15 @@
                     icon.setAttribute("data-lucide", isPassword ? "eye-off" : "eye");
                     lucide.createIcons();
                 }
+            });
+        }
+
+        const loginNotice = document.querySelector("[data-login-notice]");
+        const loginNoticeClose = document.querySelector("[data-login-notice-close]");
+
+        if (loginNotice && loginNoticeClose) {
+            loginNoticeClose.addEventListener("click", () => {
+                loginNotice.remove();
             });
         }
     </script>

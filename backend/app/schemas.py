@@ -36,7 +36,7 @@ class WorkerRecord(BaseModel):
     status: WorkerStatus
     capacity: int
     load_percent: int
-    bandwidth_kbps: int
+    bandwidth_kbps: float
     disk_used_gb: float
     disk_total_gb: float
     threads: int
@@ -232,7 +232,7 @@ class WorkerHeartbeatPayload(BaseModel):
     worker_id: str
     shared_secret: str
     load_percent: int = 0
-    bandwidth_kbps: int = 0
+    bandwidth_kbps: float = 0
     disk_used_gb: float = 0
     disk_total_gb: float = 0
     threads: int = 1

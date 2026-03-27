@@ -290,12 +290,14 @@
     }
 
     .upload-action[data-state="uploading"] .upload-action-progress,
-    .upload-action[data-state="success"] .upload-action-progress {
+    .upload-action[data-state="success"] .upload-action-progress,
+    .upload-action[data-state="error"] .upload-action-progress {
       display: inline-flex;
     }
 
     .upload-action[data-state="uploading"] .upload-action-idle,
-    .upload-action[data-state="success"] .upload-action-idle {
+    .upload-action[data-state="success"] .upload-action-idle,
+    .upload-action[data-state="error"] .upload-action-idle {
       display: none;
     }
 
@@ -342,6 +344,20 @@
       color: rgb(16 185 129);
     }
 
+    .upload-action[data-state="error"] {
+      background: rgb(255 241 242);
+      color: rgb(225 29 72);
+    }
+
+    .upload-action[data-state="error"] .upload-action-center {
+      color: rgb(225 29 72);
+    }
+
+    .upload-action[data-state="error"] .upload-action-ring-bg,
+    .upload-action[data-state="error"] .upload-action-ring-value {
+      display: none;
+    }
+
     .upload-action-center-icon {
       display: none;
       width: 11px;
@@ -349,7 +365,8 @@
     }
 
     .upload-action[data-state="uploading"] .upload-action-center-icon--cancel,
-    .upload-action[data-state="success"] .upload-action-center-icon--check {
+    .upload-action[data-state="success"] .upload-action-center-icon--check,
+    .upload-action[data-state="error"] .upload-action-center-icon--cancel {
       display: block;
     }
 
@@ -479,11 +496,179 @@
     }
 
     .channel-row {
-      min-height: 80px;
+      min-height: 92px;
+      position: relative;
+      align-items: center;
+      border-color: rgba(226, 232, 240, 0.9);
+      background:
+        linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(248,250,252,0.82) 100%);
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,0.92),
+        0 1px 2px rgba(15, 23, 42, 0.03);
+      transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+    }
+
+    .channel-row:hover {
+      transform: translateY(-1px);
+      border-color: rgba(165, 180, 252, 0.9);
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,0.96),
+        0 8px 18px rgba(15, 23, 42, 0.05);
+    }
+
+    .channel-avatar-shell {
+      position: relative;
+      width: 52px;
+      height: 52px;
+      border-radius: 14px;
+      border: 1px solid rgba(203, 213, 225, 0.92);
+      background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(241,245,249,0.95) 100%);
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,0.95),
+        0 3px 10px rgba(15, 23, 42, 0.06);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      overflow: visible;
+      isolation: isolate;
+    }
+
+    .channel-avatar-inner {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      height: 100%;
+      border-radius: inherit;
+      overflow: hidden;
+    }
+
+    .channel-row-avatar {
+      width: 100%;
+      height: 100%;
+      border: 0;
+      border-radius: inherit;
+      box-shadow: none;
+      display: block;
+    }
+
+    .channel-avatar-fallback {
+      width: 100%;
+      height: 100%;
+      border-radius: inherit;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+    }
+
+    .channel-row-copy {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .channel-row-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .channel-row-title {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+      font-weight: 700;
+      color: rgb(15 23 42);
+      letter-spacing: -0.01em;
+    }
+
+    .channel-row-meta {
+      font-size: 10px;
+      line-height: 1.35;
+      color: rgb(100 116 139);
+      font-family: 'IBM Plex Mono', monospace;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      letter-spacing: -0.01em;
+    }
+
+    .channel-row-meta-link {
+      color: inherit;
+      transition: color 120ms ease;
+    }
+
+    .channel-row-meta-link:hover {
+      color: rgb(93 103 223);
+    }
+
+    .channel-row-bot-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      max-width: 100%;
+      padding: 3px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(191, 219, 254, 0.95);
+      background: rgba(239, 246, 255, 0.92);
+      color: rgb(37 99 235);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.82);
+      font-size: 10px;
+      font-weight: 600;
+      line-height: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .channel-row-bot-chip::before {
+      content: '';
+      width: 5px;
+      height: 5px;
+      border-radius: 999px;
+      flex-shrink: 0;
+      background: currentColor;
+      opacity: 0.75;
+    }
+
+    .channel-row-bot-chip--sky {
+      border: 1px solid rgba(191, 219, 254, 0.95);
+      background: rgba(239, 246, 255, 0.92);
+      color: rgb(37 99 235);
+    }
+
+    .channel-row-bot-chip--violet {
+      border: 1px solid rgba(199, 210, 254, 0.98);
+      background: rgba(238, 242, 255, 0.92);
+      color: rgb(79 70 229);
+    }
+
+    .channel-row-bot-chip--emerald {
+      border: 1px solid rgba(167, 243, 208, 0.96);
+      background: rgba(236, 253, 245, 0.94);
+      color: rgb(5 150 105);
+    }
+
+    .channel-row-bot-chip--amber {
+      border: 1px solid rgba(253, 230, 138, 0.98);
+      background: rgba(255, 251, 235, 0.96);
+      color: rgb(217 119 6);
+    }
+
+    .channel-row-bot-chip--rose {
+      border: 1px solid rgba(254, 205, 211, 0.98);
+      background: rgba(255, 241, 242, 0.96);
+      color: rgb(225 29 72);
     }
 
     .channel-row-action {
-      width: 88px;
+      width: 92px;
       display: flex;
       justify-content: flex-end;
       align-items: center;
@@ -500,6 +685,9 @@
       opacity: 1;
       visibility: visible;
       transform: translateX(0);
+      justify-content: center;
+      min-width: 84px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.88);
     }
 
     .channel-row-delete {
@@ -897,27 +1085,30 @@
 
                 <div class="space-y-3 flex-1 overflow-y-auto pr-1">
                     {% for channel in dashboard.connected_channels %}
-                    <div class="channel-row flex items-center gap-3 min-w-0 p-3 border border-slate-200/70 bg-white rounded-xl hover:border-brand-200 hover:shadow-sm transition-all" data-channel-id="{{ channel.id | e }}">
-                        <a href="{{ channel.public_url | e }}" target="_blank" rel="noopener noreferrer" class="shrink-0 rounded-md focus:outline-none">
+                    <div class="channel-row flex items-center gap-3 min-w-0 p-3 border border-slate-200/70 rounded-xl hover:border-brand-200 hover:shadow-sm transition-all" data-channel-id="{{ channel.id | e }}">
+                        <a href="{{ channel.public_url | e }}" target="_blank" rel="noopener noreferrer" class="channel-avatar-shell focus:outline-none">
+                        <span class="channel-avatar-inner">
                         {% if channel.avatar_url %}
-                        <img src="{{ channel.avatar_url | e }}" alt="{{ channel.title | e }}" class="channel-avatar-media w-10 h-10 rounded-md object-cover shrink-0" loading="lazy" referrerpolicy="no-referrer">
+                        <img src="{{ channel.avatar_url | e }}" alt="{{ channel.title | e }}" class="channel-avatar-media channel-row-avatar object-cover" loading="lazy" referrerpolicy="no-referrer">
                         {% else %}
-                        <div class="w-10 h-10 {{ channel.avatar_class | e }} rounded-md flex justify-center items-center text-xs font-bold shrink-0{% if channel.avatar_small %} text-[10px]{% else %} text-white{% endif %}">{{ channel.avatar | e }}</div>
+                        <div class="channel-avatar-fallback {{ channel.avatar_class | e }}{% if channel.avatar_small %} text-[10px]{% else %} text-white text-xs{% endif %}">{{ channel.avatar | e }}</div>
                         {% endif %}
+                        </span>
                         </a>
-                        <div class="flex-1 min-w-0 overflow-hidden">
-                            <h4 class="truncate">
-                                <a href="{{ channel.public_url | e }}" target="_blank" rel="noopener noreferrer" class="text-[13px] font-bold text-slate-900 hover:text-brand-700 transition-colors">{{ channel.title | e }}</a>
-                            </h4>
-                            <p class="text-[10px] text-slate-500 truncate font-mono mt-0.5">
-                                <a href="{{ channel.public_url | e }}" target="_blank" rel="noopener noreferrer" class="hover:text-brand-600 transition-colors">{{ channel.channel_id | e }}</a>
-                                <span class="mx-1 text-slate-300">•</span>
-                                <span>{{ channel.bot_label | e }}</span>
+                        <div class="channel-row-copy flex-1 overflow-hidden">
+                            <div class="channel-row-head">
+                                <a href="{{ channel.public_url | e }}" target="_blank" rel="noopener noreferrer" class="channel-row-title hover:text-brand-700 transition-colors">{{ channel.title | e }}</a>
+                            </div>
+                            <p class="channel-row-meta">
+                                <a href="{{ channel.public_url | e }}" target="_blank" rel="noopener noreferrer" class="channel-row-meta-link">{{ channel.channel_id | e }}</a>
                             </p>
+                            <div class="pt-0.5">
+                                <span class="channel-row-bot-chip {{ channel.bot_badge_class | e }}">{{ channel.bot_label | e }}</span>
+                            </div>
                         </div>
                         <div class="channel-row-action">
-                            <span class="channel-row-status inline-flex max-w-full items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700">
-                                <i data-lucide="badge-check" class="w-3.5 h-3.5 shrink-0"></i>
+                            <span class="channel-row-status inline-flex max-w-full items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold text-emerald-700">
+                                <i data-lucide="check-circle-2" class="w-3.5 h-3.5 shrink-0"></i>
                                 <span class="truncate">Đã kết nối</span>
                             </span>
                             <button type="button" data-channel-action="delete" data-channel-id="{{ channel.id | e }}" data-channel-title="{{ channel.title | e }}" class="channel-row-delete inline-flex h-8 w-8 items-center justify-center rounded-lg border border-transparent text-slate-400 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 focus:outline-none focus:ring-2 focus:ring-rose-200" title="Xóa kênh">
@@ -928,6 +1119,7 @@
                     </div>
                     {% endfor %}
                 </div>
+            </div>
             </div>
         </form>
 
@@ -949,7 +1141,7 @@
           </div>
 
           <div class="min-w-0 overflow-x-auto w-full">
-            <table class="render-table min-w-full w-full table-auto text-left text-sm">
+            <table class="render-table min-w-full w-full table-auto text-left text-sm" data-page-size="10">
               <thead class="text-slate-600 text-[11px] font-semibold tracking-wide bg-slate-50/70">
                 <tr>
                   <th class="px-3 py-4 border-b border-slate-200 w-[52px] text-center text-slate-400">STT</th>
@@ -1069,14 +1261,17 @@
 
           <div class="px-5 py-4 border-t border-slate-200 flex items-center justify-between gap-4">
             <p id="renderSummaryText" class="text-[13px] text-slate-500">{{ dashboard.render_summary | e }}</p>
-            <div class="flex items-center gap-1.5">
-              <button type="button" class="w-9 h-9 border border-slate-200 rounded-lg text-slate-400 hover:text-slate-600 hover:border-slate-300 hover:shadow-sm transition-all flex items-center justify-center">
-                <i data-lucide="chevron-left" class="w-4 h-4"></i>
-              </button>
-              <button type="button" class="w-9 h-9 bg-brand-600 text-white font-semibold text-[13px] rounded-lg shadow-md shadow-brand-600/20 flex items-center justify-center">1</button>
-              <button type="button" class="w-9 h-9 border border-slate-200 rounded-lg text-slate-600 hover:text-slate-900 hover:border-slate-300 hover:shadow-sm transition-all font-medium text-[13px] flex items-center justify-center">2</button>
-              <button type="button" class="w-9 h-9 border border-slate-200 rounded-lg text-slate-600 hover:text-slate-900 hover:border-slate-300 hover:shadow-sm transition-all flex items-center justify-center">
-                <i data-lucide="chevron-right" class="w-4 h-4"></i>
+            <div class="flex items-center gap-2">
+              <div id="renderPagination" class="flex items-center gap-1.5"></div>
+              <button
+                id="deleteVisibleJobsButton"
+                type="button"
+                class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 text-[12px] font-semibold text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900 hover:shadow-sm disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none"
+                title="Xóa nhanh các job đang hiển thị"
+                disabled
+              >
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                Xóa trang
               </button>
             </div>
           </div>
@@ -1086,6 +1281,6 @@
   </main>
   <script id="dashboard-seed" type="application/json">{{ dashboard | tojson }}</script>
 
-  <script src="/static/js/user_dashboard.js?v=20260326-schedule-now-enter"></script>
+  <script src="/static/js/user_dashboard.js?v=20260327-upload-error-clear"></script>
 </body>
 </html>

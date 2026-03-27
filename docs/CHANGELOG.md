@@ -595,3 +595,140 @@
 - Fixed: The repository is no longer left in a \"live changed but not yet pushed\" state once this sync is completed.
 - Affected files: docs/WORKLOG.md, docs/CHANGELOG.md, local git metadata.
 - Impact/Risk: Low risk; no runtime behavior changes are introduced by this log entry itself, but it documents the code bundle about to be pushed.
+### 2026-03-27 08:39 - Activate render pagination and quick-delete for the visible page
+- Added: A real footer action cluster for the user render table with client-side pagination controls and a new `Xóa trang` button that targets only the jobs currently visible on the page.
+- Changed: `backend/app/static/js/user_dashboard.js` now keeps render jobs in client state, applies search and sort before paginating, recalculates the summary text dynamically, and re-renders only the current page instead of dumping the full list every time.
+- Fixed: The previous pagination UI was only static markup and did nothing; users can now move between pages, and bulk delete no longer requires clicking each row one by one.
+- Affected files: backend/app/templates/user_dashboard.html, backend/app/static/js/user_dashboard.js, backend/app/routers/api_user.py, backend/app/store.py, docs/WORKLOG.md, docs/CHANGELOG.md.
+- Impact/Risk: Medium-low risk; backend and JS syntax checks passed, but browser-level verification is still pending because no local background server was started in this session.
+### 2026-03-27 08:47 - Localize and dismiss login error notices
+- Added: A dismiss action for the shared login notice so users can close the error banner without reloading the page.
+- Changed: The shared login template now renders the notice as a compact flex row with a right-side `x` button, and the authentication layer now returns the invalid-login message in Vietnamese with diacritics.
+- Fixed: The old login alert could not be dismissed and the invalid-credentials message appeared without Vietnamese accents, reducing polish and readability.
+- Affected files: backend/app/templates/admin/login.html, backend/app/store.py, docs/WORKLOG.md, docs/CHANGELOG.md.
+- Impact/Risk: Low risk; the change is limited to login copy and UI behavior, and `python -m compileall backend/app` passed after the update.
+### 2026-03-27 08:56 - Normalize remaining login auth messages to Vietnamese with diacritics
+- Added: No new UI surface; this pass strictly finishes localization coverage for all login-related backend messages that can feed the shared notice banner.
+- Changed: `backend/app/store.py` now returns Vietnamese-with-diacritics messages not only for invalid credentials, but also for required username/password and role-based access denial cases.
+- Fixed: The runtime could still surface ASCII fallback strings in some authentication paths, which is why the screenshot still showed `Thong tin dang nhap khong hop le.` after the first UI pass.
+- Affected files: backend/app/store.py, docs/WORKLOG.md, docs/CHANGELOG.md.
+- Impact/Risk: Low risk; backend compile passed again and the change is limited to user-facing auth copy.
+### 2026-03-27 09:07 - Restart local runtime and deploy the login/dashboard fixes to production
+- Added: A runtime rollout snapshot on the production host covering the shared login notice fix plus the current user-dashboard pagination bundle.
+- Changed: The local app process on `127.0.0.1:8000` was restarted onto the latest source, and the VPS runtime at `82.197.71.6:/opt/youtube-upload-lush` now serves the updated `store.py`, `login.html`, `user_dashboard.html`, `user_dashboard.js`, and `api_user.py`.
+- Fixed: Both local and live runtimes were still capable of serving stale in-memory code before this restart/deploy pass; they are now aligned with the latest workspace state.
+- Affected files: runtime local process `uvicorn backend.app.main:app`, runtime `/opt/youtube-upload-lush/backend/app/store.py`, runtime `/opt/youtube-upload-lush/backend/app/templates/admin/login.html`, runtime `/opt/youtube-upload-lush/backend/app/templates/user_dashboard.html`, runtime `/opt/youtube-upload-lush/backend/app/static/js/user_dashboard.js`, runtime `/opt/youtube-upload-lush/backend/app/routers/api_user.py`, docs/WORKLOG.md, docs/CHANGELOG.md.
+- Impact/Risk: Medium-low risk; deploy touched both auth copy and dashboard behavior, but local health, host service status, and origin/public health checks all passed after rollout.
+### 2026-03-27 09:34 - Deepen admin user editing and simplify the admin brand shell
+- Added: Username editing controls to the admin user-edit modal and standalone edit page, including role-aware helper text and readonly behavior for cases where only admin may rename the account.
+- Changed: `backend/app/store.py` now lets `update_admin_user()` process username changes with role-aware permission handling and cascades manager username renames to dependent users, workers, channels, and jobs; `backend/app/routers/web.py` now forwards `username` plus `actor_role` and refreshes the current admin session after self-edits; `backend/app/templates/admin/_layout.html` now shows `Youtube Upload` without the extra `Lush` word in the sidebar brand.
+- Fixed: Admins can now rename any account, including admin accounts, while managers can rename only scoped user accounts; the previous UI had no username field at all and the sidebar wordmark wrapped with an unnecessary extra line.
+- Affected files: backend/app/store.py, backend/app/routers/web.py, backend/app/templates/admin/_layout.html, backend/app/templates/admin/user_index.html, backend/app/templates/admin/user_edit.html, docs/WORKLOG.md, docs/CHANGELOG.md.
+- Impact/Risk: Medium-low risk; backend compile and `TestClient` smoke tests passed locally, and the same bundle has now been rolled out to the live VPS with origin/public health checks back to `ok`.
+### 2026-03-27 09:40 - Align admin dropdowns with workspace styling and reset manager filter default
+- Added: A shared custom single-select enhancement in the admin shell so existing `select.toolbar-select` controls render as branded dropdown buttons with consistent menu states across admin pages and modals.
+- Changed: `backend/app/templates/admin/_layout.html` now drives both the manager picker summary and the generic admin select treatment; `backend/app/auth.py`, `backend/app/store.py`, and `backend/app/routers/web.py` now preserve an empty `manager_ids` selection as the real `Tất cả manager` state instead of rehydrating the last sticky session filter.
+- Fixed: Admin list tabs no longer reopen with a manager preselected by old session state, and admin dropdowns that previously fell back to native browser UI now visually match the workspace dropdown pattern.
+- Affected files: backend/app/templates/admin/_layout.html, backend/app/templates/admin/user_index.html, backend/app/templates/admin/worker_index.html, backend/app/auth.py, backend/app/store.py, backend/app/routers/web.py, docs/DECISIONS.md, docs/WORKLOG.md, docs/CHANGELOG.md.
+- Impact/Risk: Medium-low risk; local compile, health check, runtime restart, and browser smoke tests across the main admin tabs all passed, but the live VPS rollout is still pending.
+### 2026-03-27 10:03 - Standardize admin table lists with workspace-style footer controls and harden CSV export
+- Added: A shared admin table client script that injects per-table quick search, real pagination, a footer summary, and `Xóa trang` controls for every admin list marked with `data-admin-list-table`.
+- Changed: `backend/app/templates/admin/_layout.html` now provides the shared table toolbar/footer styles and loads `backend/app/static/js/admin_tables.js`; list templates now opt into the shared behavior and mark deletable rows with `data-bulk-delete-form` or `data-bulk-delete-link`; `backend/app/templates/admin/render_index.html` now moves `Xóa tất cả dữ liệu` into the footer action cluster and removes the old “Xóa lần cuối bởi” block from the top of the panel.
+- Fixed: Admin tables no longer miss search bars, mock pagination, and summary text; the channel export endpoint now responds with a stable CSV download header so the browser receives `bao-cao-channel-youtube.csv` instead of a random temporary name.
+- Affected files: backend/app/static/js/admin_tables.js, backend/app/templates/admin/_layout.html, backend/app/templates/admin/user_index.html, backend/app/templates/admin/worker_index.html, backend/app/templates/admin/channel_index.html, backend/app/templates/admin/render_index.html, backend/app/templates/admin/user_role_list.html, backend/app/templates/admin/bot_of_user.html, backend/app/templates/admin/channel_user.html, backend/app/templates/admin/channel_users.html, backend/app/templates/admin/user_manager_bot.html, backend/app/templates/admin/user_of_bot.html, backend/app/routers/web.py, docs/DECISIONS.md, docs/WORKLOG.md, docs/CHANGELOG.md.
+- Impact/Risk: Medium risk; the change touches all admin list tables and the export route, but local Python/JS syntax checks, runtime restart, browser smoke tests, and response-header verification all passed before live rollout.
+### 2026-03-27 10:20 - Add shared admin table sorting, move table search into header, and harden upload-error affordance
+- Added: Shared client-side sort controls for all admin tables with clickable header arrows and stateful ordering handled by `backend/app/static/js/admin_tables.js`.
+- Changed: `backend/app/templates/admin/_layout.html` now renders the admin table search bar inline inside the list header block and styles sortable headers to match the workspace table language; `backend/app/templates/user_dashboard.html` and `backend/app/static/js/user_dashboard.js` now expose an `error` upload state so a bad local file turns the upload affordance into a clearable `x`.
+- Fixed: Vietnamese text mojibake in admin/user-facing templates such as `Danh sách kênh`, `Tìm kiếm nhanh...`, and related labels; admin tables now actually reorder rows when sorted instead of only toggling the header state.
+- Affected files: backend/app/static/js/admin_tables.js, backend/app/static/js/user_dashboard.js, backend/app/templates/admin/_layout.html, backend/app/templates/admin/bot_of_user.html, backend/app/templates/admin/channel_index.html, backend/app/templates/admin/channel_user.html, backend/app/templates/admin/channel_users.html, backend/app/templates/admin/login.html, backend/app/templates/admin/render_index.html, backend/app/templates/admin/user_edit.html, backend/app/templates/admin/user_index.html, backend/app/templates/admin/user_manager_bot.html, backend/app/templates/admin/user_of_bot.html, backend/app/templates/admin/user_role_list.html, backend/app/templates/admin/worker_index.html, backend/app/templates/user_dashboard.html, docs/DECISIONS.md, docs/WORKLOG.md, docs/CHANGELOG.md.
+- Impact/Risk: Medium-low risk; the pass is mostly template/static only, and local syntax checks, browser smoke tests, plus live host restart/health verification all passed after rollout.
+### 2026-03-27 10:39 - Refresh admin panel copy, move render-detail back action, and harden role-list feedback
+- Added: Visible admin notice handling on the manager/admin role list pages so add/remove role actions now show clear success/error feedback in-place.
+- Changed: Context copy in the admin `Danh sách kênh`, `Danh sách BOT`, and `Danh sách job render` panels now matches the current product workflow; the render-detail back button now sits at the top-right of the `Cấu hình chi tiết` pane instead of the upper banner.
+- Fixed: Role add/remove flows now validate empty or unknown usernames cleanly and redirect back with readable Vietnamese notices instead of failing unclearly; the render-detail header copy no longer references the old app workflow.
+- Affected files: backend/app/routers/web.py, backend/app/templates/admin/channel_index.html, backend/app/templates/admin/worker_index.html, backend/app/templates/admin/render_index.html, backend/app/templates/admin/render_detail.html, backend/app/templates/admin/user_role_list.html, docs/DECISIONS.md, docs/WORKLOG.md, docs/CHANGELOG.md.
+- Impact/Risk: Low risk; changes are mostly template copy/layout plus route-level validation, and local compile, TestClient route checks, and browser smoke tests all passed.
+### 2026-03-27 11:05 - Tighten admin create-user form and auto-filter manager picker
+- Added: Auto-submit behavior for the shared admin manager picker, including visible selection badges with inline `x` removal.
+- Changed: The admin create-user form now starts blank with autofill discouraged and the password field displayed as plain text while typing; manager-filter toolbars on `User`, `BOT`, `Kênh`, and `Render` now filter immediately without a separate top-level `Search` button.
+- Fixed: Selecting the only available manager no longer collapses back into the `Tất cả manager` state; explicit `1/1` selection now persists in the URL and UI as a real filtered state.
+- Affected files: backend/app/templates/admin/user_create.html, backend/app/templates/admin/_manager_picker.html, backend/app/templates/admin/_layout.html, backend/app/templates/admin/user_index.html, backend/app/templates/admin/worker_index.html, backend/app/templates/admin/channel_index.html, backend/app/templates/admin/render_index.html, docs/WORKLOG.md, docs/CHANGELOG.md.
+- Impact/Risk: Medium risk; the shared picker behavior changed across all admin tabs that use manager filtering, but local compile, runtime restart, and browser smoke tests on create-user plus user-index passed before deploy.
+### 2026-03-27 11:18 - Audit live worker telemetry for bandwidth and thread columns
+- Added: No runtime change in this pass; it documents the live-behavior audit for worker telemetry shown in the admin BOT list.
+- Changed: Confirmed that the current `Luồng` value shown in the admin table comes from worker heartbeat/config (`WORKER_THREADS`, `WORKER_CAPACITY`) rather than a deeper measured concurrency probe.
+- Fixed: Clarified that `Băng thông` is not a live metric yet because the worker agent still posts `bandwidth_kbps=0` in every heartbeat, and the admin-side thread update action does not reconfigure the remote worker runtime.
+- Affected files: docs/WORKLOG.md, docs/CHANGELOG.md.
+- Impact/Risk: Low risk; this is an audit/result entry only, but it identifies two places that need a real implementation if the UI is expected to be operational telemetry.
+### 2026-03-27 11:21 - Implement real worker bandwidth telemetry and old-style thread display
+- Added: Đo băng thông thật từ `/proc/net/dev` trong heartbeat worker và đưa số liệu này lên admin BOT list.
+- Changed: Cột `Luồng` ở admin BOT list nay hiển thị theo dạng `đang chạy / tối đa`; copy trong modal cập nhật luồng cũng được đổi sang nghĩa giới hạn tối đa.
+- Fixed: Loại bỏ `bandwidth_kbps=0` hard-code khiến UI luôn hiện `0.00 KB/s` dù worker đang hoạt động.
+- Affected files: `D:\Youtube_BOT_UPLOAD\workers\agent\control_plane.py`, `D:\Youtube_BOT_UPLOAD\backend\app\schemas.py`, `D:\Youtube_BOT_UPLOAD\backend\app\store.py`, `D:\Youtube_BOT_UPLOAD\backend\app\routers\web.py`, `D:\Youtube_BOT_UPLOAD\backend\app\templates\admin\worker_index.html`.
+- Impact/Risk: Admin nhìn đúng hơn trạng thái vận hành hiện tại; tuy vậy `threads` vẫn chưa đồng nghĩa worker xử lý song song thật ở runtime.
+### 2026-03-27 11:39 - Implement real worker concurrency by thread limit
+- Added: Worker loop đa luồng thật trong `workers/agent/main.py`, mỗi job chạy nền với client riêng và tự báo `fail` nếu nổ lỗi.
+- Changed: Control plane chỉ claim thêm khi worker còn slot trống, tự đồng bộ `busy/online` theo số job active, và `threads` trên control plane trở thành mức concurrency mong muốn thay vì bị heartbeat env cũ ghi đè.
+- Fixed: Loại bỏ nguy cơ claim lại cùng một job active khi worker poll nhiều lần, đồng thời vá lease refresh để job dài không bị hết hạn giữa chừng.
+- Affected files: `D:\Youtube_BOT_UPLOAD\backend\app\store.py`, `D:\Youtube_BOT_UPLOAD\workers\agent\control_plane.py`, `D:\Youtube_BOT_UPLOAD\workers\agent\main.py`.
+- Impact/Risk: Hạ tầng đã sẵn sàng cho BOT chạy nhiều job song song theo `Luồng`; tuy vậy chưa có bài test production hai job render thật cùng lúc nên vẫn cần một vòng verify vận hành khi anh muốn mở luồng > 1 trên máy live.
+### 2026-03-27 12:05 - Enable dual-worker live run and refine thread action icon
+- Added: Asset test local thật trên host gồm video `asset-e2e-20260327.mp4` và audio `asset-e2e-20260327-tone.wav`, phục vụ bài test end-to-end không phụ thuộc nguồn ngoài.
+- Changed: Nút `Luồng` ở admin BOT list đổi icon sang `waypoints`; `worker-02` được mở `execute + upload` và channel `Loki Lofi` được remap sang worker này để tham gia vận hành thật.
+- Fixed: Tránh mất job test do web service giữ `store` trong memory bằng cách tạo job từ DB khi service dừng ngắn rồi khởi động lại với state mới.
+- Affected files: `D:\Youtube_BOT_UPLOAD\backend\app\templates\admin\worker_index.html`, runtime host `82.197.71.6`, runtime worker `62.72.46.42`.
+- Impact/Risk: Đã verify live hai worker cùng render/upload thật; tuy vậy vẫn chưa có bài test production một worker chạy `2/2` slot cùng lúc.
+### 2026-03-27 12:30 - Validate 2-thread live worker capacity
+- Added: Live concurrency test batch with 4 short jobs across worker-01 and worker-02.
+- Changed: Operational worker config on VPS to WORKER_THREADS=2 and WORKER_CAPACITY=2.
+- Fixed: Confirmed concurrency path claims 2 jobs per worker; isolated worker-02 failures to YouTube upload quota instead of runtime capacity.
+- Affected files: docs/DECISIONS.md, docs/WORKLOG.md, docs/CHANGELOG.md
+- Impact/Risk: Current worker SKU is validated for 2 concurrent slots; 3+ slots remain unverified and may overload CPU/RAM or hit upload instability.
+### 2026-03-27 12:40 - Refine admin user list section copy
+- Added: Mô tả ngữ cảnh rõ hơn cho section Danh sách người dùng.
+- Changed: Thay copy kỹ thuật cũ bằng wording quản trị phù hợp với màn user list.
+- Fixed: Chuẩn hóa lại heading và section note tiếng Việt có dấu ở block đầu bảng user.
+- Affected files: backend/app/templates/admin/user_index.html, docs/WORKLOG.md, docs/CHANGELOG.md
+- Impact/Risk: Chỉ đổi copy hiển thị, không ảnh hưởng logic hay contract backend.
+### 2026-03-27 12:55 - Repair mojibake in admin user list template
+- Added: Runtime recovery note for redeploying a clean user_index.html.
+- Changed: Repaired Vietnamese copy in ackend/app/templates/admin/user_index.html while preserving recent UX changes.
+- Fixed: Mojibake/garbled UTF-8 text on /admin/user/index caused by deploying a corrupted local template.
+- Affected files: backend/app/templates/admin/user_index.html, docs/WORKLOG.md, docs/CHANGELOG.md
+- Impact/Risk: Fix is isolated to one admin template; after redeploy the page should recover without affecting backend logic.
+### 2026-03-27 13:20 - Refine workspace My Channel list visual rhythm
+- Added: Stronger avatar shell treatment with accent stroke and clearer row hover presence for the `My Channel` list.
+- Changed: Tightened channel row spacing, BOT chip color treatment, and row card emphasis to better match the workspace list/table language.
+- Fixed: Reduced the flat look of channel avatars and improved scanability of channel identity vs status.
+- Affected files: `D:\Youtube_BOT_UPLOAD\backend\app\templates\user_dashboard.html`, `D:\Youtube_BOT_UPLOAD\docs\WORKLOG.md`, `D:\Youtube_BOT_UPLOAD\docs\CHANGELOG.md`.
+- Impact/Risk: Local-only visual refinement; no VPS deploy yet and no backend/runtime logic changed.
+### 2026-03-27 13:35 - Polish My Channel badge hierarchy and encoding
+- Added: Stable BOT badge tone assignment based on `bot_label` so different BOTs are visually distinguishable in the workspace channel list.
+- Changed: Moved avatar emphasis fully to the avatar shell bottom accent instead of the row top stroke, and switched the connected-state icon to a guaranteed Lucide glyph.
+- Fixed: Repaired mojibake strings inside the `My Channel` block for subtitle, add-channel CTA, connected badge, and delete action labels.
+- Affected files: `D:\Youtube_BOT_UPLOAD\backend\app\store.py`, `D:\Youtube_BOT_UPLOAD\backend\app\templates\user_dashboard.html`, `D:\Youtube_BOT_UPLOAD\docs\WORKLOG.md`, `D:\Youtube_BOT_UPLOAD\docs\CHANGELOG.md`.
+- Impact/Risk: Local-only UI refinement with no deploy; backend change is limited to presentation metadata for connected channel cards.
+### 2026-03-27 13:50 - Restore My Channel BOT badge fallback and move avatar accent below content
+- Added: Avatar inner wrapper so the colored accent can sit beneath the full avatar stack as a shadow-like ground line.
+- Changed: Restored complete default BOT badge styling in the base chip class, while keeping per-BOT color overrides from backend.
+- Fixed: Prevented BOT labels from collapsing into plain text when `bot_badge_class` is missing in a stale runtime, and moved the avatar accent out from inside the image layer.
+- Affected files: `D:\Youtube_BOT_UPLOAD\backend\app\templates\user_dashboard.html`, `D:\Youtube_BOT_UPLOAD\docs\WORKLOG.md`, `D:\Youtube_BOT_UPLOAD\docs\CHANGELOG.md`.
+- Impact/Risk: Local-only UI adjustment; a local backend restart may still be needed for the newer `bot_badge_class` payload to appear on an already-running process.
+### 2026-03-27 14:00 - Convert avatar ground accent to badge-like stroke
+- Added: Badge-style stroke capsule treatment for the avatar ground accent in the workspace My Channel list.
+- Changed: Replaced the solid under-avatar line with a small outlined pill to better match the app's chip/badge language.
+- Fixed: Reduced the visual mismatch between avatar decoration and the rest of the badge system.
+- Affected files: `D:\Youtube_BOT_UPLOAD\backend\app\templates\user_dashboard.html`, `D:\Youtube_BOT_UPLOAD\docs\WORKLOG.md`, `D:\Youtube_BOT_UPLOAD\docs\CHANGELOG.md`.
+- Impact/Risk: Local-only visual tweak with no backend or deploy impact.
+### 2026-03-27 14:08 - Remove avatar ground accent from My Channel cards
+- Changed: Removed the under-avatar accent treatment entirely so channel avatars render as clean framed blocks.
+- Fixed: Eliminated the extra decorative element that was competing with the row's information hierarchy.
+- Affected files: `D:\Youtube_BOT_UPLOAD\backend\app\templates\user_dashboard.html`, `D:\Youtube_BOT_UPLOAD\docs\WORKLOG.md`, `D:\Youtube_BOT_UPLOAD\docs\CHANGELOG.md`.
+- Impact/Risk: Local-only visual simplification with no backend or deploy impact.
+### 2026-03-27 14:20 - Create pre-frontend backup snapshot branch
+- Added: Backup branch and GitHub snapshot point before the next frontend polish pass.
+- Changed: No runtime code behavior changed; this is a source-control safety checkpoint.
+- Fixed: Reduced rollback risk for upcoming workspace UI edits by preserving the current integrated state.
+- Affected files: docs/WORKLOG.md, docs/CHANGELOG.md, git branch state.
+- Impact/Risk: Safe backup only; no deploy or production impact.

@@ -3,24 +3,30 @@
   const renderTableHeaders = renderTable ? Array.from(renderTable.querySelectorAll("thead th")) : [];
   const renderTableBody = renderTable ? renderTable.querySelector("tbody") : null;
   const renderHeaderLabels = ["STT", "Thông tin job", "Kênh", "VPS", "Tiến độ", "Timeline", "Trạng thái", "Tác vụ"];
-  let originalRenderRows = renderTableBody ? Array.from(renderTableBody.querySelectorAll("tr")) : [];
   const renderSortState = { index: null, direction: "asc" };
   const renderSearchInput = document.getElementById("jobSearchInput");
+  const renderSummaryNode = document.getElementById("renderSummaryText");
+  const renderPaginationNode = document.getElementById("renderPagination");
+  const deleteVisibleJobsButton = document.getElementById("deleteVisibleJobsButton");
   const dashboardSeedNode = document.getElementById("dashboard-seed");
+  const renderPageSize = Math.max(1, Number(renderTable?.dataset.pageSize || 10) || 10);
+  const renderPaginationState = { page: 1, pageSize: renderPageSize };
+  let renderJobsState = [];
   let liveRefreshHandle = null;
   let liveRefreshInFlight = false;
   let lastLivePayloadSignature = "";
 
   const escapeHtml = (value) =>
     String(value ?? "")
-      .replace(/&/g, "&amp;")
+      .replace(/&/g, "&")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/\"/g, "&quot;")
       .replace(/'/g, "&#39;");
 
-  const syncOriginalRows = () => {
-    originalRenderRows = renderTableBody ? Array.from(renderTableBody.querySelectorAll("tr")) : [];
+  const clampRenderPage = (page, totalPages) => {
+    if (totalPages <= 0) return 1;
+    return Math.min(Math.max(page, 1), totalPages);
   };
 
   const showFormMessage = (message, type = "info") => {
@@ -32,15 +38,15 @@
     node.textContent = message;
   };
 
-  const getRenderSortValue = (row, index) => {
-    const cells = row.querySelectorAll("td");
-    const cell = cells[index];
-    if (!cell) return "";
-
-    const text = cell.innerText.replace(/\s+/g, " ").trim();
-    if (index === 0) return Number(text) || 0;
-    if (index === 4) return Number(text.replace(/[^\d.-]/g, "")) || 0;
-    return text.toLowerCase();
+  const getRenderSortValue = (job, index) => {
+    if (index === 0) return Number(job.index) || 0;
+    if (index === 1) return `${job.title || ""} ${job.meta || ""} ${job.job_id || ""} ${job.description || ""}`.trim().toLowerCase();
+    if (index === 2) return String(job.channel_name || "").toLowerCase();
+    if (index === 3) return String(job.bot || "").toLowerCase();
+    if (index === 4) return (Number(job.render_progress) || 0) * 1000 + (Number(job.upload_progress) || 0);
+    if (index === 5) return `${job.created_at || ""} ${job.render_at || ""} ${job.uploaded_at || ""}`.toLowerCase();
+    if (index === 6) return String(job.status || "").toLowerCase();
+    return "";
   };
 
   const renderHeaderMarkup = (label, index) => {
@@ -58,8 +64,16 @@
     `;
   };
 
+  const refreshRenderHeaderButtons = () => {
+    renderTableHeaders.forEach((th, index) => {
+      if (!renderHeaderLabels[index]) return;
+      th.classList.remove("text-slate-400");
+      th.innerHTML = renderHeaderMarkup(renderHeaderLabels[index], index);
+    });
+  };
+
   const bindRenderSortButtons = () => {
-    if (!renderTable || !renderTableBody) return;
+    if (!renderTable) return;
     renderTable.querySelectorAll(".sortable-button").forEach((button) => {
       button.addEventListener("click", () => {
         const index = Number(button.dataset.sortIndex);
@@ -69,21 +83,9 @@
           renderSortState.index = index;
           renderSortState.direction = "asc";
         }
-
-        const rows = [...originalRenderRows].sort((rowA, rowB) => {
-          const valueA = getRenderSortValue(rowA, index);
-          const valueB = getRenderSortValue(rowB, index);
-          if (valueA === valueB) return 0;
-          const comparison = valueA > valueB ? 1 : -1;
-          return renderSortState.direction === "asc" ? comparison : -comparison;
-        });
-
-        renderTableBody.replaceChildren(...rows);
-        renderTableHeaders.forEach((th, headerIndex) => {
-          if (!renderHeaderLabels[headerIndex]) return;
-          th.innerHTML = renderHeaderMarkup(renderHeaderLabels[headerIndex], headerIndex);
-        });
+        refreshRenderHeaderButtons();
         bindRenderSortButtons();
+        applyRenderSort();
       });
     });
   };
@@ -208,8 +210,8 @@
   const initFileInputs = () => {
     document.querySelectorAll("[data-upload-trigger]").forEach((button) => {
       button.addEventListener("click", () => {
-        const state = button.dataset.state || "idle";
-        if (state !== "idle") return;
+      const state = button.dataset.state || "idle";
+      if (state !== "idle") return;
         const slot = button.getAttribute("data-upload-trigger");
         const input = slot ? document.querySelector(`[data-upload-input="${slot}"]`) : null;
         if (input instanceof HTMLInputElement) {
@@ -220,25 +222,14 @@
   };
 
   const applyRenderSearch = () => {
-    if (!renderTableBody || !renderSearchInput) return;
-    const query = renderSearchInput.value.trim().toLowerCase();
-    Array.from(renderTableBody.querySelectorAll("tr")).forEach((row) => {
-      const visible = row.innerText.toLowerCase().includes(query);
-      row.classList.toggle("hidden", !visible);
-    });
+    if (!renderTableBody) return;
+    renderPaginationState.page = 1;
+    renderRenderTable();
   };
 
   const applyRenderSort = () => {
-    if (!renderTableBody || renderSortState.index === null) return;
-    const rows = [...originalRenderRows].sort((rowA, rowB) => {
-      const valueA = getRenderSortValue(rowA, renderSortState.index);
-      const valueB = getRenderSortValue(rowB, renderSortState.index);
-      if (valueA === valueB) return 0;
-      const comparison = valueA > valueB ? 1 : -1;
-      return renderSortState.direction === "asc" ? comparison : -comparison;
-    });
-    renderTableBody.replaceChildren(...rows);
-    syncOriginalRows();
+    if (!renderTableBody) return;
+    renderRenderTable();
   };
 
   const renderJobPreviewMarkup = (job) => {
@@ -362,6 +353,174 @@
     </tr>
   `;
 
+  const renderEmptyRowMarkup = (message) => `
+    <tr>
+      <td colspan="8" class="px-5 py-10 text-center text-[13px] text-slate-500">${escapeHtml(message)}</td>
+    </tr>
+  `;
+
+  const getFilteredRenderJobs = () => {
+    const query = renderSearchInput ? renderSearchInput.value.trim().toLowerCase() : "";
+    let jobs = Array.isArray(renderJobsState) ? [...renderJobsState] : [];
+
+    if (query) {
+      jobs = jobs.filter((job) => {
+        const haystack = [
+          job.title,
+          job.meta,
+          job.job_id,
+          job.description,
+          job.channel_name,
+          job.bot,
+          job.bot_meta,
+          job.status,
+          job.created_at,
+          job.render_at,
+          job.uploaded_at,
+        ]
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(query);
+      });
+    }
+
+    if (renderSortState.index !== null) {
+      jobs.sort((jobA, jobB) => {
+        const valueA = getRenderSortValue(jobA, renderSortState.index);
+        const valueB = getRenderSortValue(jobB, renderSortState.index);
+        if (valueA === valueB) return 0;
+        const comparison = valueA > valueB ? 1 : -1;
+        return renderSortState.direction === "asc" ? comparison : -comparison;
+      });
+    }
+
+    return jobs;
+  };
+
+  const getVisibleRenderPageJobs = () => {
+    const filteredJobs = getFilteredRenderJobs();
+    const totalPages = Math.max(1, Math.ceil(filteredJobs.length / renderPaginationState.pageSize));
+    renderPaginationState.page = clampRenderPage(renderPaginationState.page, totalPages);
+    const start = (renderPaginationState.page - 1) * renderPaginationState.pageSize;
+    const end = start + renderPaginationState.pageSize;
+    return {
+      filteredJobs,
+      totalPages,
+      start,
+      pageJobs: filteredJobs.slice(start, end),
+    };
+  };
+
+  const renderPaginationControls = (currentPage, totalPages) => {
+    if (!renderPaginationNode) return;
+
+    const previousDisabled = currentPage <= 1;
+    const nextDisabled = currentPage >= totalPages;
+    const pages = totalPages <= 1 ? [1] : Array.from({ length: totalPages }, (_, index) => index + 1);
+
+    renderPaginationNode.innerHTML = `
+      <button
+        type="button"
+        class="w-9 h-9 border border-slate-200 rounded-lg ${previousDisabled ? "text-slate-300 cursor-not-allowed" : "text-slate-600 hover:text-slate-900 hover:border-slate-300 hover:shadow-sm"} transition-all flex items-center justify-center"
+        data-pagination-action="previous"
+        ${previousDisabled ? "disabled" : ""}
+      >
+        <i data-lucide="chevron-left" class="w-4 h-4"></i>
+      </button>
+      ${pages
+        .map(
+          (page) => `
+            <button
+              type="button"
+              class="w-9 h-9 ${page === currentPage ? "bg-brand-600 text-white shadow-md shadow-brand-600/20" : "border border-slate-200 text-slate-600 hover:text-slate-900 hover:border-slate-300 hover:shadow-sm"} font-semibold text-[13px] rounded-lg transition-all flex items-center justify-center"
+              data-pagination-page="${page}"
+            >
+              ${page}
+            </button>
+          `
+        )
+        .join("")}
+      <button
+        type="button"
+        class="w-9 h-9 border border-slate-200 rounded-lg ${nextDisabled ? "text-slate-300 cursor-not-allowed" : "text-slate-600 hover:text-slate-900 hover:border-slate-300 hover:shadow-sm"} transition-all flex items-center justify-center"
+        data-pagination-action="next"
+        ${nextDisabled ? "disabled" : ""}
+      >
+        <i data-lucide="chevron-right" class="w-4 h-4"></i>
+      </button>
+    `;
+
+    renderPaginationNode.querySelectorAll("[data-pagination-page]").forEach((button) => {
+      button.addEventListener("click", () => {
+        renderPaginationState.page = Number(button.dataset.paginationPage) || 1;
+        renderRenderTable();
+      });
+    });
+
+    renderPaginationNode.querySelectorAll("[data-pagination-action]").forEach((button) => {
+      button.addEventListener("click", () => {
+        if (button.dataset.paginationAction === "previous") {
+          renderPaginationState.page -= 1;
+        } else {
+          renderPaginationState.page += 1;
+        }
+        renderRenderTable();
+      });
+    });
+  };
+
+  const updateRenderSummary = (start, visibleCount, totalCount) => {
+    if (!renderSummaryNode) return;
+    if (totalCount <= 0) {
+      renderSummaryNode.textContent = renderSearchInput?.value.trim()
+        ? "Khong tim thay job nao phu hop"
+        : "Chua co job nao trong hang doi";
+      return;
+    }
+
+    const from = start + 1;
+    const to = start + visibleCount;
+    renderSummaryNode.textContent = `Hiển thị ${from} đến ${to} trong số ${totalCount} kết quả`;
+  };
+
+  const updateDeleteVisibleJobsButton = (pageJobs, totalCount) => {
+    if (!(deleteVisibleJobsButton instanceof HTMLButtonElement)) return;
+    const disabled = !pageJobs.length;
+    deleteVisibleJobsButton.disabled = disabled;
+    deleteVisibleJobsButton.dataset.visibleCount = String(pageJobs.length);
+    deleteVisibleJobsButton.title = disabled
+      ? "Khong co job nao de xoa tren trang nay"
+      : `Xóa nhanh ${pageJobs.length} job đang hiển thị`;
+    deleteVisibleJobsButton.classList.toggle("opacity-80", totalCount > 0 && !pageJobs.length);
+  };
+
+  const renderRenderTable = () => {
+    if (!renderTableBody) return;
+
+    const { filteredJobs, totalPages, start, pageJobs } = getVisibleRenderPageJobs();
+    if (!pageJobs.length) {
+      renderTableBody.innerHTML = renderEmptyRowMarkup(
+        filteredJobs.length ? "Khong co job nao trong trang nay" : renderSearchInput?.value.trim() ? "Khong tim thay job nao phu hop" : "Chua co job nao trong hang doi"
+      );
+    } else {
+      renderTableBody.innerHTML = pageJobs
+        .map((job, index) =>
+          renderJobRowMarkup({
+            ...job,
+            index: start + index + 1,
+          })
+        )
+        .join("");
+    }
+
+    updateRenderSummary(start, pageJobs.length, filteredJobs.length);
+    renderPaginationControls(renderPaginationState.page, totalPages);
+    updateDeleteVisibleJobsButton(pageJobs, filteredJobs.length);
+    initJobActions();
+    initJobPreviewVideos();
+    if (window.lucide) window.lucide.createIcons();
+  };
+
   const updateRenderDashboard = (payload) => {
     if (!payload || !renderTableBody) return;
 
@@ -394,21 +553,8 @@
       });
     }
 
-    const summaryNode = document.getElementById("renderSummaryText");
-    if (summaryNode) {
-      summaryNode.textContent = payload.render_summary || "";
-    }
-
-    renderTableBody.innerHTML = Array.isArray(payload.render_jobs)
-      ? payload.render_jobs.map((job) => renderJobRowMarkup(job)).join("")
-      : "";
-
-    syncOriginalRows();
-    applyRenderSort();
-    applyRenderSearch();
-    initJobActions();
-    initJobPreviewVideos();
-    if (window.lucide) window.lucide.createIcons();
+    renderJobsState = Array.isArray(payload.render_jobs) ? payload.render_jobs : [];
+    renderRenderTable();
   };
 
   const buildLivePayloadSignature = (payload) => {
@@ -722,6 +868,7 @@
           return;
         }
         await clearSlotUpload(slot, { preservePath: true, skipRemoteAbort: false });
+        setUploadVisual(slot, "error", { progress: 0 });
         setSlotStatus(slot, error.message || "Upload file local thất bại.", "error");
       }
     };
@@ -912,6 +1059,37 @@
     });
   };
 
+  const initBulkDeleteVisibleJobs = () => {
+    if (!(deleteVisibleJobsButton instanceof HTMLButtonElement)) return;
+
+    deleteVisibleJobsButton.addEventListener("click", async () => {
+      const { pageJobs } = getVisibleRenderPageJobs();
+      if (!pageJobs.length) return;
+
+      const confirmed = window.confirm(`Xóa nhanh ${pageJobs.length} job đang hiển thị trên trang này?`);
+      if (!confirmed) return;
+
+      deleteVisibleJobsButton.disabled = true;
+      try {
+        const response = await fetch("/api/user/jobs/actions/bulk-delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            job_ids: pageJobs.map((job) => job.id),
+          }),
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.detail || "Khong the xoa danh sach dang hien thi.");
+        }
+        window.location.reload();
+      } catch (error) {
+        window.alert(error.message || "Khong the xoa danh sach dang hien thi.");
+        renderRenderTable();
+      }
+    });
+  };
+
   const initChannelActions = () => {
     document.querySelectorAll("[data-channel-action='delete']").forEach((button) => {
       button.addEventListener("click", async () => {
@@ -1010,29 +1188,26 @@
   if (dashboardSeedNode?.textContent) {
     try {
       const dashboardSeed = JSON.parse(dashboardSeedNode.textContent);
+      renderJobsState = Array.isArray(dashboardSeed.render_jobs) ? dashboardSeed.render_jobs : [];
       lastLivePayloadSignature = buildLivePayloadSignature(dashboardSeed);
     } catch (_error) {
+      renderJobsState = [];
       lastLivePayloadSignature = "";
     }
   }
 
-  renderTableHeaders.forEach((th, index) => {
-    if (!renderHeaderLabels[index]) return;
-    th.classList.remove("text-slate-400");
-    th.innerHTML = renderHeaderMarkup(renderHeaderLabels[index], index);
-  });
+  refreshRenderHeaderButtons();
 
   bindRenderSortButtons();
-  syncOriginalRows();
   initChannelSelect();
   initFlatpickr();
   initFileInputs();
   initForm();
   initOAuthButton();
-  initJobActions();
+  initBulkDeleteVisibleJobs();
   initChannelActions();
   initSearch();
-  initJobPreviewVideos();
+  renderRenderTable();
   initTransientNotice();
   pollLiveDashboard();
   liveRefreshHandle = window.setInterval(pollLiveDashboard, 5000);

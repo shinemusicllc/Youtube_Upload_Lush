@@ -71,7 +71,7 @@
             </div>
 
             <div class="table-shell">
-                <table class="admin-table">
+                <table class="admin-table" data-admin-list-table>
                     <thead>
                         <tr>
                             <th class="w-14">STT</th>
@@ -113,7 +113,7 @@
                             </td>
                             <td>
                                 <div class="flex items-center justify-end gap-2">
-                                    <form method="post" action="/admin/user/deletebot" onsubmit="return confirm('Gỡ BOT này khỏi user?');">
+                                    <form method="post" action="/admin/user/deletebot" data-bulk-delete-form onsubmit="return confirm('Gỡ BOT này khỏi user?');">
                                         <input type="hidden" name="user_id" value="{{ dashboard.user_record.id }}">
                                         <input type="hidden" name="assignment_id" value="{{ row.id }}">
                                         <button type="submit" class="action-btn action-btn-rose">

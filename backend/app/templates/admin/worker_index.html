@@ -12,16 +12,12 @@
                 </div>
                 <div>
                     <h2 class="section-title">Danh sách BOT</h2>
-                    <p class="section-note">Giữ luồng quản trị BOT cũ: lọc theo manager, xem kênh, xem user, sửa, xóa và cập nhật số luồng.</p>
+                    <p class="section-note">Quản lý cụm BOT theo manager, theo dõi tài nguyên hiện tại và thao tác nhanh trên từng VPS.</p>
                 </div>
             </div>
 
-            <form method="get" action="/admin/ManagerBOT/index" class="grid gap-3 lg:min-w-[520px] lg:grid-cols-[1fr_auto]">
+            <form method="get" action="/admin/ManagerBOT/index" class="grid gap-3 lg:min-w-[520px]" data-manager-auto-submit="true">
                 {% include "admin/_manager_picker.html" %}
-                <button type="submit" class="action-btn action-btn-primary h-11 justify-center px-4 text-[13px]">
-                    <i data-lucide="search" class="h-4 w-4"></i>
-                    Search
-                </button>
             </form>
         </div>
     </div>
@@ -31,11 +27,11 @@
     <div class="panel overflow-hidden">
         <div class="border-b border-slate-200/80 px-5 py-4">
             <h3 class="section-title">Cụm BOT VPS</h3>
-            <p class="section-note">Danh sách BOT theo manager, tải hiện tại, dung lượng, băng thông và số user/kênh đang gắn.</p>
+            <p class="section-note">Danh sách BOT theo manager, theo dõi tải hiện tại, dung lượng, băng thông thực và số user/kênh đang gắn.</p>
         </div>
 
         <div class="table-shell">
-            <table class="admin-table">
+            <table class="admin-table" data-admin-list-table>
                 <thead>
                     <tr>
                         <th class="w-14">STT</th>
@@ -95,7 +91,7 @@
                                     data-worker-name="{{ worker.name }}"
                                     data-thread="{{ worker.threads }}"
                                 >
-                                    <i data-lucide="cpu" class="h-3.5 w-3.5"></i>
+                                    <i data-lucide="waypoints" class="h-3.5 w-3.5"></i>
                                     Luồng
                                 </button>
                                 <button
@@ -120,6 +116,9 @@
                                     <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
                                     Xóa
                                 </button>
+                                <form method="post" action="/admin/managerbot/delete" data-bulk-delete-form class="hidden">
+                                    <input type="hidden" name="Id" value="{{ worker.id }}">
+                                </form>
                             </div>
                         </td>
                     </tr>
@@ -189,7 +188,7 @@
         <form method="post" action="/admin/bot/updateThread">
             <div class="border-b border-slate-200 px-5 py-4">
                 <h3 class="section-title">Cập nhật số luồng BOT</h3>
-                <p class="section-note">Điều chỉnh concurrency của BOT theo đúng workflow cũ.</p>
+                <p class="section-note">Điều chỉnh số job tối đa BOT được phép xử lý song song. Cột Luồng hiển thị theo dạng đang chạy / tối đa.</p>
             </div>
             <div class="space-y-4 px-5 py-5">
                 <input type="hidden" name="Id" id="thread-bot-id">
@@ -198,7 +197,7 @@
                     <input class="toolbar-input bg-slate-50" id="thread-bot-name" readonly>
                 </div>
                 <div>
-                    <label class="field-label" for="thread-bot-value">Số luồng</label>
+                    <label class="field-label" for="thread-bot-value">Số luồng tối đa</label>
                     <input class="toolbar-input" id="thread-bot-value" name="Thread" type="number" min="1" required>
                 </div>
             </div>
@@ -219,7 +218,9 @@
         document.getElementById('edit-bot-id').value = button.dataset.workerId || '';
         document.getElementById('edit-bot-name').value = button.dataset.workerName || '';
         document.getElementById('edit-bot-group').value = button.dataset.group || '';
-        document.getElementById('edit-bot-manager-id').value = button.dataset.managerId || '';
+        const managerSelect = document.getElementById('edit-bot-manager-id');
+        managerSelect.value = button.dataset.managerId || '';
+        managerSelect.dispatchEvent(new Event('change', { bubbles: true }));
       });
     });
 

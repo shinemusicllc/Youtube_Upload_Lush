@@ -142,11 +142,11 @@ def normalize_manager_filter_ids(
     if query_has_manager_filter:
         source_ids = requested_ids or []
     else:
-        source_ids = request.session.get(MANAGER_FILTER_SESSION_KEY) or []
+        source_ids = [] if current_user.role == "admin" else list(allowed_ids)
 
     normalized = [manager_id for manager_id in source_ids if manager_id in allowed_ids]
     if not normalized:
-        normalized = list(allowed_ids)
+        normalized = [] if current_user.role == "admin" else list(allowed_ids)
 
     request.session[MANAGER_FILTER_SESSION_KEY] = normalized
     return normalized

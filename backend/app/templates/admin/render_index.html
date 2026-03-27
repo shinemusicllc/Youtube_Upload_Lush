@@ -1,9 +1,6 @@
 {% extends "admin/_layout.html" %}
 
 {% block content %}
-{% set last_deleted_user = dashboard.delete_render_meta.user %}
-{% set last_deleted_at = dashboard.delete_render_meta.deleted_at %}
-
 <section class="space-y-6">
     {% include "admin/_admin_notice.html" %}
 
@@ -19,7 +16,7 @@
                 </div>
             </div>
 
-            <form method="get" action="{% if dashboard.filtered_channel %}/admin/render/channel{% else %}/admin/render/index{% endif %}" class="flex w-full min-w-0 flex-col gap-3 xl:max-w-[720px] xl:flex-row xl:items-center xl:justify-end">
+            <form method="get" action="{% if dashboard.filtered_channel %}/admin/render/channel{% else %}/admin/render/index{% endif %}" class="flex w-full min-w-0 flex-col gap-3 xl:max-w-[720px] xl:flex-row xl:items-center xl:justify-end" data-manager-auto-submit="true">
                 {% if dashboard.filtered_channel %}
                 <input type="hidden" name="channelId" value="{{ dashboard.filtered_channel.id }}">
                 <input type="hidden" name="channelName" value="{{ dashboard.filtered_channel.name }}">
@@ -27,10 +24,6 @@
                 <div class="min-w-0 flex-1">
                     {% include "admin/_manager_picker.html" %}
                 </div>
-                <button type="submit" class="action-btn action-btn-primary h-11 shrink-0 justify-center px-4 text-[13px]">
-                    <i data-lucide="search" class="h-4 w-4"></i>
-                    Search
-                </button>
             </form>
         </div>
 
@@ -44,34 +37,15 @@
     {% include "admin/_summary_strip.html" %}
 
     <div class="panel overflow-hidden">
-        <div class="flex flex-col gap-4 border-b border-slate-200/80 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+        <div class="border-b border-slate-200/80 px-5 py-4">
             <div>
                 <h3 class="section-title">Danh sách job render</h3>
-                <p class="section-note">Giữ thông tin admin cũ nhưng gom lại thành bảng dễ scan và nối đủ action chính.</p>
-            </div>
-
-            <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
-                <span class="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-600">
-                    <i data-lucide="clock-3" class="h-3.5 w-3.5 text-slate-400"></i>
-                    Xóa lần cuối bởi:
-                    <strong class="text-slate-800">{{ last_deleted_user }}</strong>
-                    <span class="font-mono">{{ last_deleted_at }}</span>
-                </span>
-                <form method="post" action="/admin/render/delete" class="inline-flex">
-                    {% if dashboard.filtered_channel %}
-                    <input type="hidden" name="channelId" value="{{ dashboard.filtered_channel.id }}">
-                    {% endif %}
-                    <input type="hidden" name="deleted_by" value="admin">
-                    <button type="submit" class="action-btn action-btn-rose px-4 py-2 text-[13px]" onclick="return confirm('Xóa toàn bộ dữ liệu render hiện có?');">
-                        <i data-lucide="trash-2" class="h-4 w-4"></i>
-                        Xóa tất cả dữ liệu
-                    </button>
-                </form>
+                <p class="section-note">Theo dõi tiến trình xử lý, mốc thời gian và thao tác nhanh trên từng job render.</p>
             </div>
         </div>
 
         <div class="table-shell">
-            <table class="admin-table">
+            <table class="admin-table" data-admin-list-table>
                 <thead>
                     <tr>
                         <th class="w-14">STT</th>
@@ -138,7 +112,7 @@
                                     <i data-lucide="eye" class="h-3.5 w-3.5"></i>
                                     Chi tiết
                                 </a>
-                                <form method="post" action="/admin/render/deletejob" class="inline-flex">
+                                <form method="post" action="/admin/render/deletejob" class="inline-flex" data-bulk-delete-form>
                                     <input type="hidden" name="id" value="{{ render.id }}">
                                     {% if dashboard.filtered_channel %}
                                     <input type="hidden" name="channelId" value="{{ dashboard.filtered_channel.id }}">
@@ -156,18 +130,17 @@
             </table>
         </div>
 
-        <div class="flex items-center justify-between gap-4 border-t border-slate-200 px-5 py-4">
-            <p class="text-[13px] text-slate-500">Hiển thị {{ dashboard.renders|length }} job render</p>
-            <div class="flex items-center gap-1.5">
-                <button type="button" class="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-400 transition-all hover:border-slate-300 hover:text-slate-600">
-                    <i data-lucide="chevron-left" class="h-4 w-4"></i>
+        <div class="hidden" data-admin-table-footer-extra>
+            <form method="post" action="/admin/render/delete" class="inline-flex">
+                {% if dashboard.filtered_channel %}
+                <input type="hidden" name="channelId" value="{{ dashboard.filtered_channel.id }}">
+                {% endif %}
+                <input type="hidden" name="deleted_by" value="admin">
+                <button type="submit" class="action-btn action-btn-rose px-4 py-2 text-[13px]" onclick="return confirm('Xóa toàn bộ dữ liệu render hiện có?');">
+                    <i data-lucide="trash-2" class="h-4 w-4"></i>
+                    Xóa tất cả dữ liệu
                 </button>
-                <button type="button" class="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-600 text-[13px] font-semibold text-white shadow-md shadow-brand-600/20">1</button>
-                <button type="button" class="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-[13px] font-medium text-slate-600 transition-all hover:border-slate-300 hover:text-slate-900">2</button>
-                <button type="button" class="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition-all hover:border-slate-300 hover:text-slate-900">
-                    <i data-lucide="chevron-right" class="h-4 w-4"></i>
-                </button>
-            </div>
+            </form>
         </div>
     </div>
 </section>
