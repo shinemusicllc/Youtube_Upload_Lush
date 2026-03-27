@@ -54,6 +54,15 @@ class AppStore:
     }
 
     @staticmethod
+    def _path_has_content(path: Path | None) -> bool:
+        if path is None:
+            return False
+        try:
+            return path.exists() and path.is_file() and path.stat().st_size > 0
+        except OSError:
+            return False
+
+    @staticmethod
     def _app_timezone_name() -> str:
         return os.getenv("APP_TIMEZONE", "Asia/Saigon")
 
@@ -1697,7 +1706,7 @@ class AppStore:
         }
 
     def _resolve_job_preview(self, job: RenderJobRecord) -> dict[str, str] | None:
-        if job.thumbnail_path:
+        if job.thumbnail_path and self._path_has_content(self._absolute_preview_path(str(job.thumbnail_path).strip())):
             return {
                 "kind": "image",
                 "url": self._preview_route(job.id),
@@ -1714,11 +1723,13 @@ class AppStore:
             return None
 
         if video_asset.source_mode == "local" and video_asset.file_name:
+            local_asset_path = self.upload_asset_dir / video_asset.file_name
             preview_kind = self._guess_preview_kind(video_asset.file_name) or "video"
-            return {
-                "kind": preview_kind,
-                "url": f"/api/user/jobs/{job.id}/preview/video_loop",
-            }
+            if self._path_has_content(local_asset_path):
+                return {
+                    "kind": preview_kind,
+                    "url": f"/api/user/jobs/{job.id}/preview/video_loop",
+                }
 
         if video_asset.url:
             drive_file_id = self._extract_google_drive_file_id(video_asset.url)
@@ -3567,7 +3578,7 @@ class AppStore:
             raise ValueError("Asset nay khong phai local upload.")
 
         file_path = self.upload_asset_dir / asset.file_name
-        if not file_path.exists():
+        if not self._path_has_content(file_path):
             raise FileNotFoundError(asset.file_name)
 
         content_type, _ = mimetypes.guess_type(str(file_path))
@@ -3585,7 +3596,7 @@ class AppStore:
             raise FileNotFoundError(job_id)
 
         file_path = self._absolute_preview_path(relative_path)
-        if not file_path.exists():
+        if not self._path_has_content(file_path):
             raise FileNotFoundError(relative_path)
 
         content_type, _ = mimetypes.guess_type(str(file_path))

@@ -1,9 +1,8 @@
 (() => {
   const renderTable = document.querySelector(".render-table");
-  const renderTableHeaders = renderTable ? Array.from(renderTable.querySelectorAll("thead th")) : [];
+  const renderSortButtons = renderTable ? Array.from(renderTable.querySelectorAll("thead .sortable-button[data-sort]")) : [];
   const renderTableBody = renderTable ? renderTable.querySelector("tbody") : null;
-  const renderHeaderLabels = ["STT", "Thông tin job", "Kênh", "VPS", "Tiến độ", "Timeline", "Trạng thái", "Tác vụ"];
-  const renderSortState = { index: null, direction: "asc" };
+  const renderSortState = { key: null, direction: "asc" };
   const renderSearchInput = document.getElementById("jobSearchInput");
   const renderSummaryNode = document.getElementById("renderSummaryText");
   const renderPaginationNode = document.getElementById("renderPagination");
@@ -38,53 +37,45 @@
     node.textContent = message;
   };
 
-  const getRenderSortValue = (job, index) => {
-    if (index === 0) return Number(job.index) || 0;
-    if (index === 1) return `${job.title || ""} ${job.job_id || ""} ${job.description || ""}`.trim().toLowerCase();
-    if (index === 2) return String(job.channel_name || "").toLowerCase();
-    if (index === 3) return String(job.bot || "").toLowerCase();
-    if (index === 4) return (Number(job.render_progress) || 0) * 1000 + (Number(job.upload_progress) || 0);
-    if (index === 5) return `${job.created_at || ""} ${job.render_at || ""} ${job.uploaded_at || ""}`.toLowerCase();
-    if (index === 6) return String(job.status || "").toLowerCase();
+  const getRenderSortValue = (job, key) => {
+    if (key === "stt") return Number(job.index) || 0;
+    if (key === "job") return `${job.title || ""} ${job.job_id || ""} ${job.description || ""}`.trim().toLowerCase();
+    if (key === "channel") return String(job.channel_name || "").toLowerCase();
+    if (key === "vps") return String(job.bot || "").toLowerCase();
+    if (key === "progress") return (Number(job.render_progress) || 0) * 1000 + (Number(job.upload_progress) || 0);
+    if (key === "timeline") return `${job.created_at || ""} ${job.render_at || ""} ${job.uploaded_at || ""}`.toLowerCase();
+    if (key === "status") return String(job.status || "").toLowerCase();
     return "";
   };
 
-  const renderHeaderMarkup = (label, index) => {
-    const alignClass = index === 0 ? "center" : index === renderHeaderLabels.length - 1 ? "end" : "";
-    const isActive = renderSortState.index === index;
-    const direction = isActive ? renderSortState.direction : "none";
-    return `
-      <button type="button" class="sortable-button ${alignClass} ${isActive ? "active" : ""}" data-sort-index="${index}" data-direction="${direction}" aria-label="Sắp xếp theo ${label}">
-        <span>${label}</span>
-        <span class="sort-arrows" aria-hidden="true">
-          <span class="sort-up">↑</span>
-          <span class="sort-down">↓</span>
-        </span>
-      </button>
-    `;
-  };
-
   const refreshRenderHeaderButtons = () => {
-    renderTableHeaders.forEach((th, index) => {
-      if (!renderHeaderLabels[index]) return;
-      th.classList.remove("text-slate-400");
-      th.innerHTML = renderHeaderMarkup(renderHeaderLabels[index], index);
+    renderSortButtons.forEach((button) => {
+      const key = button.dataset.sort || "";
+      const isActive = renderSortState.key === key;
+      const direction = isActive ? renderSortState.direction : "none";
+      button.classList.toggle("active", isActive);
+      button.dataset.direction = direction;
+      const headerCell = button.closest("th");
+      if (headerCell) {
+        headerCell.setAttribute("aria-sort", isActive ? (direction === "asc" ? "ascending" : "descending") : "none");
+      }
     });
   };
 
   const bindRenderSortButtons = () => {
-    if (!renderTable) return;
-    renderTable.querySelectorAll(".sortable-button").forEach((button) => {
+    renderSortButtons.forEach((button) => {
+      if (button.dataset.sortBound === "true") return;
+      button.dataset.sortBound = "true";
       button.addEventListener("click", () => {
-        const index = Number(button.dataset.sortIndex);
-        if (renderSortState.index === index) {
+        const key = button.dataset.sort || "";
+        if (!key || key === "actions") return;
+        if (renderSortState.key === key) {
           renderSortState.direction = renderSortState.direction === "asc" ? "desc" : "asc";
         } else {
-          renderSortState.index = index;
+          renderSortState.key = key;
           renderSortState.direction = "asc";
         }
         refreshRenderHeaderButtons();
-        bindRenderSortButtons();
         applyRenderSort();
       });
     });
@@ -236,14 +227,14 @@
     if (job.preview_url) {
       if (job.preview_kind === "image") {
         return `
-          <div class="w-20 aspect-[4/3] bg-slate-100 border border-slate-200 rounded-xl relative shrink-0 overflow-hidden">
+          <div class="w-24 aspect-[4/3] bg-slate-100 border border-slate-200 rounded-xl relative shrink-0 overflow-hidden">
             <img src="${escapeHtml(job.preview_url)}" alt="${escapeHtml(job.title)}" class="job-preview-media" loading="lazy" referrerpolicy="no-referrer">
             <div class="absolute inset-x-0 bottom-0 h-[2px] bg-brand-600"></div>
           </div>
         `;
       }
       return `
-        <div class="w-20 aspect-[4/3] bg-slate-100 border border-slate-200 rounded-xl relative shrink-0 overflow-hidden">
+        <div class="w-24 aspect-[4/3] bg-slate-100 border border-slate-200 rounded-xl relative shrink-0 overflow-hidden">
           <video class="job-preview-media" src="${escapeHtml(job.preview_url)}" muted playsinline preload="metadata"></video>
           <div class="absolute inset-x-0 bottom-0 h-[2px] bg-brand-600"></div>
         </div>
@@ -252,15 +243,15 @@
 
     if (job.icon) {
       return `
-        <div class="w-20 aspect-[4/3] bg-slate-100 border border-slate-200 rounded-xl relative shrink-0 flex items-center justify-center">
+        <div class="w-24 aspect-[4/3] bg-slate-100 border border-slate-200 rounded-xl relative shrink-0 flex items-center justify-center">
           <i data-lucide="${escapeHtml(job.icon)}" class="w-6 h-6 ${escapeHtml(job.icon_class || "")}"></i>
         </div>
       `;
     }
 
     return `
-      <div class="w-20 aspect-[4/3] bg-slate-900 rounded-xl relative border border-slate-800 flex justify-center items-center overflow-hidden shrink-0">
-        <div class="text-[7px] text-white/80 font-mono">${escapeHtml(job.preview_text || "Preview")}</div>
+      <div class="w-24 aspect-[4/3] bg-slate-900 rounded-xl relative border border-slate-800 flex justify-center items-center overflow-hidden shrink-0">
+        <div class="text-[7px] text-white/80 font-mono">${escapeHtml(job.preview_text || "Preview..")}</div>
         <div class="absolute bottom-0 w-full h-[2px] bg-brand-600"></div>
       </div>
     `;
@@ -290,18 +281,19 @@
 
   const renderJobRowMarkup = (job) => `
     <tr class="hover:bg-slate-50 transition-colors group" data-job-id="${escapeHtml(job.id)}">
-      <td class="px-3 py-5 text-center font-mono text-xs text-slate-500">${escapeHtml(job.index)}</td>
-      <td class="pl-3 pr-4 py-5 align-middle">
+      <td class="px-6 py-5 text-left font-mono text-[13px] text-slate-500">${escapeHtml(job.index)}</td>
+      <td class="px-6 py-5">
         <div class="flex items-center gap-3 min-w-0">
           ${renderJobPreviewMarkup(job)}
           <div class="min-w-0 flex-1 max-w-[328px] pb-0.5">
+            <p class="text-[11px] font-bold uppercase tracking-[0.18em] ${job.kind === "Upload" ? "text-violet-500" : "text-brand-500"}">${escapeHtml(job.kind || "Upload")}</p>
             <p class="font-semibold ${job.kind === "Upload" ? "text-violet-700" : "text-brand-700"} text-[15px] leading-[1.4] render-job-title" title="${escapeHtml(job.title)}">${escapeHtml(job.title)}</p>
-            <p class="mt-1 text-[11px] text-slate-600 font-mono truncate" title="${escapeHtml(job.job_id || "")}"><span class="${job.kind === "Upload" ? "text-violet-500" : "text-brand-500"}">${escapeHtml(job.job_id || "")}</span></p>
+            <p class="mt-1 text-[11px] text-slate-600 font-mono truncate" title="${escapeHtml(`${job.meta || ""} ${job.job_id || ""}`.trim())}">${escapeHtml(job.meta || "")} <span class="${job.kind === "Upload" ? "text-violet-500" : "text-brand-500"}">${escapeHtml(job.job_id || "")}</span></p>
             ${job.description ? `<p class="mt-1 text-[11px] text-slate-500 truncate" title="${escapeHtml(job.description)}">${escapeHtml(job.description)}</p>` : ""}
           </div>
         </div>
       </td>
-      <td class="px-4 py-4 align-middle">
+      <td class="px-6 py-4">
         <div class="flex items-center gap-3">
           ${renderChannelAvatarMarkup(job)}
           <div class="min-w-0">
@@ -310,13 +302,13 @@
           </div>
         </div>
       </td>
-      <td class="px-4 py-4 align-middle">
+      <td class="px-6 py-4">
         <div class="min-w-0">
           <p class="font-bold text-[12px] text-slate-900 leading-none mb-1 truncate">${escapeHtml(job.bot)}</p>
           <p class="text-[10px] text-brand-600 font-mono truncate">${escapeHtml(job.bot_meta || job.owner || "-")}</p>
         </div>
       </td>
-      <td class="progress-cell px-4 pt-3 pb-3">
+      <td class="progress-cell px-6 py-4">
         <div class="w-[92px] mx-auto flex flex-col justify-start gap-1 pt-0">
           <div style="margin-top: 6px;">
             <div class="flex items-center justify-between gap-2 text-[9px] font-mono font-semibold uppercase tracking-[0.08em] text-emerald-700">
@@ -338,15 +330,15 @@
           </div>
         </div>
       </td>
-      <td class="px-4 py-4 align-middle text-[10px] text-slate-500 font-mono leading-relaxed">
+      <td class="px-6 py-4 text-[10px] text-slate-500 font-mono leading-relaxed">
         <p class="truncate"><span class="text-slate-500">Tạo:</span> <span class="text-slate-700">${escapeHtml(job.created_at)}</span></p>
         <p class="truncate mt-0.5"><span class="text-slate-500">Render:</span> <span class="text-slate-700">${escapeHtml(job.render_at)}</span></p>
         <p class="truncate mt-0.5"><span class="text-slate-500">Upload:</span> <span class="text-slate-700">${escapeHtml(job.uploaded_at)}</span></p>
       </td>
-      <td class="px-4 py-4 align-middle">
+      <td class="px-6 py-4">
         <span class="inline-flex justify-center items-center px-2.5 py-1 ${escapeHtml(job.status_class)} text-[10px] font-bold border rounded-full whitespace-nowrap">${escapeHtml(job.status)}</span>
       </td>
-      <td class="px-5 py-4 align-middle text-right whitespace-nowrap">
+      <td class="px-6 py-4 text-right">
         ${renderJobActionsMarkup(job)}
       </td>
     </tr>
@@ -354,7 +346,7 @@
 
   const renderEmptyRowMarkup = (message) => `
     <tr>
-      <td colspan="8" class="px-5 py-10 text-center text-[13px] text-slate-500">${escapeHtml(message)}</td>
+      <td colspan="8" class="px-6 py-10 text-center text-[13px] text-slate-500">${escapeHtml(message)}</td>
     </tr>
   `;
 
@@ -382,10 +374,10 @@
       });
     }
 
-    if (renderSortState.index !== null) {
+    if (renderSortState.key !== null) {
       jobs.sort((jobA, jobB) => {
-        const valueA = getRenderSortValue(jobA, renderSortState.index);
-        const valueB = getRenderSortValue(jobB, renderSortState.index);
+        const valueA = getRenderSortValue(jobA, renderSortState.key);
+        const valueB = getRenderSortValue(jobB, renderSortState.key);
         if (valueA === valueB) return 0;
         const comparison = valueA > valueB ? 1 : -1;
         return renderSortState.direction === "asc" ? comparison : -comparison;
@@ -631,6 +623,7 @@
     const fallbackChunkBytes = Number(form.dataset.chunkBytes || 8388608);
     const uploadCircumference = 43.98;
     const uploadState = new Map();
+    const remoteValidationTimers = new Map();
 
     const setSlotStatus = (slot, message, tone = "neutral") => {
       const node = document.querySelector(`[data-upload-status="${slot}"]`);
@@ -668,6 +661,86 @@
 
     const buildUploadStorageKey = (slot, file) => {
       return `ytlush-upload:${slot}:${file.name}:${file.size}:${file.lastModified}`;
+    };
+
+    const extractGoogleDriveFileId = (value) => {
+      try {
+        const parsed = new URL(String(value || "").trim());
+        const host = (parsed.hostname || "").toLowerCase();
+        if (!["drive.google.com", "docs.google.com"].includes(host)) {
+          return null;
+        }
+        const queryId = parsed.searchParams.get("id");
+        if (queryId) {
+          return queryId;
+        }
+        const match = parsed.pathname.match(/\/file\/d\/([^/]+)/);
+        return match?.[1] || null;
+      } catch (_error) {
+        return null;
+      }
+    };
+
+    const isSupportedGoogleDriveUrl = (value) => Boolean(extractGoogleDriveFileId(value));
+
+    const validateRemoteSlotValue = (slot, value) => {
+      const assetField = document.getElementById(slotToAssetField[slot]);
+      const runtime = uploadState.get(slot);
+      if ((assetField && assetField.value) || runtime?.state === "uploading" || runtime?.state === "success") {
+        return;
+      }
+
+      const trimmed = String(value || "").trim();
+      if (!trimmed) {
+        setSlotStatus(slot, defaultStatus, "neutral");
+        return;
+      }
+
+      let parsed;
+      try {
+        parsed = new URL(trimmed);
+      } catch (_error) {
+        setSlotStatus(slot, "Link không hợp lệ", "error");
+        return;
+      }
+
+      if (!["http:", "https:"].includes(parsed.protocol)) {
+        setSlotStatus(slot, "Link không hợp lệ", "error");
+        return;
+      }
+
+      const host = (parsed.hostname || "").toLowerCase();
+      if (host === "drive.google.com" || host === "docs.google.com") {
+        if (isSupportedGoogleDriveUrl(trimmed)) {
+          setSlotStatus(slot, "Link hoạt động", "success");
+          return;
+        }
+        setSlotStatus(slot, "Link Drive chưa đúng định dạng", "error");
+        return;
+      }
+
+      setSlotStatus(slot, "Chỉ nhận link Drive", "error");
+    };
+
+    const scheduleRemoteSlotValidation = (slot, value) => {
+      const existingTimer = remoteValidationTimers.get(slot);
+      if (existingTimer) {
+        window.clearTimeout(existingTimer);
+      }
+
+      const trimmed = String(value || "").trim();
+      if (!trimmed) {
+        setSlotStatus(slot, defaultStatus, "neutral");
+        remoteValidationTimers.delete(slot);
+        return;
+      }
+
+      setSlotStatus(slot, "Đang kiểm tra...", "uploading");
+      const timer = window.setTimeout(() => {
+        validateRemoteSlotValue(slot, value);
+        remoteValidationTimers.delete(slot);
+      }, 220);
+      remoteValidationTimers.set(slot, timer);
     };
 
     const getSlotNodes = (slot) => ({
@@ -910,6 +983,21 @@
         if ((assetField && assetField.value) || runtime) {
           await clearSlotUpload(slot, { preservePath: true, skipRemoteAbort: false });
         }
+        scheduleRemoteSlotValidation(slot, target.value);
+      });
+
+      input.addEventListener("blur", (event) => {
+        const target = event.currentTarget;
+        if (!(target instanceof HTMLInputElement)) return;
+        const slotRoot = target.closest("[data-upload-slot]");
+        const slot = slotRoot?.getAttribute("data-upload-slot");
+        if (!slot) return;
+        const existingTimer = remoteValidationTimers.get(slot);
+        if (existingTimer) {
+          window.clearTimeout(existingTimer);
+          remoteValidationTimers.delete(slot);
+        }
+        validateRemoteSlotValue(slot, target.value);
       });
     });
 
@@ -931,6 +1019,11 @@
       for (const [slot, fieldId] of Object.entries(slotToAssetField)) {
         const field = document.getElementById(fieldId);
         if (field) field.value = "";
+        const validationTimer = remoteValidationTimers.get(slot);
+        if (validationTimer) {
+          window.clearTimeout(validationTimer);
+          remoteValidationTimers.delete(slot);
+        }
         await clearSlotUpload(slot, { skipRemoteAbort: false });
       }
       showFormMessage("Đã đặt lại form.", "info");
@@ -959,6 +1052,28 @@
       if ([...uploadState.values()].some((item) => item?.state === "uploading")) {
         showFormMessage("Đang có file local chưa upload xong. Hoàn tất hoặc hủy upload trước khi tạo job.", "error");
         return;
+      }
+
+      const remoteSlots = [
+        { slot: "intro", label: "Link video Intro" },
+        { slot: "video_loop", label: "Link video loop" },
+        { slot: "audio_loop", label: "Link audio loop" },
+        { slot: "outro", label: "Link Outro" },
+      ];
+
+      for (const item of remoteSlots) {
+        const nodes = getSlotNodes(item.slot);
+        const remoteValue = nodes.path instanceof HTMLInputElement ? nodes.path.value.trim() : "";
+        const hasLocalAsset = nodes.asset instanceof HTMLInputElement ? Boolean(nodes.asset.value) : false;
+        const runtime = uploadState.get(item.slot);
+        if (!remoteValue || hasLocalAsset || runtime?.state === "uploading" || runtime?.state === "success") {
+          continue;
+        }
+        if (!isSupportedGoogleDriveUrl(remoteValue)) {
+          validateRemoteSlotValue(item.slot, remoteValue);
+          showFormMessage(`${item.label} chỉ nhận link Google Drive hợp lệ.`, "error");
+          return;
+        }
       }
 
       setSubmitting(true);

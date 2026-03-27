@@ -582,3 +582,39 @@ ode --check backend/app/static/js/user_dashboard.js, va TestClient login demo-us
 - Scope: backend/app/templates/user_dashboard.html, backend/app/static/js/user_dashboard.js, final_user_ui.html, docs/UI_SYSTEM.md.
 - Changed: bo nhan Upload/Local Upload trong thong tin job, doi title job sang 2 dong, thu preview + padding cot + progress width, va keo render card len sat hon voi cum form ben tren.
 - Verification: python -m compileall backend/app; node --check backend/app/static/js/user_dashboard.js; FastAPI TestClient login demo-user/demo123 -> /app 200; xac nhan marker render-job-title, w-[92px], mt-3 va khong con markup kind-label cu.
+## 2026-03-27 18:06 - Restore render duration meta in job info
+- Scope: backend/app/templates/user_dashboard.html, backend/app/static/js/user_dashboard.js, final_user_ui.html.
+- Changed: mo lai dong meta duoi title job de hien `source + render time + job id` thay vi chi con moi job id.
+- Verification: node --check backend/app/static/js/user_dashboard.js; FastAPI TestClient demo-user/demo123 -> /app 200; xac nhan render row co meta dang `Local Upload • render 00:10:00 • job-...`.
+## 2026-03-27 18:35 - Audit render list template against live JS
+- Scope: backend/app/templates/user_dashboard.html, backend/app/static/js/user_dashboard.js.
+- Changed: khong sua code; doi chieu render-list template voi runtime JS sau khi user edit tay.
+- Findings: payload live va hook DOM van day du, nhung sort header trong template se bi efreshRenderHeaderButtons() ghi de, va row markup trong template hien da lech spacing/preview/padding so voi enderJobRowMarkup().
+- Verification: node --check backend/app/static/js/user_dashboard.js; python -m compileall backend/app; FastAPI TestClient /app 200; /api/user/dashboard/live 200; xac nhan ton tai .render-table, #jobSearchInput, #renderSummaryText, #renderPagination, #deleteVisibleJobsButton, #dashboard-seed.
+## 2026-03-27 18:49 - Sync render list runtime with edited template
+- Scope: backend/app/static/js/user_dashboard.js.
+- Changed: bo co che rewrite header sort bang innerHTML, chuyen sort runtime sang doc data-sort truc tiep tu template, va dong bo row runtime theo layout moi cua render list (preview w-24 aspect-video, cell px-6, meta line giu ender duration + job id).
+- Verification: node --check backend/app/static/js/user_dashboard.js; python -m compileall backend/app; FastAPI TestClient login demo-user/demo123 -> /app 200 va /api/user/dashboard/live 200; xac nhan HTML co data-sort=job, data-sort=progress, w-24 aspect-video, px-6 py-5.
+## 2026-03-27 19:06 - Drive-only link status for remote asset fields
+- Scope: backend/app/static/js/user_dashboard.js, backend/app/routers/api_user.py, backend/app/templates/user_dashboard.html, final_user_ui.html.
+- Changed: them status realtime o goc phai hang label cho cac o link de tu check Google Drive khi user dan URL; doi rule remote URL sang chi nhan Google Drive hop le o ca frontend va backend; xoa footer Created By Deerflow khoi workspace va file mau.
+- Verification: node --check backend/app/static/js/user_dashboard.js; python -m compileall backend/app; FastAPI TestClient login demo-user/demo123 -> /api/user/jobs voi https://example.com/video.mp4 tra 422 Link video loop chi nhan link Google Drive hop le.; /app 200 va HTML khong con Created By Deerflow.
+## 2026-03-27 19:18 - Restore 4:3 preview and job kind label
+- Scope: backend/app/templates/user_dashboard.html, backend/app/static/js/user_dashboard.js, final_user_ui.html, docs/UI_SYSTEM.md.
+- Changed: doi render list preview ve 4:3 va them kind label uppercase nho tren title job de thong tin row day hon ma van gon.
+- Verification: node --check backend/app/static/js/user_dashboard.js; python -m compileall backend/app; FastAPI TestClient /app 200, /api/user/dashboard/live 200; xac nhan HTML co spect-[4/3] va row runtime/template deu dung pattern moi.
+## 2026-03-27 19:28 - Frontend stability audit for user workspace
+- Scope: user workspace shell, render list runtime, live API, form validation, browser smoke.
+- Changed: khong sua code; chay audit tong hop qua shell, TestClient va Playwright tren giao dien frontend moi.
+- Findings: login, search, sort header, live payload, drive-only validation va create/delete smoke deu on; con 1 residual issue la route preview /api/user/jobs/job-db34d289/preview/video_loop tra content-length: 0, browser request Range nhan 416 va console co loi preview asset.
+- Verification: node --check backend/app/static/js/user_dashboard.js; python -m compileall backend/app; TestClient login /app 200, /api/user/dashboard/live 200, invalid non-drive link 422, valid drive create 200 + cleanup delete 200; Playwright login user workspace, search no-result, sort header active, status Link ho?t d?ng va Ch? nh?n link Drive hien dung.
+### 2026-03-27 18:57
+- [x] Doi chieu nhanh voi `main` cho flow preview user workspace va xac nhan `main` khong co fix rieng; loi den tu local asset 0 byte van duoc phat `preview_url` vao render list.
+- [x] Harden `backend/app/store.py` de chi phat local preview khi file preview/thumbnail con ton tai va co du lieu; neu asset local rong thi fallback sang Drive thumbnail hoac preview/image khac an toan.
+- [x] Harden route preview bang cach cho `get_user_job_asset_file()` va `get_user_job_preview_thumbnail_file()` tra `404` khi file rong thay vi de `FileResponse` phat `200` body rong.
+- [x] Verify bang `TestClient`: `/api/user/dashboard/live` cua `job-db34d289` da chuyen sang `drive.google.com/thumbnail`, preview route cu tra `404`, va `/app` khong con render `/api/user/jobs/job-db34d289/preview/video_loop`.
+- [x] Restart local `uvicorn` tren `127.0.0.1:8000` de nap code moi va verify bang Playwright: `/app` render on dinh, console khong con error preview/416, chi con warning Tailwind CDN.
+### 2026-03-27 19:34
+- [x] Dieu chinh lai render-list sort header ve giao dien cu trong `backend/app/templates/user_dashboard.html`: bo stack chevron doc va doi ve cap `arrow-up/arrow-down` inline ngay sau label.
+- [x] Sync nhip CSS sort-arrows trong `final_user_ui.html` de source of truth khong lech voi template runtime.
+- [x] Verify bang `TestClient` va Playwright: HTML `/app` co `data-lucide="arrow-up"`, `data-lucide="arrow-down"`, khong con `sort-arrows flex flex-col`; local `/app` tren 127.0.0.1:8000 render on dinh, console khong co error.

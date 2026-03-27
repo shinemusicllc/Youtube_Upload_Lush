@@ -200,3 +200,6 @@
 ## Render List Notes
 - Render list row uu tien preview nho hon + title 2 dong + `job_id` la meta duy nhat; khong lap lai `Upload/Local Upload` trong cell thong tin job.
 - Cot tien do cua render list giu ngan va gon de tong chieu ngang bang voi cac panel phia tren; khoang cach tu cum form xuong bang render chi o muc chat, khong de bang bi roi xuong qua sau.
+- Render list preview quay lai ty le 4:3; thong tin job co them kind label uppercase nho (UPLOAD/DRIVE) dat tren title de cell khong bi trong.
+## Sort Header Note
+- Render list table sort icon giu pattern cu: cap `arrow-up/arrow-down` inline nam ngay sau label, khong dung stack icon doc.

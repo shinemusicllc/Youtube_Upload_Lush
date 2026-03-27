@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="vi">
 <head>
   <meta charset="UTF-8">
@@ -488,12 +488,12 @@
     .sort-arrows {
       display: inline-flex;
       align-items: center;
-      gap: 1px;
+      gap: 0;
       color: rgb(148 163 184);
-      font-size: 9px;
-      letter-spacing: -1px;
+      font-size: 10px;
+      letter-spacing: 0;
       line-height: 1;
-      transform: translateY(-0.5px);
+      transform: translateY(0);
     }
 
     .sortable-button.active .sort-arrows {
@@ -1153,7 +1153,6 @@
                 {% endfor %}
               </div>
             </div>
-            </div>
         </form>
 
         <div class="elevated-card mt-3 flex flex-col overflow-hidden">
@@ -1174,27 +1173,43 @@
           </div>
 
           <div class="min-w-0 overflow-x-auto w-full">
-            <table class="render-table min-w-full w-full table-auto text-left text-sm" data-page-size="10">
+            <table class="render-table w-full text-left text-sm whitespace-nowrap" data-page-size="10">
               <thead class="text-slate-600 text-[11px] font-semibold tracking-wide bg-slate-50/70">
                 <tr>
-                  <th class="px-3 py-4 border-b border-slate-200 w-[52px] text-center text-slate-400">STT</th>
-                  <th class="px-4 py-4 border-b border-slate-200 w-[30%]"></th>
-                  <th class="px-4 py-4 border-b border-slate-200 w-[172px]">K&#234;nh</th>
-                  <th class="px-4 py-4 border-b border-slate-200 w-[150px]">VPS</th>
-                  <th class="px-4 py-4 border-b border-slate-200 w-[104px]">Ti&#7871;n &#272;&#7897;</th>
-                  <th class="px-4 py-4 border-b border-slate-200 w-[154px]">Timeline</th>
-                  <th class="px-4 py-4 border-b border-slate-200 w-[136px]">Tr&#7841;ng Th&#225;i</th>
-                  <th class="px-5 py-4 border-b border-slate-200 text-right whitespace-nowrap">T&#225;c V&#7909;</th>
+                  <th class="px-6 py-4 border-b border-slate-200 w-12 text-left">
+                    <button type="button" class="sortable-button" data-sort="stt">STT <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5 sort-up"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px] sort-down"></i></span></button>
+                  </th>
+                  <th class="px-6 py-4 border-b border-slate-200 w-[25%]">
+                    <button type="button" class="sortable-button" data-sort="job">Th&#244;ng Tin Job <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5 sort-up"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px] sort-down"></i></span></button>
+                  </th>
+                  <th class="px-6 py-4 border-b border-slate-200">
+                    <button type="button" class="sortable-button" data-sort="channel">K&#234;nh <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5 sort-up"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px] sort-down"></i></span></button>
+                  </th>
+                  <th class="px-6 py-4 border-b border-slate-200">
+                    <button type="button" class="sortable-button" data-sort="vps">VPS <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5 sort-up"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px] sort-down"></i></span></button>
+                  </th>
+                  <th class="px-6 py-4 border-b border-slate-200 w-[120px]">
+                    <button type="button" class="sortable-button" data-sort="progress">Ti&#7871;n &#272;&#7897; <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5 sort-up"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px] sort-down"></i></span></button>
+                  </th>
+                  <th class="px-6 py-4 border-b border-slate-200">
+                    <button type="button" class="sortable-button" data-sort="timeline">Timeline <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5 sort-up"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px] sort-down"></i></span></button>
+                  </th>
+                  <th class="px-6 py-4 border-b border-slate-200">
+                    <button type="button" class="sortable-button" data-sort="status">Tr&#7841;ng Th&#225;i <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5 sort-up"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px] sort-down"></i></span></button>
+                  </th>
+                  <th class="px-6 py-4 border-b border-slate-200 text-right">
+                    <button type="button" class="sortable-button end" data-sort="actions">T&#225;c V&#7909; <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5 sort-up"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px] sort-down"></i></span></button>
+                  </th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-200/70 text-slate-700">
                 {% for job in dashboard.render_jobs %}
                 <tr class="hover:bg-slate-50 transition-colors group" data-job-id="{{ job.id | e }}">
-                  <td class="px-3 py-5 text-center font-mono text-xs text-slate-500">{{ job.index }}</td>
-                  <td class="pl-3 pr-4 py-5 align-middle">
+                  <td class="px-6 py-5 text-left font-mono text-[13px] text-slate-500">{{ job.index }}</td>
+                  <td class="px-6 py-5">
                     <div class="flex items-center gap-3 min-w-0">
                       {% if job.preview_url %}
-                      <div class="w-20 aspect-[4/3] bg-slate-100 border border-slate-200 rounded-xl relative shrink-0 overflow-hidden">
+                      <div class="w-24 aspect-[4/3] bg-slate-100 border border-slate-200 rounded-xl relative shrink-0 overflow-hidden">
                         {% if job.preview_kind == 'image' %}
                         <img src="{{ job.preview_url | e }}" alt="{{ job.title | e }}" class="job-preview-media" loading="lazy" referrerpolicy="no-referrer">
                         {% else %}
@@ -1203,25 +1218,26 @@
                         <div class="absolute inset-x-0 bottom-0 h-[2px] bg-brand-600"></div>
                       </div>
                       {% elif job.icon %}
-                      <div class="w-20 aspect-[4/3] bg-slate-100 border border-slate-200 rounded-xl relative shrink-0 flex items-center justify-center">
+                      <div class="w-24 aspect-[4/3] bg-slate-100 border border-slate-200 rounded-xl relative shrink-0 flex items-center justify-center">
                         <i data-lucide="{{ job.icon | e }}" class="w-6 h-6 {{ job.icon_class | e }}"></i>
                       </div>
                       {% else %}
-                      <div class="w-20 aspect-[4/3] bg-slate-900 rounded-xl relative border border-slate-800 flex justify-center items-center overflow-hidden shrink-0">
+                      <div class="w-24 aspect-[4/3] bg-slate-900 rounded-xl relative border border-slate-800 flex justify-center items-center overflow-hidden shrink-0">
                         <div class="text-[7px] text-white/80 font-mono">{{ job.preview_text | default('Preview..', true) | e }}</div>
                         <div class="absolute bottom-0 w-full h-[2px] bg-brand-600"></div>
                       </div>
                       {% endif %}
                       <div class="min-w-0 flex-1 max-w-[328px] pb-0.5">
+                        <p class="text-[11px] font-bold uppercase tracking-[0.18em] {% if job.kind == 'Upload' %}text-violet-500{% else %}text-brand-500{% endif %}">{{ job.kind | e }}</p>
                         <p class="font-semibold {% if job.kind == 'Upload' %}text-violet-700{% else %}text-brand-700{% endif %} text-[15px] leading-[1.4] render-job-title" title="{{ job.title | e }}">{{ job.title | e }}</p>
-                        <p class="mt-1 text-[11px] text-slate-600 font-mono truncate" title="{{ job.job_id | e }}"><span class="{% if job.kind == 'Upload' %}text-violet-500{% else %}text-brand-500{% endif %}">{{ job.job_id | e }}</span></p>
+                        <p class="mt-1 text-[11px] text-slate-600 font-mono truncate" title="{{ (job.meta ~ job.job_id) | e }}">{{ job.meta | e }} <span class="{% if job.kind == 'Upload' %}text-violet-500{% else %}text-brand-500{% endif %}">{{ job.job_id | e }}</span></p>
                         {% if job.description %}
                         <p class="mt-1 text-[11px] text-slate-500 truncate" title="{{ job.description | e }}">{{ job.description | e }}</p>
                         {% endif %}
                       </div>
                     </div>
                   </td>
-                  <td class="px-4 py-4 align-middle">
+                  <td class="px-6 py-4">
                     <div class="flex items-center gap-3">
                        {% if job.channel_avatar_url %}
                        <img src="{{ job.channel_avatar_url | e }}" alt="{{ job.channel_name | e }}" class="channel-avatar-media w-7 h-7 rounded-[6px] object-cover shrink-0" loading="lazy" referrerpolicy="no-referrer">
@@ -1234,13 +1250,13 @@
                        </div>
                     </div>
                   </td>
-                  <td class="px-4 py-4 align-middle">
+                  <td class="px-6 py-4">
                     <div class="min-w-0">
                       <p class="font-bold text-[12px] text-slate-900 leading-none mb-1 truncate">{{ job.bot | e }}</p>
                       <p class="text-[10px] text-brand-600 font-mono truncate">{{ job.bot_meta | default(job.owner, true) | e }}</p>
                     </div>
                   </td>
-                  <td class="progress-cell px-4 pt-3 pb-3">
+                  <td class="progress-cell px-6 py-4">
                     <div class="w-[92px] mx-auto flex flex-col justify-start gap-1 pt-0">
                         <div style="margin-top: 6px;">
                             <div class="flex items-center justify-between gap-2 text-[9px] font-mono font-semibold uppercase tracking-[0.08em] text-emerald-700">
@@ -1262,15 +1278,15 @@
                         </div>
                     </div>
                   </td>
-                  <td class="px-4 py-4 align-middle text-[10px] text-slate-500 font-mono leading-relaxed">
+                  <td class="px-6 py-4 text-[10px] text-slate-500 font-mono leading-relaxed">
                     <p class="truncate"><span class="text-slate-500">T&#7841;o:</span> <span class="text-slate-700">{{ job.created_at | e }}</span></p>
                     <p class="truncate mt-0.5"><span class="text-slate-500">Render:</span> <span class="text-slate-700">{{ job.render_at | e }}</span></p>
                     <p class="truncate mt-0.5"><span class="text-slate-500">Upload:</span> <span class="text-slate-700">{{ job.uploaded_at | e }}</span></p>
                   </td>
-                  <td class="px-4 py-4 align-middle">
+                  <td class="px-6 py-4">
                     <span class="inline-flex justify-center items-center px-2.5 py-1 {{ job.status_class | e }} text-[10px] font-bold border rounded-full whitespace-nowrap">{{ job.status | e }}</span>
                   </td>
-                  <td class="px-5 py-4 align-middle text-right whitespace-nowrap">
+                  <td class="px-6 py-4 text-right">
                     <div class="flex flex-nowrap items-center justify-end gap-2 whitespace-nowrap">
                         {% if job.youtube_watch_url %}
                         <a href="{{ job.youtube_watch_url | e }}" target="_blank" rel="noopener noreferrer" class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-sky-700 bg-sky-50 border border-sky-200 rounded-lg hover:bg-sky-100 hover:text-sky-800 hover:shadow-sm transition-all" title="M&#7903; YouTube">
@@ -1311,11 +1327,8 @@
       </div>
     </div>
   </main>
-  <a href="https://deerflow.tech" target="_blank" class="fixed bottom-3 right-4 text-[11px] text-slate-400 hover:text-slate-600 transition-colors">Created By Deerflow</a>
   <script id="dashboard-seed" type="application/json">{{ dashboard | tojson }}</script>
 
-  <script src="/static/js/user_dashboard.js?v=20260327-render-table-tighten"></script>
+  <script src="/static/js/user_dashboard.js?v=20260327-drive-link-status"></script>
 </body>
 </html>
-
-

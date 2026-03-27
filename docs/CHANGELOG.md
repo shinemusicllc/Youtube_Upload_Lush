@@ -824,3 +824,51 @@
 - Fixed: Bo hien thi `Upload/Local Upload` trong thong tin job, giu lai chi title + `job_id` de title dai co the xuong 2 dong ma khong lam bang bi phong ngang.
 - Affected files: `D:\Youtube_BOT_UPLOAD\backend\app\templates\user_dashboard.html`, `D:\Youtube_BOT_UPLOAD\backend\app\static\js\user_dashboard.js`, `D:\Youtube_BOT_UPLOAD\final_user_ui.html`, `D:\Youtube_BOT_UPLOAD\docs\UI_SYSTEM.md`, `D:\Youtube_BOT_UPLOAD\docs\WORKLOG.md`, `D:\Youtube_BOT_UPLOAD\docs\CHANGELOG.md`.
 - Impact/Risk: Visual-only refinement cho user workspace render list; khong doi API, session, hay workflow render/upload.
+### 2026-03-27 18:06 - Restore render duration meta in job info
+- Added: Hien lai phan meta `source • render duration • job id` trong thong tin job cua render list.
+- Changed: Dong bo template, JS render dong va file source-of-truth de meta line khop nhau.
+- Fixed: Khoi phuc thong tin do dai render ma user can theo doi sau khi pass compact truoc do da an mat dong nay.
+- Affected files: `D:\Youtube_BOT_UPLOAD\backend\app\templates\user_dashboard.html`, `D:\Youtube_BOT_UPLOAD\backend\app\static\js\user_dashboard.js`, `D:\Youtube_BOT_UPLOAD\final_user_ui.html`, `D:\Youtube_BOT_UPLOAD\docs\WORKLOG.md`, `D:\Youtube_BOT_UPLOAD\docs\CHANGELOG.md`.
+- Impact/Risk: Chi doi presentation cua render list; khong doi API, queue hay workflow upload/render.
+### 2026-03-27 18:35 - Audit render list template against live JS
+- Added: Mot pass audit rieng cho khu vuc render list sau khi user sua tay template.
+- Changed: Khong doi API hay markup runtime; chi xac nhan lai hook DOM, payload live va diem lech giua server HTML voi JS rerender.
+- Fixed: Khoanh vung dung diem rui ro hien tai la header sort bi JS ghi de va row markup se khong giong template sau khi search/sort/pagination/live refresh.
+- Affected files: D:\Youtube_BOT_UPLOAD\backend\app\templates\user_dashboard.html, D:\Youtube_BOT_UPLOAD\backend\app\static\js\user_dashboard.js, D:\Youtube_BOT_UPLOAD\docs\WORKLOG.md, D:\Youtube_BOT_UPLOAD\docs\CHANGELOG.md.
+- Impact/Risk: Data live va API van on; rui ro nam o mat dong bo giao dien render list khi JS cap nhat bang.
+### 2026-03-27 18:49 - Sync render list runtime with edited template
+- Added: Runtime sort state bay gio bam truc tiep vao data-sort cua header render list thay vi tu tao markup moi.
+- Changed: Dong bo enderJobRowMarkup() voi layout render list moi trong template, gom preview w-24 aspect-video, padding px-6, va dong meta ender duration + job id.
+- Fixed: Search, sort, pagination va live refresh khong con nguy co render lai bang layout cu hoac ghi de header user vua sua tay.
+- Affected files: D:\Youtube_BOT_UPLOAD\backend\app\static\js\user_dashboard.js, D:\Youtube_BOT_UPLOAD\docs\WORKLOG.md, D:\Youtube_BOT_UPLOAD\docs\CHANGELOG.md.
+- Impact/Risk: Khong doi API hay du lieu live; chi khoa dong bo visual/runtime cho khu vuc render list.
+### 2026-03-27 19:06 - Drive-only link status for remote asset fields
+- Added: Status top-right cho cac field remote asset hien Đang kiểm tra..., Link hoạt động, hoac loi dinh dang ngay khi user dan link.
+- Changed: Remote URL trong user workspace va API tao job gio chi chap nhan link Google Drive hop le; footer Created By Deerflow duoc go khoi app va source-of-truth.
+- Fixed: Khong con truong hop dan link ngoai Drive van submit duoc, va khong con credit footer o goc phai duoi man hinh.
+- Affected files: D:\Youtube_BOT_UPLOAD\backend\app\static\js\user_dashboard.js, D:\Youtube_BOT_UPLOAD\backend\app\routers\api_user.py, D:\Youtube_BOT_UPLOAD\backend\app\templates\user_dashboard.html, D:\Youtube_BOT_UPLOAD\final_user_ui.html, D:\Youtube_BOT_UPLOAD\docs\WORKLOG.md, D:\Youtube_BOT_UPLOAD\docs\CHANGELOG.md.
+- Impact/Risk: Rule remote asset khat khe hon truoc; cac URL HTTP ngoai Google Drive se bi tu choi co chu dich.
+### 2026-03-27 19:18 - Restore 4:3 preview and job kind label
+- Added: Kind label uppercase nho o dau cell thong tin job de row render day va de scan hon.
+- Changed: Preview render list quay lai ty le 4:3 trong ca template, JS runtime va file mau.
+- Fixed: O preview khong con bi dai ngang 16:9, va thong tin job khong con trong qua khi title ngan.
+- Affected files: D:\Youtube_BOT_UPLOAD\backend\app\templates\user_dashboard.html, D:\Youtube_BOT_UPLOAD\backend\app\static\js\user_dashboard.js, D:\Youtube_BOT_UPLOAD\final_user_ui.html, D:\Youtube_BOT_UPLOAD\docs\UI_SYSTEM.md, D:\Youtube_BOT_UPLOAD\docs\WORKLOG.md, D:\Youtube_BOT_UPLOAD\docs\CHANGELOG.md.
+- Impact/Risk: Chi doi visual render list; logic live/update/sort khong doi.
+### 2026-03-27 19:28 - Frontend stability audit for user workspace
+- Added: Mot pass audit tong hop qua TestClient va Playwright cho frontend user workspace moi.
+- Changed: Khong doi code; xac nhan lai cac flow login, live refresh, sort/search render list, drive-only validation va tao/xoa job smoke.
+- Fixed: Khong co fix trong pass nay; phat hien residual issue preview asset tra body rong nen browser video preview dang sinh 416 Range Not Satisfiable.
+- Affected files: D:\Youtube_BOT_UPLOAD\docs\WORKLOG.md, D:\Youtube_BOT_UPLOAD\docs\CHANGELOG.md.
+- Impact/Risk: Frontend nhin chung da on cho cac flow chinh; rui ro con lai tap trung o render-list preview asset cho mot so job co file preview rong.
+### 2026-03-27 18:57 - Harden render preview fallback
+- Added: Guard helper kiem tra file preview/thumbnail co du lieu truoc khi phat local preview vao render list.
+- Changed: User dashboard render jobs fallback sang Drive thumbnail/preview an toan khi local asset cua `video_loop` bi rong hoac da hu.
+- Fixed: Loai bo truong hop preview route tra `200` body rong dan toi browser log `416 Range Not Satisfiable` trong render list.
+- Affected files: backend/app/store.py
+- Impact/Risk: Frontend render list on dinh hon voi du lieu cu bi loi asset; local runtime can restart de nap code moi.
+### 2026-03-27 19:34 - Restore old sort header icons
+- Added: Ghi chu nho trong UI system cho pattern sort header inline.
+- Changed: Header sort cua render list quay lai cap icon `arrow-up/arrow-down` inline thay vi stack chevron doc.
+- Fixed: Tra visual sort state ve dung kieu cu ma user da chot cho bang render.
+- Affected files: backend/app/templates/user_dashboard.html, final_user_ui.html, docs/UI_SYSTEM.md
+- Impact/Risk: Chi doi markup/CSS bieu tuong sort, khong tac dong logic sort runtime.

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
 
 from fastapi import APIRouter, Body, File, Form, HTTPException, Request, UploadFile
@@ -34,6 +36,19 @@ def _parse_schedule_time(value: str | None) -> datetime | None:
         except ValueError:
             continue
     raise HTTPException(status_code=422, detail="schedule_time khong dung dinh dang ho tro.")
+
+
+def _is_supported_google_drive_url(value: str | None) -> bool:
+    if not value:
+        return False
+    parsed = urlparse(value.strip())
+    host = (parsed.hostname or "").lower()
+    if host not in {"drive.google.com", "docs.google.com"}:
+        return False
+    query_id = parse_qs(parsed.query).get("id", [])
+    if query_id and query_id[0]:
+        return True
+    return bool(re.search(r"/file/d/([^/]+)", parsed.path))
 
 
 @router.get("/user/bootstrap")
@@ -201,6 +216,17 @@ async def create_user_job(
         raise HTTPException(status_code=422, detail="channel_id la bat buoc.")
     if not (video_loop_url and video_loop_url.strip()) and not saved_files.get("video_loop") and not uploaded_asset_ids.get("video_loop"):
         raise HTTPException(status_code=422, detail="Can nhap video loop hoac upload file video loop.")
+    for label, url_value, saved_file, uploaded_asset_id in (
+        ("Link video Intro", intro_url, saved_files.get("intro"), uploaded_asset_ids.get("intro")),
+        ("Link video loop", video_loop_url, saved_files.get("video_loop"), uploaded_asset_ids.get("video_loop")),
+        ("Link audio loop", audio_loop_url, saved_files.get("audio_loop"), uploaded_asset_ids.get("audio_loop")),
+        ("Link Outro", outro_url, saved_files.get("outro"), uploaded_asset_ids.get("outro")),
+    ):
+        cleaned_url = _clean_optional(url_value)
+        if not cleaned_url or saved_file or uploaded_asset_id:
+            continue
+        if not _is_supported_google_drive_url(cleaned_url):
+            raise HTTPException(status_code=422, detail=f"{label} chi nhan link Google Drive hop le.")
 
     payload = JobCreatePayload(
         channel_id=channel_id,
