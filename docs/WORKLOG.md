@@ -571,3 +571,7 @@ ode --check backend/app/static/js/user_dashboard.js, va TestClient login demo-us
 - Scope: backend/app/templates/user_dashboard.html, backend/app/store.py, final_user_ui.html, docs/UI_SYSTEM.md.
 - Changed: bo bot badge trong My Channel row, doi sang worker/IP note nho gon va nen spacing top layout de lo phan render list som hon.
 - Verification: python -m compileall backend/app; node --check backend/app/static/js/user_dashboard.js; FastAPI TestClient login demo-user/demo123 -> /app 200; xac nhan HTML co channel-row-worker-note va khong con channel-row-bot-chip.
+## 2026-03-27 16:47 - Restore KPI and panel rhythm to match template
+- Scope: backend/app/templates/user_dashboard.html, backend/app/static/js/user_dashboard.js, final_user_ui.html, docs/UI_SYSTEM.md.
+- Changed: tra lai spacing/padding/header scale cho KPI strip, Render Config, Quick Settings va My Channel ve sat file mau hon; giu upload status o goc phai hang label.
+- Verification: python -m compileall backend/app; node --check backend/app/static/js/user_dashboard.js; FastAPI TestClient /app xac nhan wrapper spacing, KPI size, panel padding va upload-slot-status hook.

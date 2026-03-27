@@ -624,7 +624,7 @@
       audio_loop: "audioLoopAssetId",
       outro: "outroAssetId",
     };
-    const defaultStatus = "Có thể nhập link hoặc chọn file local.";
+    const defaultStatus = "";
     const allowedExtensions = String(form.dataset.allowedExtensions || "")
       .split(",")
       .map((item) => item.trim().toLowerCase())
@@ -637,8 +637,14 @@
     const setSlotStatus = (slot, message, tone = "neutral") => {
       const node = document.querySelector(`[data-upload-status="${slot}"]`);
       if (!node) return;
-      node.className = "mt-1.5 text-[11px]";
+      node.className = "upload-slot-status";
+      node.title = message || "";
+      if (!message) {
+        node.textContent = "";
+        return;
+      }
       node.classList.add(
+        "is-visible",
         tone === "error"
           ? "text-rose-600"
           : tone === "success"
@@ -773,7 +779,7 @@
       onSession?.(session, storageKey);
       if (session.status === "completed" && session.asset_id) {
         assetField.value = session.asset_id;
-        setSlotStatus(slot, `Đã sẵn sàng: ${file.name}`, "success");
+        setSlotStatus(slot, `Sẵn sàng: ${file.name}`, "success");
         onProgress?.(1, session);
         return { assetId: session.asset_id, session, storageKey };
       }
@@ -785,7 +791,7 @@
         onProgress?.(file.size > 0 ? offset / file.size : 0, session);
         setSlotStatus(
           slot,
-          `Đang upload ${file.name}: ${Math.floor((offset / file.size) * 100)}% (${formatBytes(offset)}/${formatBytes(file.size)})`,
+          `${Math.floor((offset / file.size) * 100)}% · ${formatBytes(offset)}/${formatBytes(file.size)}`,
           "uploading"
         );
         const response = await fetch(`/api/user/uploads/sessions/${session.session_id}`, {
@@ -822,7 +828,7 @@
 
       await clearSlotUpload(slot, { preserveStatus: true, skipRemoteAbort: false });
       nodes.path.value = file.name;
-      setSlotStatus(slot, `Đang chuẩn bị upload: ${file.name}`, "uploading");
+      setSlotStatus(slot, "Đang chuẩn bị upload...", "uploading");
       setUploadVisual(slot, "uploading", { progress: 0 });
 
       const controller = new AbortController();
@@ -864,7 +870,7 @@
       } catch (error) {
         if (error?.name === "AbortError") {
           await clearSlotUpload(slot, { skipRemoteAbort: false });
-          setSlotStatus(slot, "Đã hủy upload file local.", "neutral");
+          setSlotStatus(slot, "", "neutral");
           return;
         }
         await clearSlotUpload(slot, { preservePath: true, skipRemoteAbort: false });

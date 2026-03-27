@@ -807,3 +807,9 @@
 - Fixed: bo style channel-row-bot-chip va dong bo visual source of truth voi UI system moi.
 - Affected files: backend/app/store.py, backend/app/templates/user_dashboard.html, final_user_ui.html, docs/UI_SYSTEM.md.
 - Impact/Risk: thay doi spacing/presentation o user workspace; logic submit/render job khong doi.
+### 2026-03-27 16:47 - Restore KPI and panel rhythm to match template
+- Added: upload-slot-status pattern trong UI system cho status upload neo o hang label.
+- Changed: tang lai page/panel/KPI spacing ve sat file mau, giu kich thuoc control va upload status runtime moi.
+- Fixed: bo trang thai top section bi co nho va sat nhau hon so voi file mau.
+- Affected files: backend/app/templates/user_dashboard.html, backend/app/static/js/user_dashboard.js, final_user_ui.html, docs/UI_SYSTEM.md.
+- Impact/Risk: thay doi visual rhythm o workspace user; logic tao job/upload khong doi.

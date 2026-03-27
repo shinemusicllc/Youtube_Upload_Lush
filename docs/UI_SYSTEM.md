@@ -137,6 +137,10 @@
   - chọn worker
   - chọn channel
 
+### 5.1 Upload / Quick Controls
+- Upload slot status nếu cần hiển thị thì neo ở góc phải hàng label, không đặt dưới input để tránh đổi chiều cao field.
+- Các input một dòng trong `Render Config` và `Quick Settings` ưu tiên cùng một chiều cao visual; textarea mô tả là control cao duy nhất trong panel.
+
 ### 6. Data Table / Queue Table
 - List `My Channel` co the dung row card nhe voi border ro hon va shadow rat mong de tach tung kenh, nhung khong bien thanh card-noi-card nang tay.
 - Meta cua `My Channel` uu tien dang `channel_id | worker/IP note` nho gon; khong quay lai bot badge trong row nay. Badge trang thai ket noi van dung icon `badge-check` va hover moi mo nut xoa.
