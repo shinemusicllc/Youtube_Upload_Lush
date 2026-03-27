@@ -10,6 +10,7 @@
   const dashboardSeedNode = document.getElementById("dashboard-seed");
   const renderPageSize = Math.max(1, Number(renderTable?.dataset.pageSize || 10) || 10);
   const renderPaginationState = { page: 1, pageSize: renderPageSize };
+  const dashboardScrollRestoreKey = "ytlush:user-dashboard:scroll";
   let renderJobsState = [];
   let liveRefreshHandle = null;
   let liveRefreshInFlight = false;
@@ -26,6 +27,42 @@
   const clampRenderPage = (page, totalPages) => {
     if (totalPages <= 0) return 1;
     return Math.min(Math.max(page, 1), totalPages);
+  };
+
+  const persistDashboardScrollPosition = () => {
+    try {
+      window.sessionStorage.setItem(
+        dashboardScrollRestoreKey,
+        JSON.stringify({
+          path: window.location.pathname,
+          y: window.scrollY || window.pageYOffset || 0,
+        })
+      );
+    } catch (_error) {
+      // Ignore storage failures in transient UI flows.
+    }
+  };
+
+  const restoreScrollPosition = (y) => {
+    if (!Number.isFinite(y) || y <= 0) return;
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        window.scrollTo(0, y);
+      });
+    });
+  };
+
+  const restoreDashboardScrollPosition = () => {
+    try {
+      const raw = window.sessionStorage.getItem(dashboardScrollRestoreKey);
+      if (!raw) return;
+      window.sessionStorage.removeItem(dashboardScrollRestoreKey);
+      const payload = JSON.parse(raw);
+      if (!payload || payload.path !== window.location.pathname) return;
+      restoreScrollPosition(Number(payload.y));
+    } catch (_error) {
+      // Ignore malformed restore payloads.
+    }
   };
 
   const showFormMessage = (message, type = "info") => {
@@ -602,6 +639,19 @@
     }
   };
 
+  const refreshDashboardLiveNow = async () => {
+    const response = await fetch("/api/user/dashboard/live", {
+      headers: { Accept: "application/json", "Cache-Control": "no-cache" },
+    });
+    if (!response.ok) {
+      throw new Error("Khong the tai lai danh sach job.");
+    }
+    const payload = await response.json();
+    lastLivePayloadSignature = buildLivePayloadSignature(payload);
+    updateRenderDashboard(payload);
+    return payload;
+  };
+
   const initForm = () => {
     const form = document.getElementById("job-form");
     const submitButton = document.getElementById("submitJobButton");
@@ -1119,6 +1169,7 @@
           throw new Error(payload.detail || "Không thể tạo job.");
         }
         showFormMessage("Tạo job thành công. Đang tải lại danh sách...", "success");
+        persistDashboardScrollPosition();
         window.setTimeout(() => window.location.reload(), 500);
       } catch (error) {
         showFormMessage(error.message || "Không thể tạo job.", "error");
@@ -1161,6 +1212,7 @@
         if (!confirmed) return;
 
         button.disabled = true;
+        const scrollY = window.scrollY || window.pageYOffset || 0;
         try {
           const response = await fetch(`/api/user/jobs/${jobId}${action === "cancel" ? "/cancel" : ""}`, {
             method: action === "cancel" ? "PATCH" : "DELETE",
@@ -1169,7 +1221,8 @@
           if (!response.ok) {
             throw new Error(payload.detail || "Không thể cập nhật job.");
           }
-          window.location.reload();
+          await refreshDashboardLiveNow();
+          restoreScrollPosition(scrollY);
         } catch (error) {
           window.alert(error.message || "Không thể cập nhật job.");
           button.disabled = false;
@@ -1189,6 +1242,7 @@
       if (!confirmed) return;
 
       deleteVisibleJobsButton.disabled = true;
+      const scrollY = window.scrollY || window.pageYOffset || 0;
       try {
         const response = await fetch("/api/user/jobs/actions/bulk-delete", {
           method: "POST",
@@ -1201,7 +1255,8 @@
         if (!response.ok) {
           throw new Error(payload.detail || "Khong the xoa danh sach dang hien thi.");
         }
-        window.location.reload();
+        await refreshDashboardLiveNow();
+        restoreScrollPosition(scrollY);
       } catch (error) {
         window.alert(error.message || "Khong the xoa danh sach dang hien thi.");
         renderRenderTable();
@@ -1228,6 +1283,7 @@
           if (!response.ok) {
             throw new Error(payload.detail || "Không thể xóa kênh.");
           }
+          persistDashboardScrollPosition();
           window.location.reload();
         } catch (error) {
           window.alert(error.message || "Không thể xóa kênh.");
@@ -1318,6 +1374,7 @@
   refreshRenderHeaderButtons();
 
   bindRenderSortButtons();
+  restoreDashboardScrollPosition();
   initChannelSelect();
   initFlatpickr();
   initFileInputs();

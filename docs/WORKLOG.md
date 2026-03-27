@@ -633,3 +633,10 @@ ode --check backend/app/static/js/user_dashboard.js, va TestClient login demo-us
 ### 2026-03-27 20:51
 - [x] Sau rollout live, tao them rollback bundle tu branch `main` tai `/opt/youtube-upload-lush/.backup/main-rollback-20260327-2049` gom 5 file runtime user workspace de co the quay ve `main` nhanh neu can.
 - [!] Chinh lai ghi chu task truoc: backup timestamp `ui-sync-*` truoc rollout khong tao dung do loi quoting khi goi lenh remote; rollback hien tai nen dua tren bundle `main-rollback-20260327-2049` hoac redeploy lai `main` tu local/GitHub.
+### 2026-03-27 21:05
+- [x] Trace bug xoa row o user workspace va xac nhan nguyen nhan chinh hien tai la refresh/repaint dashboard sau delete co the lam mat vi tri scroll; bo sung guard luu/khoi phuc `scrollY` trong `backend/app/static/js/user_dashboard.js`, va giu nguyen refresh dashboard tai cho thay vi reload full page cho delete/cancel/bulk-delete.
+- [x] Audit bang admin va xac nhan cung loai bug: `admin_tables.js` delete-page van `window.location.reload()`, con xoa row dung form/link navigation nen se reset vi tri cuon.
+- [x] Bo sung co che luu/khoi phuc state bang admin trong `backend/app/static/js/admin_tables.js`: luu `scrollY`, `search`, `currentPage`, `sortIndex`, `sortDirection` truoc khi delete row/page va khoi phuc lai sau reload.
+- [x] Tang version static cache-bust cho user/admin table scripts trong `backend/app/templates/user_dashboard.html` va `backend/app/templates/admin/_layout.html` de tranh browser live giu JS cu.
+- [x] Rollout 4 file frontend/runtime len host `82.197.71.6`, backup runtime cu vao `/opt/youtube-upload-lush/.backup/scroll-fix-20260327-195528`, restart `youtube-upload-web.service`, verify origin/public `api/health` deu `200 {"status":"ok"}`.
+- [x] Verify local: `node --check backend/app/static/js/user_dashboard.js`, `node --check backend/app/static/js/admin_tables.js`, `python -m compileall backend/app`, TestClient `/app` co version `20260327-delete-scroll-fix`, `/admin/user/index` co version `20260327-admin-delete-scroll-fix`.

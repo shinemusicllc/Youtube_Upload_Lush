@@ -890,3 +890,9 @@
 - Fixed: Lam ro rang backup `ui-sync-*` truoc rollout khong duoc tao dung; rollback nen dua tren `main-rollback-20260327-2049`.
 - Affected files: docs/WORKLOG.md, docs/CHANGELOG.md
 - Impact/Risk: Live host co san diem quay lui ro rang; can dung dung bundle `main-rollback-20260327-2049` neu muon ve `main`.
+### 2026-03-27 21:05 - Preserve list position after delete on user/admin tables
+- Added: Co che luu/khoi phuc vi tri scroll va state bang cho flow delete cua admin tables.
+- Changed: User workspace giu vi tri list sau delete/cancel/bulk-delete va cache-bust version JS moi cho user/admin.
+- Fixed: Khong con bi nhay len dau trang sau khi xoa row trong render list; admin truoc do cung cung pattern nay va da duoc harden.
+- Affected files: backend/app/static/js/user_dashboard.js, backend/app/static/js/admin_tables.js, backend/app/templates/user_dashboard.html, backend/app/templates/admin/_layout.html, docs/WORKLOG.md, docs/CHANGELOG.md
+- Impact/Risk: Chi anh huong frontend behavior sau delete; rollout live da xong va service host dang khoe.

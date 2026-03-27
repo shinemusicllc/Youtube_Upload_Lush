@@ -1,4 +1,16 @@
 document.addEventListener("DOMContentLoaded", function () {
+  function restoreWindowScroll(y) {
+    const nextY = Number(y);
+    if (!Number.isFinite(nextY) || nextY <= 0) {
+      return;
+    }
+    window.requestAnimationFrame(function () {
+      window.requestAnimationFrame(function () {
+        window.scrollTo(0, nextY);
+      });
+    });
+  }
+
   function clampPage(value, totalPages) {
     const safeTotal = Math.max(totalPages, 1);
     return Math.min(Math.max(value, 1), safeTotal);
@@ -199,6 +211,11 @@ document.addEventListener("DOMContentLoaded", function () {
     const headers = table.tHead ? Array.from(table.tHead.rows[0].cells) : [];
     const pageSize = Math.max(parseInt(table.dataset.pageSize || "10", 10) || 10, 1);
     const totalColumns = headers.length || 1;
+    const tableStateStorageKey =
+      "ytlush:admin-table-state:" +
+      window.location.pathname +
+      ":" +
+      (table.dataset.adminListTable || table.id || "default");
     let currentPage = 1;
     let sortIndex = null;
     let sortDirection = "asc";
@@ -281,6 +298,53 @@ document.addEventListener("DOMContentLoaded", function () {
     const deletePageButton = footer.querySelector("[data-admin-table-delete-page]");
     let emptyRow = null;
 
+    function persistTableUiState() {
+      try {
+        window.sessionStorage.setItem(
+          tableStateStorageKey,
+          JSON.stringify({
+            path: window.location.pathname,
+            search: searchInput ? searchInput.value : "",
+            currentPage: currentPage,
+            sortIndex: sortIndex,
+            sortDirection: sortDirection,
+            scrollY: window.scrollY || window.pageYOffset || 0,
+          })
+        );
+      } catch (_error) {
+        // Ignore transient storage issues.
+      }
+    }
+
+    function restoreTableUiState() {
+      try {
+        const raw = window.sessionStorage.getItem(tableStateStorageKey);
+        if (!raw) {
+          return;
+        }
+        window.sessionStorage.removeItem(tableStateStorageKey);
+        const payload = JSON.parse(raw);
+        if (!payload || payload.path !== window.location.pathname) {
+          return;
+        }
+        if (searchInput && typeof payload.search === "string") {
+          searchInput.value = payload.search;
+        }
+        if (Number.isInteger(payload.sortIndex) && payload.sortIndex >= 0) {
+          sortIndex = payload.sortIndex;
+        }
+        if (payload.sortDirection === "desc" || payload.sortDirection === "asc") {
+          sortDirection = payload.sortDirection;
+        }
+        if (Number.isInteger(payload.currentPage) && payload.currentPage > 0) {
+          currentPage = payload.currentPage;
+        }
+        restoreWindowScroll(payload.scrollY);
+      } catch (_error) {
+        // Ignore malformed restore payloads.
+      }
+    }
+
     headers.forEach(function (headerCell, index) {
       if (!headerCell.dataset.adminSortLabel) {
         headerCell.dataset.adminSortLabel = headerCell.textContent.replace(/\s+/g, " ").trim();
@@ -332,6 +396,25 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function rowDeleteControl(row) {
       return row.querySelector("[data-bulk-delete-form], a[data-bulk-delete-link]");
+    }
+
+    function bindRowDeleteControls() {
+      rows.forEach(function (row) {
+        const control = rowDeleteControl(row);
+        if (!control || control.dataset.scrollRestoreBound === "true") {
+          return;
+        }
+        control.dataset.scrollRestoreBound = "true";
+        if (control.tagName === "A") {
+          control.addEventListener("click", function () {
+            persistTableUiState();
+          });
+          return;
+        }
+        control.addEventListener("submit", function () {
+          persistTableUiState();
+        });
+      });
     }
 
     function getRowCellText(row, columnIndex) {
@@ -449,6 +532,7 @@ document.addEventListener("DOMContentLoaded", function () {
         for (const control of deletableControls) {
           await invokeDeleteControl(control);
         }
+        persistTableUiState();
         window.location.reload();
       } catch (error) {
         console.error(error);
@@ -504,7 +588,9 @@ document.addEventListener("DOMContentLoaded", function () {
       deletePageButton.addEventListener("click", handleDeletePage);
     }
 
+    restoreTableUiState();
     refreshHeaderButtons();
+    bindRowDeleteControls();
     applyTableState();
 
     if (window.lucide) {
