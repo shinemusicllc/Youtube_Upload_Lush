@@ -640,3 +640,10 @@ ode --check backend/app/static/js/user_dashboard.js, va TestClient login demo-us
 - [x] Tang version static cache-bust cho user/admin table scripts trong `backend/app/templates/user_dashboard.html` va `backend/app/templates/admin/_layout.html` de tranh browser live giu JS cu.
 - [x] Rollout 4 file frontend/runtime len host `82.197.71.6`, backup runtime cu vao `/opt/youtube-upload-lush/.backup/scroll-fix-20260327-195528`, restart `youtube-upload-web.service`, verify origin/public `api/health` deu `200 {"status":"ok"}`.
 - [x] Verify local: `node --check backend/app/static/js/user_dashboard.js`, `node --check backend/app/static/js/admin_tables.js`, `python -m compileall backend/app`, TestClient `/app` co version `20260327-delete-scroll-fix`, `/admin/user/index` co version `20260327-admin-delete-scroll-fix`.
+
+### 2026-03-27 21:14
+- [x] Trace screenshot bug o render list va xac nhan row `job-ab465f91` dang lay `preview_url` tu Google Drive thumbnail endpoint, endpoint nay redirect sang `lh3.googleusercontent.com` roi tra `404`, nen browser hien broken preview.
+- [x] Doi chieu payload live tren VPS va xac nhan `title=1`, `description=23` la du lieu that cua job, khong phai loi cat chu/vo layout o frontend.
+- [x] Sua `backend/app/store.py` de khong con suy doan thumbnail tu raw Google Drive file link; neu job chua co preview that thi render list se quay ve icon/placeholder on dinh.
+- [x] Bo sung helper format render duration de payload live normalize `00:2:00` thanh `00:02:00` trong meta line cua render row.
+- [x] Rollout rieng `backend/app/store.py` len host `82.197.71.6`, backup runtime cu tai `/opt/youtube-upload-lush/.backup/drive-preview-fix-20260327-200649`, restart `youtube-upload-web.service`, verify payload live cua `job-ab465f91` da co `preview_url=null` va `meta` moi.

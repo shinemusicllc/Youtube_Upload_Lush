@@ -896,3 +896,10 @@
 - Fixed: Khong con bi nhay len dau trang sau khi xoa row trong render list; admin truoc do cung cung pattern nay va da duoc harden.
 - Affected files: backend/app/static/js/user_dashboard.js, backend/app/static/js/admin_tables.js, backend/app/templates/user_dashboard.html, backend/app/templates/admin/_layout.html, docs/WORKLOG.md, docs/CHANGELOG.md
 - Impact/Risk: Chi anh huong frontend behavior sau delete; rollout live da xong va service host dang khoe.
+
+### 2026-03-27 21:14 - Stabilize drive render preview fallback
+- Added: Helper normalize thoi luong render de meta row luon hien `HH:MM:SS` nhat quan.
+- Changed: Render list khong con phat Drive thumbnail suy doan tu raw Google Drive file link khi chua co preview that.
+- Fixed: Loai bo broken preview cho cac job Drive nhu `job-ab465f91`; row se quay ve icon/placeholder on dinh va meta line hien `00:02:00` dung dinh dang.
+- Affected files: backend/app/store.py, docs/DECISIONS.md, docs/WORKLOG.md, docs/CHANGELOG.md
+- Impact/Risk: Chi doi payload build cho user render list; live VPS da restart va verify payload job loi.

@@ -47,3 +47,5 @@
 | Worker SKU hien tai (4 vCPU / ~6 GB RAM) mac dinh nen van hanh o 2 luong | Bai test live 2 luong/worker cho thay ca 2 may deu claim 2 job cung luc; worker-01 hoan tat 2 upload thuc te, con worker-02 dung loi quota YouTube ngoai he thong chua phan anh gioi han CPU/RAM. | Mac dinh van hanh cho worker-01 va worker-02 la WORKER_THREADS=2, WORKER_CAPACITY=2; chua khuyen nghi nang len 3+ khi chua co bai soak test rieng voi video dai va upload that. | 2026-03-27 |
 
 My Channel row dung worker/IP note thay bot badge | Bot badge lam row bi om do va lech mau so voi mau moi; worker/IP note gọn hon va dung context van hanh | User workspace sat mau hon va top layout gon hon, can giu cung pattern nay cho cac polish UI tiep theo | 2026-03-27
+
+| User render list khong duoc fallback sang Google Drive thumbnail suy doan tu raw file link | Thumbnail endpoint cua Drive co the 404 du file con ton tai, gay vo preview trong render list va spam request loi moi lan row rerender. | Job Drive khi chua co preview that se quay ve icon/placeholder; khi worker/control plane co thumbnail that thi moi phat `preview_url` len UI. | 2026-03-27 |

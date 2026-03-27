@@ -779,6 +779,19 @@ class AppStore:
         return None
 
     @staticmethod
+    def _format_render_duration(value: str | None) -> str:
+        cleaned = (value or "").strip()
+        if not cleaned:
+            return "00:30:00"
+
+        parts = cleaned.split(":")
+        if len(parts) != 3 or not all(part.isdigit() for part in parts):
+            return cleaned
+
+        hours, minutes, seconds = (int(part) for part in parts)
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+    @staticmethod
     def _extract_google_drive_file_id(url: str | None) -> str | None:
         if not url:
             return None
@@ -1620,7 +1633,7 @@ class AppStore:
                     "kind": "Drive" if is_drive else "Upload",
                     "kind_class": "text-sky-600" if is_drive else "text-violet-600",
                     "title": job.title,
-                    "meta": f"{job.source_label} • render {job.time_render_string} • ",
+                    "meta": f"{job.source_label} • render {self._format_render_duration(job.time_render_string)} • ",
                     "job_id": job.id,
                     "description": (job.description or "").strip(),
                     "channel_avatar": self._initials(job.channel_name),
@@ -1732,13 +1745,6 @@ class AppStore:
                 }
 
         if video_asset.url:
-            drive_file_id = self._extract_google_drive_file_id(video_asset.url)
-            if drive_file_id:
-                return {
-                    "kind": "image",
-                    "url": f"https://drive.google.com/thumbnail?id={drive_file_id}&sz=w320",
-                }
-
             preview_kind = self._guess_preview_kind(video_asset.url)
             if preview_kind:
                 return {
@@ -1750,12 +1756,6 @@ class AppStore:
             return {
                 "kind": "image",
                 "url": job.thumbnail_url,
-            }
-
-        if job.channel_avatar_url:
-            return {
-                "kind": "image",
-                "url": job.channel_avatar_url,
             }
 
         youtube_video_id = self._extract_youtube_video_id(job.output_url)
