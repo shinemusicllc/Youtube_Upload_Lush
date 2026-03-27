@@ -630,3 +630,6 @@ ode --check backend/app/static/js/user_dashboard.js, va TestClient login demo-us
 - [x] Compile backend tren host, restart `youtube-upload-web.service`, verify `systemctl is-active` = `active`, listener `0.0.0.0:8000` da len lai, va origin/public `/api/health` deu tra `200 {"status":"ok"}`.
 - [x] Doi chieu file tren host: `user_dashboard.html` da co sort icon `arrow-up/arrow-down` inline, `user_dashboard.js` co drive-link status runtime, va `store.py` co preview guard `_path_has_content`.
 - [!] Chua smoke duoc man `/app` tren domain live bang browser that vi khong co credential user live trong phien nay; rollout duoc xac nhan bang service health, file marker va route public/origin.
+### 2026-03-27 20:51
+- [x] Sau rollout live, tao them rollback bundle tu branch `main` tai `/opt/youtube-upload-lush/.backup/main-rollback-20260327-2049` gom 5 file runtime user workspace de co the quay ve `main` nhanh neu can.
+- [!] Chinh lai ghi chu task truoc: backup timestamp `ui-sync-*` truoc rollout khong tao dung do loi quoting khi goi lenh remote; rollback hien tai nen dua tren bundle `main-rollback-20260327-2049` hoac redeploy lai `main` tu local/GitHub.

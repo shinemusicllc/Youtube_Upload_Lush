@@ -884,3 +884,9 @@
 - Fixed: Mo khoa duoc blocker deploy truoc do (thieu SSH credential) va xac nhan service live chay lai on dinh voi code moi.
 - Affected files: docs/WORKLOG.md, docs/CHANGELOG.md
 - Impact/Risk: Live host dang chay code moi; neu can rollback nhanh co the copy lai tu `.backup/ui-sync-*` hoac dua host ve commit `main` tren runtime.
+### 2026-03-27 20:51 - Add main rollback bundle on VPS
+- Added: Bundle rollback `main` tai `/opt/youtube-upload-lush/.backup/main-rollback-20260327-2049` tren host live.
+- Changed: Chot cach rollback an toan sau rollout bang file `main` da dat san tren VPS.
+- Fixed: Lam ro rang backup `ui-sync-*` truoc rollout khong duoc tao dung; rollback nen dua tren `main-rollback-20260327-2049`.
+- Affected files: docs/WORKLOG.md, docs/CHANGELOG.md
+- Impact/Risk: Live host co san diem quay lui ro rang; can dung dung bundle `main-rollback-20260327-2049` neu muon ve `main`.
