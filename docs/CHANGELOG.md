@@ -813,3 +813,9 @@
 - Fixed: bo trang thai top section bi co nho va sat nhau hon so voi file mau.
 - Affected files: backend/app/templates/user_dashboard.html, backend/app/static/js/user_dashboard.js, final_user_ui.html, docs/UI_SYSTEM.md.
 - Impact/Risk: thay doi visual rhythm o workspace user; logic tao job/upload khong doi.
+### 2026-03-27 16:58 - Tighten upload header alignment and channel hover action
+- Added: gioi han file picker ideo/* cho Link video Intro va Link Outro.
+- Changed: canh bottom upload status theo hang label va doi hover delete row kenh sang icon + text Xoa.
+- Fixed: status Hoan tat khong con cao hon hang Link video loop va hover action sat file mau hon.
+- Affected files: backend/app/templates/user_dashboard.html, final_user_ui.html.
+- Impact/Risk: thay doi presentation o workspace user; logic upload/channel delete khong doi.

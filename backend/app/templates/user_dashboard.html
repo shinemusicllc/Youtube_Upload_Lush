@@ -278,7 +278,7 @@
 
     .upload-slot-head {
       display: flex;
-      align-items: flex-start;
+      align-items: flex-end;
       justify-content: space-between;
       gap: 12px;
       min-height: 18px;
@@ -953,7 +953,7 @@
                         </span>
                       </span>
                     </button>
-                    <input type="file" id="introFileInput" class="hidden file-input" name="intro_file" data-target="introPath" data-upload-input="intro">
+                    <input type="file" id="introFileInput" class="hidden file-input" name="intro_file" data-target="introPath" data-upload-input="intro" accept="video/*">
                   </div>
                 </div>
 
@@ -1028,7 +1028,7 @@
                         </span>
                       </span>
                     </button>
-                    <input type="file" id="outroFileInput" class="hidden file-input" name="outro_file" data-target="outroPath" data-upload-input="outro">
+                    <input type="file" id="outroFileInput" class="hidden file-input" name="outro_file" data-target="outroPath" data-upload-input="outro" accept="video/*">
                   </div>
                 </div>
 
@@ -1137,9 +1137,9 @@
                       <i data-lucide="badge-check" class="w-3.5 h-3.5"></i>
                       <span class="truncate">&#272;&#227; k&#7871;t n&#7889;i</span>
                     </div>
-                    <button type="button" data-channel-action="delete" data-channel-id="{{ channel.id | e }}" data-channel-title="{{ channel.title | e }}" class="channel-remove absolute inset-y-0 right-0 inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600 hover:text-rose-700 opacity-0 pointer-events-none transition-opacity" title="X&#243;a k&#234;nh">
+                    <button type="button" data-channel-action="delete" data-channel-id="{{ channel.id | e }}" data-channel-title="{{ channel.title | e }}" class="channel-remove absolute inset-y-0 right-0 inline-flex items-center gap-1.5 text-[11px] font-semibold text-rose-600 hover:text-rose-700 opacity-0 pointer-events-none transition-opacity" title="X&#243;a k&#234;nh">
                       <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-                      <span class="sr-only">X&#243;a k&#234;nh</span>
+                      <span>X&#243;a</span>
                     </button>
                   </div>
                 </div>
