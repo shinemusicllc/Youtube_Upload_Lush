@@ -818,4 +818,9 @@
 - Changed: canh bottom upload status theo hang label va doi hover delete row kenh sang icon + text Xoa.
 - Fixed: status Hoan tat khong con cao hon hang Link video loop va hover action sat file mau hon.
 - Affected files: backend/app/templates/user_dashboard.html, final_user_ui.html.
-- Impact/Risk: thay doi presentation o workspace user; logic upload/channel delete khong doi.
+- Impact/Risk: thay doi presentation o workspace user; logic upload/channel delete khong doi.### 2026-03-27 17:18 - Tighten render list width and hierarchy
+- Added: `render-job-title` 2-line clamp cho thong tin job trong render list va note moi trong `docs/UI_SYSTEM.md` de khoa pattern nay.
+- Changed: Rut gon preview, progress column, mot so cell padding va margin-top cua render list de bang bam lai tong chieu ngang/phuong doc cua layout mau.
+- Fixed: Bo hien thi `Upload/Local Upload` trong thong tin job, giu lai chi title + `job_id` de title dai co the xuong 2 dong ma khong lam bang bi phong ngang.
+- Affected files: `D:\Youtube_BOT_UPLOAD\backend\app\templates\user_dashboard.html`, `D:\Youtube_BOT_UPLOAD\backend\app\static\js\user_dashboard.js`, `D:\Youtube_BOT_UPLOAD\final_user_ui.html`, `D:\Youtube_BOT_UPLOAD\docs\UI_SYSTEM.md`, `D:\Youtube_BOT_UPLOAD\docs\WORKLOG.md`, `D:\Youtube_BOT_UPLOAD\docs\CHANGELOG.md`.
+- Impact/Risk: Visual-only refinement cho user workspace render list; khong doi API, session, hay workflow render/upload.

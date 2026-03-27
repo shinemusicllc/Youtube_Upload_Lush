@@ -319,6 +319,21 @@
       position: relative;
     }
 
+    .render-table tbody td {
+      vertical-align: middle;
+    }
+
+    .render-table tbody td.progress-cell {
+      vertical-align: top;
+    }
+
+    .render-job-title {
+      display: -webkit-box;
+      overflow: hidden;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+    }
+
     .render-table thead th:not(:last-child)::after {
       content: '';
       position: absolute;
@@ -852,7 +867,7 @@
             </div>
         </div>
 
-        <div class="elevated-card mt-4 flex flex-col overflow-hidden">
+        <div class="elevated-card mt-3 flex flex-col overflow-hidden">
           <div class="px-5 border-b border-slate-200/80 flex items-center justify-between gap-5">
             <div class="flex items-center gap-6 overflow-x-auto">
               <button type="button" class="px-1 py-4 text-[14px] font-semibold text-brand-700 border-b-2 border-brand-600 whitespace-nowrap">Danh SÃ¡ch Render (3)</button>
@@ -864,37 +879,36 @@
             </div>
           </div>
 
-          <div class="overflow-x-auto w-full">
-            <table class="render-table w-full text-left text-sm whitespace-nowrap">
+          <div class="min-w-0 overflow-x-auto w-full">
+            <table class="render-table min-w-full w-full table-auto text-left text-sm">
               <thead class="text-slate-600 text-[11px] font-semibold tracking-wide bg-slate-50/70">
                 <tr>
-                  <th class="px-6 py-4 border-b border-slate-200 w-12 text-center text-slate-400">JOB</th>
-                  <th class="px-6 py-4 border-b border-slate-200"></th>
-                  <th class="px-6 py-4 border-b border-slate-200">KÃªnh</th>
-                  <th class="px-6 py-4 border-b border-slate-200">Bot</th>
-                  <th class="px-6 py-4 border-b border-slate-200 w-[120px]">Tiáº¿n Äá»™</th>
-                  <th class="px-6 py-4 border-b border-slate-200">Timeline</th>
-                  <th class="px-6 py-4 border-b border-slate-200">Tráº¡ng ThÃ¡i</th>
+                  <th class="px-3 py-4 border-b border-slate-200 w-[52px] text-center text-slate-400">JOB</th>
+                  <th class="px-4 py-4 border-b border-slate-200 w-[30%]"></th>
+                  <th class="px-4 py-4 border-b border-slate-200 w-[172px]">KÃªnh</th>
+                  <th class="px-4 py-4 border-b border-slate-200 w-[150px]">Bot</th>
+                  <th class="px-4 py-4 border-b border-slate-200 w-[104px]">Tiáº¿n Äá»™</th>
+                  <th class="px-4 py-4 border-b border-slate-200 w-[154px]">Timeline</th>
+                  <th class="px-4 py-4 border-b border-slate-200 w-[136px]">Tráº¡ng ThÃ¡i</th>
                   <th class="px-6 py-4 border-b border-slate-200 text-right">TÃ¡c Vá»¥</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-200/70 text-slate-700">
                 <tr class="hover:bg-slate-50 transition-colors group">
-                  <td class="px-6 py-5 text-center font-mono text-xs text-slate-500">1</td>
-                  <td class="px-6 py-5">
-                    <div class="flex items-start gap-5 min-w-[360px]">
-                      <div class="w-20 h-20 bg-slate-100 border border-slate-200 rounded-xl relative shrink-0 flex items-center justify-center">
+                  <td class="px-3 py-5 text-center font-mono text-xs text-slate-500">1</td>
+                  <td class="pl-3 pr-4 py-5 align-middle">
+                    <div class="flex items-center gap-3 min-w-0">
+                      <div class="w-20 aspect-[4/3] bg-slate-100 border border-slate-200 rounded-xl relative shrink-0 flex items-center justify-center">
                         <i data-lucide="hard-drive-download" class="w-6 h-6 text-sky-600"></i>
                       </div>
-                      <div class="pt-0.5">
-                        <p class="text-[10px] font-semibold tracking-[0.12em] uppercase text-sky-600">Drive</p>
-                        <p class="mt-1 font-semibold text-brand-700 text-[15px] leading-snug">Drive Job Local Check</p>
-                        <p class="mt-1 text-[11px] text-slate-600 font-mono">Google Drive/cloud â€¢ render 00:30:00 â€¢ <span class="text-brand-500">job-379e626e</span></p>
+                      <div class="min-w-0 flex-1 max-w-[328px] pb-0.5">
+                        <p class="font-semibold text-brand-700 text-[15px] leading-[1.4] render-job-title">Drive Job Local Check</p>
+                        <p class="mt-1 text-[11px] text-slate-600 font-mono truncate"><span class="text-brand-500">job-379e626e</span></p>
                         <p class="mt-1 text-[11px] text-slate-500">Kiá»ƒm tra file nguá»“n trÆ°á»›c khi Ä‘Æ°a vÃ o hÃ ng Ä‘á»£i xá»­ lÃ½.</p>
                       </div>
                     </div>
                   </td>
-                  <td class="px-6 py-4">
+                  <td class="px-4 py-4">
                     <div class="flex items-center gap-3">
                        <div class="w-7 h-7 bg-emerald-800 text-white rounded-[4px] flex items-center justify-center text-[10px] font-bold">K</div>
                        <div>
@@ -903,24 +917,38 @@
                        </div>
                     </div>
                   </td>
-                  <td class="px-6 py-4">
+                  <td class="px-4 py-4">
                     <p class="font-bold text-[12px] text-slate-900 leading-none mb-1">Bot-01</p>
                     <p class="text-[10px] text-brand-600">manager-alpha</p>
                   </td>
-                  <td class="px-6 py-4">
-                    <div class="w-[80px]">
-                        <p class="text-[11px] font-mono font-bold text-amber-600 mb-1 pointer-events-none">0%</p>
-                        <div class="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                            <div class="h-full bg-slate-300 w-0"></div>
+                  <td class="progress-cell px-4 pt-3 pb-3">
+                    <div class="w-[92px] mx-auto flex flex-col justify-start gap-1 pt-0">
+                        <div style="margin-top: 6px;">
+                            <div class="flex items-center justify-between gap-2 text-[9px] font-mono font-semibold uppercase tracking-[0.08em] text-emerald-700">
+                                <span>Render</span>
+                                <span>0%</span>
+                            </div>
+                            <div class="mt-0.5 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                                <div class="h-full bg-slate-300 w-0"></div>
+                            </div>
+                        </div>
+                        <div style="margin-top: 1px;">
+                            <div class="flex items-center justify-between gap-2 text-[9px] font-mono font-semibold uppercase tracking-[0.08em] text-amber-700">
+                                <span>Upload</span>
+                                <span>0%</span>
+                            </div>
+                            <div class="mt-0.5 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                                <div class="h-full bg-slate-300 w-0"></div>
+                            </div>
                         </div>
                     </div>
                   </td>
-                  <td class="px-6 py-4 text-[10px] text-slate-500 font-mono leading-relaxed">
+                  <td class="px-4 py-4 text-[10px] text-slate-500 font-mono leading-relaxed">
                     <p class="truncate"><span class="text-slate-500">Táº¡o:</span> <span class="text-slate-700">14:04 24/3/26</span></p>
                     <p class="truncate mt-0.5"><span class="text-slate-500">Táº£i:</span> <span class="text-slate-700">-</span></p>
                     <p class="truncate mt-0.5"><span class="opacity-0">Táº£i:</span> -</p>
                   </td>
-                  <td class="px-6 py-4">
+                  <td class="px-4 py-4">
                     <span class="inline-flex justify-center items-center px-2.5 py-1 bg-orange-50 text-orange-700 text-[10px] font-bold border border-orange-200/60 rounded-full whitespace-nowrap">Äang xáº¿p hÃ ng</span>
                   </td>
                   <td class="px-6 py-4 text-right">
@@ -933,22 +961,21 @@
                 </tr>
 
                 <tr class="hover:bg-slate-50 transition-colors group">
-                  <td class="px-6 py-5 text-center font-mono text-xs text-slate-500">2</td>
-                  <td class="px-6 py-5">
-                    <div class="flex items-start gap-5 min-w-[360px]">
-                      <div class="w-20 h-20 bg-slate-900 rounded-xl relative border border-slate-800 flex justify-center items-center overflow-hidden shrink-0">
+                  <td class="px-3 py-5 text-center font-mono text-xs text-slate-500">2</td>
+                  <td class="pl-3 pr-4 py-5 align-middle">
+                    <div class="flex items-center gap-3 min-w-0">
+                      <div class="w-20 aspect-[4/3] bg-slate-900 rounded-xl relative border border-slate-800 flex justify-center items-center overflow-hidden shrink-0">
                         <div class="text-[7px] text-white/80 font-mono">Preview..</div>
                         <div class="absolute bottom-0 w-full h-[2px] bg-brand-600"></div>
                       </div>
-                      <div class="pt-0.5">
-                        <p class="text-[10px] font-semibold tracking-[0.12em] uppercase text-violet-600">Upload</p>
-                        <p class="mt-1 font-semibold text-violet-700 text-[15px] leading-snug">Local Upload Test</p>
-                        <p class="mt-1 text-[11px] text-slate-600 font-mono">Local Upload â€¢ render 00:30:00 â€¢ <span class="text-violet-500">job-3787e1cd</span></p>
+                      <div class="min-w-0 flex-1 max-w-[328px] pb-0.5">
+                        <p class="font-semibold text-violet-700 text-[15px] leading-[1.4] render-job-title">Local Upload Test</p>
+                        <p class="mt-1 text-[11px] text-slate-600 font-mono truncate"><span class="text-violet-500">job-3787e1cd</span></p>
                         <p class="mt-1 text-[11px] text-slate-500">Job local chá» táº¡o queue trÆ°á»›c khi render trÃªn bot.</p>
                       </div>
                     </div>
                   </td>
-                  <td class="px-6 py-4">
+                  <td class="px-4 py-4">
                     <div class="flex items-center gap-3">
                        <div class="w-7 h-7 bg-emerald-800 text-white rounded-[4px] flex items-center justify-center text-[10px] font-bold">D</div>
                        <div>
@@ -957,24 +984,38 @@
                        </div>
                     </div>
                   </td>
-                  <td class="px-6 py-4">
+                  <td class="px-4 py-4">
                     <p class="font-bold text-[12px] text-slate-900 leading-none mb-1">Bot-02</p>
                     <p class="text-[10px] text-brand-600">manager-alpha</p>
                   </td>
-                  <td class="px-6 py-4">
-                    <div class="w-[80px]">
-                        <p class="text-[11px] font-mono font-bold text-amber-600 mb-1 pointer-events-none">0%</p>
-                        <div class="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                            <div class="h-full bg-slate-300 w-0"></div>
+                  <td class="progress-cell px-4 pt-3 pb-3">
+                    <div class="w-[92px] mx-auto flex flex-col justify-start gap-1 pt-0">
+                        <div style="margin-top: 6px;">
+                            <div class="flex items-center justify-between gap-2 text-[9px] font-mono font-semibold uppercase tracking-[0.08em] text-emerald-700">
+                                <span>Render</span>
+                                <span>0%</span>
+                            </div>
+                            <div class="mt-0.5 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                                <div class="h-full bg-slate-300 w-0"></div>
+                            </div>
+                        </div>
+                        <div style="margin-top: 1px;">
+                            <div class="flex items-center justify-between gap-2 text-[9px] font-mono font-semibold uppercase tracking-[0.08em] text-amber-700">
+                                <span>Upload</span>
+                                <span>0%</span>
+                            </div>
+                            <div class="mt-0.5 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                                <div class="h-full bg-slate-300 w-0"></div>
+                            </div>
                         </div>
                     </div>
                   </td>
-                  <td class="px-6 py-4 text-[10px] text-slate-500 font-mono leading-relaxed">
+                  <td class="px-4 py-4 text-[10px] text-slate-500 font-mono leading-relaxed">
                     <p class="truncate"><span class="text-slate-500">Táº¡o:</span> <span class="text-slate-700">14:03 24/3/26</span></p>
                     <p class="truncate mt-0.5"><span class="text-slate-500">Táº£i:</span> <span class="text-slate-700">-</span></p>
                     <p class="truncate mt-0.5"><span class="opacity-0">Táº£i:</span> -</p>
                   </td>
-                  <td class="px-6 py-4">
+                  <td class="px-4 py-4">
                     <span class="inline-flex justify-center items-center px-2.5 py-1 bg-orange-50 text-orange-700 text-[10px] font-bold border border-orange-200/60 rounded-full whitespace-nowrap">Chá» táº¡o hÃ ng Ä‘á»£i</span>
                   </td>
                   <td class="px-6 py-4 text-right">

@@ -578,4 +578,7 @@ ode --check backend/app/static/js/user_dashboard.js, va TestClient login demo-us
 ## 2026-03-27 16:58 - Tighten upload header alignment and channel hover action
 - Scope: backend/app/templates/user_dashboard.html, final_user_ui.html.
 - Changed: canh upload status xuong day hang label, gioi han intro/outro file picker chi nhan video, va doi hover delete My Channel sang icon + text Xoa theo file mau.
-- Verification: python -m compileall backend/app; node --check backend/app/static/js/user_dashboard.js; FastAPI TestClient /app xac nhan align-items:flex-end, accept=video/* cho intro/outro, va button hover co text Xoa.
+- Verification: python -m compileall backend/app; node --check backend/app/static/js/user_dashboard.js; FastAPI TestClient /app xac nhan align-items:flex-end, accept=video/* cho intro/outro, va button hover co text Xoa.## 2026-03-27 17:18 - Tighten render list width and hierarchy
+- Scope: backend/app/templates/user_dashboard.html, backend/app/static/js/user_dashboard.js, final_user_ui.html, docs/UI_SYSTEM.md.
+- Changed: bo nhan Upload/Local Upload trong thong tin job, doi title job sang 2 dong, thu preview + padding cot + progress width, va keo render card len sat hon voi cum form ben tren.
+- Verification: python -m compileall backend/app; node --check backend/app/static/js/user_dashboard.js; FastAPI TestClient login demo-user/demo123 -> /app 200; xac nhan marker render-job-title, w-[92px], mt-3 va khong con markup kind-label cu.

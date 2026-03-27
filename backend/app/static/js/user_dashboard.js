@@ -40,7 +40,7 @@
 
   const getRenderSortValue = (job, index) => {
     if (index === 0) return Number(job.index) || 0;
-    if (index === 1) return `${job.title || ""} ${job.meta || ""} ${job.job_id || ""} ${job.description || ""}`.trim().toLowerCase();
+    if (index === 1) return `${job.title || ""} ${job.job_id || ""} ${job.description || ""}`.trim().toLowerCase();
     if (index === 2) return String(job.channel_name || "").toLowerCase();
     if (index === 3) return String(job.bot || "").toLowerCase();
     if (index === 4) return (Number(job.render_progress) || 0) * 1000 + (Number(job.upload_progress) || 0);
@@ -236,14 +236,14 @@
     if (job.preview_url) {
       if (job.preview_kind === "image") {
         return `
-          <div class="w-24 aspect-[4/3] bg-slate-100 border border-slate-200 rounded-xl relative shrink-0 overflow-hidden">
+          <div class="w-20 aspect-[4/3] bg-slate-100 border border-slate-200 rounded-xl relative shrink-0 overflow-hidden">
             <img src="${escapeHtml(job.preview_url)}" alt="${escapeHtml(job.title)}" class="job-preview-media" loading="lazy" referrerpolicy="no-referrer">
             <div class="absolute inset-x-0 bottom-0 h-[2px] bg-brand-600"></div>
           </div>
         `;
       }
       return `
-        <div class="w-24 aspect-[4/3] bg-slate-100 border border-slate-200 rounded-xl relative shrink-0 overflow-hidden">
+        <div class="w-20 aspect-[4/3] bg-slate-100 border border-slate-200 rounded-xl relative shrink-0 overflow-hidden">
           <video class="job-preview-media" src="${escapeHtml(job.preview_url)}" muted playsinline preload="metadata"></video>
           <div class="absolute inset-x-0 bottom-0 h-[2px] bg-brand-600"></div>
         </div>
@@ -252,14 +252,14 @@
 
     if (job.icon) {
       return `
-        <div class="w-24 aspect-[4/3] bg-slate-100 border border-slate-200 rounded-xl relative shrink-0 flex items-center justify-center">
+        <div class="w-20 aspect-[4/3] bg-slate-100 border border-slate-200 rounded-xl relative shrink-0 flex items-center justify-center">
           <i data-lucide="${escapeHtml(job.icon)}" class="w-6 h-6 ${escapeHtml(job.icon_class || "")}"></i>
         </div>
       `;
     }
 
     return `
-      <div class="w-24 aspect-[4/3] bg-slate-900 rounded-xl relative border border-slate-800 flex justify-center items-center overflow-hidden shrink-0">
+      <div class="w-20 aspect-[4/3] bg-slate-900 rounded-xl relative border border-slate-800 flex justify-center items-center overflow-hidden shrink-0">
         <div class="text-[7px] text-white/80 font-mono">${escapeHtml(job.preview_text || "Preview")}</div>
         <div class="absolute bottom-0 w-full h-[2px] bg-brand-600"></div>
       </div>
@@ -291,18 +291,17 @@
   const renderJobRowMarkup = (job) => `
     <tr class="hover:bg-slate-50 transition-colors group" data-job-id="${escapeHtml(job.id)}">
       <td class="px-3 py-5 text-center font-mono text-xs text-slate-500">${escapeHtml(job.index)}</td>
-      <td class="pl-3 pr-5 py-5 align-middle">
-        <div class="flex items-end gap-4 min-w-0">
+      <td class="pl-3 pr-4 py-5 align-middle">
+        <div class="flex items-center gap-3 min-w-0">
           ${renderJobPreviewMarkup(job)}
-          <div class="min-w-0 flex-1 pb-0.5">
-            <p class="text-[10px] font-semibold tracking-[0.12em] uppercase ${escapeHtml(job.kind_class)}">${escapeHtml(job.kind)}</p>
-            <p class="mt-1 font-semibold ${job.kind === "Upload" ? "text-violet-700" : "text-brand-700"} text-[15px] leading-snug truncate" title="${escapeHtml(job.title)}">${escapeHtml(job.title)}</p>
-            <p class="mt-1 text-[11px] text-slate-600 font-mono truncate" title="${escapeHtml(`${job.meta || ""}${job.job_id || ""}`)}">${escapeHtml(job.meta)} <span class="${job.kind === "Upload" ? "text-violet-500" : "text-brand-500"}">${escapeHtml(job.job_id)}</span></p>
+          <div class="min-w-0 flex-1 max-w-[328px] pb-0.5">
+            <p class="font-semibold ${job.kind === "Upload" ? "text-violet-700" : "text-brand-700"} text-[15px] leading-[1.4] render-job-title" title="${escapeHtml(job.title)}">${escapeHtml(job.title)}</p>
+            <p class="mt-1 text-[11px] text-slate-600 font-mono truncate" title="${escapeHtml(job.job_id || "")}"><span class="${job.kind === "Upload" ? "text-violet-500" : "text-brand-500"}">${escapeHtml(job.job_id || "")}</span></p>
             ${job.description ? `<p class="mt-1 text-[11px] text-slate-500 truncate" title="${escapeHtml(job.description)}">${escapeHtml(job.description)}</p>` : ""}
           </div>
         </div>
       </td>
-      <td class="px-5 py-4 align-middle">
+      <td class="px-4 py-4 align-middle">
         <div class="flex items-center gap-3">
           ${renderChannelAvatarMarkup(job)}
           <div class="min-w-0">
@@ -311,14 +310,14 @@
           </div>
         </div>
       </td>
-      <td class="px-5 py-4 align-middle">
+      <td class="px-4 py-4 align-middle">
         <div class="min-w-0">
           <p class="font-bold text-[12px] text-slate-900 leading-none mb-1 truncate">${escapeHtml(job.bot)}</p>
           <p class="text-[10px] text-brand-600 font-mono truncate">${escapeHtml(job.bot_meta || job.owner || "-")}</p>
         </div>
       </td>
-      <td class="progress-cell px-6 pt-3 pb-3">
-        <div class="w-[118px] mx-auto flex flex-col justify-start gap-1 pt-0">
+      <td class="progress-cell px-4 pt-3 pb-3">
+        <div class="w-[92px] mx-auto flex flex-col justify-start gap-1 pt-0">
           <div style="margin-top: 6px;">
             <div class="flex items-center justify-between gap-2 text-[9px] font-mono font-semibold uppercase tracking-[0.08em] text-emerald-700">
               <span>Render</span>
@@ -339,12 +338,12 @@
           </div>
         </div>
       </td>
-      <td class="px-6 py-4 align-middle text-[10px] text-slate-500 font-mono leading-relaxed">
+      <td class="px-4 py-4 align-middle text-[10px] text-slate-500 font-mono leading-relaxed">
         <p class="truncate"><span class="text-slate-500">Tạo:</span> <span class="text-slate-700">${escapeHtml(job.created_at)}</span></p>
         <p class="truncate mt-0.5"><span class="text-slate-500">Render:</span> <span class="text-slate-700">${escapeHtml(job.render_at)}</span></p>
         <p class="truncate mt-0.5"><span class="text-slate-500">Upload:</span> <span class="text-slate-700">${escapeHtml(job.uploaded_at)}</span></p>
       </td>
-      <td class="px-6 py-4 align-middle">
+      <td class="px-4 py-4 align-middle">
         <span class="inline-flex justify-center items-center px-2.5 py-1 ${escapeHtml(job.status_class)} text-[10px] font-bold border rounded-full whitespace-nowrap">${escapeHtml(job.status)}</span>
       </td>
       <td class="px-5 py-4 align-middle text-right whitespace-nowrap">
@@ -367,7 +366,6 @@
       jobs = jobs.filter((job) => {
         const haystack = [
           job.title,
-          job.meta,
           job.job_id,
           job.description,
           job.channel_name,

@@ -196,3 +196,7 @@
 - User UI đã có nguồn visual rõ là `final_user_ui.html`.
 - Admin UI hiện đang lệch visual source of truth và cần được refactor lại theo file này trước khi tiếp tục nối parity logic sâu.
 - Một số chi tiết shell của `final_user_ui.html` hiện vẫn có thể được polish thêm theo reference SaaS user đã đưa, nhưng mọi chỉnh sửa đều phải được xem là refinement của source of truth chứ không phải nguồn mới.
+
+## Render List Notes
+- Render list row uu tien preview nho hon + title 2 dong + `job_id` la meta duy nhat; khong lap lai `Upload/Local Upload` trong cell thong tin job.
+- Cot tien do cua render list giu ngan va gon de tong chieu ngang bang voi cac panel phia tren; khoang cach tu cum form xuong bang render chi o muc chat, khong de bang bi roi xuong qua sau.
