@@ -623,3 +623,10 @@ ode --check backend/app/static/js/user_dashboard.js, va TestClient login demo-us
 - [x] Push branch `codex/user-workspace-ui-copy-sync` len `origin` thanh cong de co diem rollback/an toan truoc khi rollout VPS.
 - [!] Thu rollout live len VPS `82.197.71.6` nhung bi chan o buoc truy cap host: `ssh -o BatchMode=yes root@82.197.71.6` va `deploy@82.197.71.6` deu tra `Permission denied (publickey,password)` trong may hien tai, nen chua the deploy tu phien nay.
 - [x] Giu nguyen cac file copy untracked (`final_user_ui - Copy.html`, `login_preview - Copy*.html`) ngoai commit va ngoai rollout scope.
+### 2026-03-27 20:46
+- [x] Doc file credential `C:\Users\Admin\Downloads\Vps app (Spotifycheck+Comfyuibot).txt`, lay duoc root SSH cho host `82.197.71.6`, va xac nhan app runtime nam o `/opt/youtube-upload-lush`.
+- [x] Push branch `codex/user-workspace-ui-copy-sync` len `origin` voi commit moi nhat `38c0f8c` truoc khi rollout live.
+- [x] Backup runtime cu vao `/opt/youtube-upload-lush/.backup/ui-sync-20260327-2043xx` roi rollout 5 file runtime/source can thiet len host: `backend/app/routers/api_user.py`, `backend/app/static/js/user_dashboard.js`, `backend/app/store.py`, `backend/app/templates/user_dashboard.html`, `final_user_ui.html`.
+- [x] Compile backend tren host, restart `youtube-upload-web.service`, verify `systemctl is-active` = `active`, listener `0.0.0.0:8000` da len lai, va origin/public `/api/health` deu tra `200 {"status":"ok"}`.
+- [x] Doi chieu file tren host: `user_dashboard.html` da co sort icon `arrow-up/arrow-down` inline, `user_dashboard.js` co drive-link status runtime, va `store.py` co preview guard `_path_has_content`.
+- [!] Chua smoke duoc man `/app` tren domain live bang browser that vi khong co credential user live trong phien nay; rollout duoc xac nhan bang service health, file marker va route public/origin.

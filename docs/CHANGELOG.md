@@ -878,3 +878,9 @@
 - Fixed: Lam ro blocker deploy live hien tai la thieu credential SSH hop le tren may dang lam viec, khong phai loi code/runtime moi.
 - Affected files: docs/WORKLOG.md, docs/CHANGELOG.md
 - Impact/Risk: Branch da an toan de review/rollback; rollout VPS can credential host roi moi tiep tuc.
+### 2026-03-27 20:46 - Roll out user workspace branch to VPS
+- Added: Rollout live branch `codex/user-workspace-ui-copy-sync` len host `82.197.71.6` sau khi co lai root credential.
+- Changed: Dong bo 5 file runtime user workspace len `/opt/youtube-upload-lush`, backup runtime cu truoc khi ghi de, va restart `youtube-upload-web.service`.
+- Fixed: Mo khoa duoc blocker deploy truoc do (thieu SSH credential) va xac nhan service live chay lai on dinh voi code moi.
+- Affected files: docs/WORKLOG.md, docs/CHANGELOG.md
+- Impact/Risk: Live host dang chay code moi; neu can rollback nhanh co the copy lai tu `.backup/ui-sync-*` hoac dua host ve commit `main` tren runtime.
