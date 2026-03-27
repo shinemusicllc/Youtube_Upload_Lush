@@ -800,3 +800,10 @@
 - Fixed: Rebuilt broken user_dashboard.html blocks while preserving the existing FastAPI, session, and API wiring.
 - Affected files: D:\Youtube_BOT_UPLOAD\backend\app\templates\user_dashboard.html, D:\Youtube_BOT_UPLOAD\backend\app\static\js\user_dashboard.js, D:\Youtube_BOT_UPLOAD\final_user_ui.html, D:\Youtube_BOT_UPLOAD\docs\UI_SYSTEM.md, D:\Youtube_BOT_UPLOAD\docs\WORKLOG.md, D:\Youtube_BOT_UPLOAD\docs\CHANGELOG.md.
 - Impact/Risk: Visual pass only for the user workspace; no deploy, data, or API contract change in this session.
+
+### 2026-03-27 16:34 - Compact user workspace top section
+- Added: worker/IP note nho gon cho My Channel row thay cho bot badge.
+- Changed: giam page/panel/KPI/form spacing va rut gon chieu cao top workspace de render list lo ra som hon.
+- Fixed: bo style channel-row-bot-chip va dong bo visual source of truth voi UI system moi.
+- Affected files: backend/app/store.py, backend/app/templates/user_dashboard.html, final_user_ui.html, docs/UI_SYSTEM.md.
+- Impact/Risk: thay doi spacing/presentation o user workspace; logic submit/render job khong doi.

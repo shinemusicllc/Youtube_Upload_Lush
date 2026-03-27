@@ -566,3 +566,8 @@ ode --check backend/app/static/js/user_dashboard.js, va TestClient login demo-us
 - [x] Chot user workspace theo file mau moi final_user_ui - Copy.html va login-smoke duong /app bang demo-user/demo123.
 - [x] Dong bo final_user_ui.html voi file mau moi de source of truth trong repo khop giao dien app.
 - [x] Hoan tat branch rieng codex/user-workspace-ui-copy-sync de commit va push len GitHub ma khong dong vao nhanh dang dung.
+
+## 2026-03-27 16:34 - Compact user workspace top section
+- Scope: backend/app/templates/user_dashboard.html, backend/app/store.py, final_user_ui.html, docs/UI_SYSTEM.md.
+- Changed: bo bot badge trong My Channel row, doi sang worker/IP note nho gon va nen spacing top layout de lo phan render list som hon.
+- Verification: python -m compileall backend/app; node --check backend/app/static/js/user_dashboard.js; FastAPI TestClient login demo-user/demo123 -> /app 200; xac nhan HTML co channel-row-worker-note va khong con channel-row-bot-chip.

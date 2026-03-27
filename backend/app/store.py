@@ -1531,21 +1531,6 @@ class AppStore:
     def _channel_link(self, channel: ChannelRecord) -> str:
         return f"https://www.youtube.com/channel/{channel.channel_id}"
 
-    @staticmethod
-    def _channel_bot_badge_class(label: str | None) -> str:
-        palette = [
-            "channel-row-bot-chip--sky",
-            "channel-row-bot-chip--violet",
-            "channel-row-bot-chip--emerald",
-            "channel-row-bot-chip--amber",
-            "channel-row-bot-chip--rose",
-        ]
-        normalized = str(label or "").strip()
-        if not normalized:
-            return palette[0]
-        seed = sum((index + 1) * ord(char) for index, char in enumerate(normalized))
-        return palette[seed % len(palette)]
-
     def _find_job(self, job_id: str) -> RenderJobRecord:
         for job in self.jobs:
             if job.id == job_id:
@@ -1596,14 +1581,13 @@ class AppStore:
 
         connected_channels: list[dict[str, Any]] = []
         for channel in bootstrap.channels:
-            bot_label = self._resolve_channel_worker_display_name(channel)
+            worker_label = self._resolve_channel_worker_display_name(channel)
             connected_channels.append(
                 {
                     "id": channel.id,
                     "title": channel.name,
                     "channel_id": channel.channel_id,
-                    "bot_label": bot_label,
-                    "bot_badge_class": self._channel_bot_badge_class(bot_label),
+                    "worker_label": worker_label,
                     "public_url": f"https://www.youtube.com/channel/{channel.channel_id}",
                     "avatar": self._initials(channel.name),
                     "avatar_url": channel.avatar_url,

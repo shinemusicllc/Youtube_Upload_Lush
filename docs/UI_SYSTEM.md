@@ -139,7 +139,7 @@
 
 ### 6. Data Table / Queue Table
 - List `My Channel` co the dung row card nhe voi border ro hon va shadow rat mong de tach tung kenh, nhung khong bien thanh card-noi-card nang tay.
-- Meta cua `My Channel` co the hien tren mot dong `channel_id | Bot-*`; badge trang thai ket noi dung icon `badge-check` va hover moi mo nut xoa.
+- Meta cua `My Channel` uu tien dang `channel_id | worker/IP note` nho gon; khong quay lai bot badge trong row nay. Badge trang thai ket noi van dung icon `badge-check` va hover moi mo nut xoa.
 - Bảng là thành phần trung tâm.
 - Header nhỏ, sắc, rõ sort state.
 - Row cần có hierarchy thông tin, không chỉ là text phẳng.
