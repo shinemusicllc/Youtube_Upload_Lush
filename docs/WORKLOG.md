@@ -128,6 +128,9 @@
 - [x] Audit dong bo code giua local/GitHub/VPS bang hash file: host lech `backend/app/store.py` va `backend/app/routers/api_user.py`; `worker-01` khop toan bo file da doi chieu; `worker-02` lech `workers/agent/config.py`, `workers/agent/control_plane.py`, `workers/agent/job_runner.py`, `scripts/bootstrap_worker.sh`.
 - [x] Dong bo nốt file lech len host (`store.py`, `api_user.py`) va `worker-02` (`config.py`, `control_plane.py`, `job_runner.py`, `bootstrap_worker.sh`), restart service tuong ung va verify health/service `active`.
 - [x] Doi chieu lai hash sau sync: host va `worker-02` da khop local/GitHub o cac file truoc do bi lech; `worker-02` van giu `WORKER_EXECUTE_JOBS=false` va `WORKER_UPLOAD_TO_YOUTUBE=false`.
+- [x] Tao 3 public pages phuc vu Google verification: homepage `/`, ` /privacy-policy`, `/terms-of-service`; root route khong con redirect ve `/login`.
+- [x] Deploy `backend/app/routers/web.py`, `public_home.html`, `public_legal.html` len host va verify noi bo/public cac URL tra HTML `200`.
+- [x] Dieu chinh lai flow public theo yeu cau su dung: `root /` quay ve `/login`, con homepage public doi sang `/home`; deploy lai host va verify `https://ytb.jazzrelaxation.com/ -> /login`, `https://ytb.jazzrelaxation.com/home` = `200`.
 - [x] Pull repo local len commit `97df154`, doc lai project memory va rule bootstrap, quet config `backend/requirements.txt`, `workers/agent/requirements.txt`, `.env.example`, `infra/docker/host/docker-compose.yml`.
 - [x] Tao local runtime moi bang `D:\Youtube_BOT_UPLOAD\.venv`, cai dependency cho backend va worker agent theo repo vua pull.
 - [x] Tao `.env` dev toi thieu cho local (`SESSION_SECRET`, `WORKER_SHARED_SECRET`, `APP_BASE_URL`, `GOOGLE_*`) de backend boot on dinh tren `127.0.0.1:8000`.
@@ -341,3 +344,32 @@
 - [x] Đồng bộ đúng hai giá trị này vào live renderer `backend/app/static/js/user_dashboard.js` để polling không ghi đè spacing vừa chỉnh.
 - [x] Tăng cache-bust version lên `20260326-progress-user-final-offsets` để client nhận asset mới ngay sau deploy.
 - [x] Rollout lại `user_dashboard.html` và `user_dashboard.js` lên host `82.197.71.6`, restart `youtube-upload-web.service`, verify listener `:8000`, origin health `200` và public health `200`.
+### 2026-03-26 18:26
+- [x] Kiểm tra bộ nhớ dự án và trạng thái git local trước khi sync để tránh ghi đè thay đổi cục bộ ngoài ý muốn.
+- [x] Kéo update từ `origin/main` bằng `git pull --ff-only`, đưa workspace từ `97df154` lên `cb071ee`.
+- [x] Xác nhận sau sync repo đang sạch (`git status`) và `HEAD` đã trùng `origin/main`.
+### 2026-03-26 18:42
+- [x] Rà lại `PROJECT_CONTEXT`, `DECISIONS`, `WORKLOG`, `UI_SYSTEM` và skill `uncodixfy` trước khi làm brand asset mới cho Google verification.
+- [x] Audit bộ asset cũ trong `backend/app/static/brand`, xác nhận logo hiện tại chỉ là icon mark nên dễ bị Google chê là không đủ nhận diện thương hiệu.
+- [x] Tạo logo OAuth mới theo hướng monogram `JR` bám brand `JazzRelaxation`, gồm file SVG và file preview HTML trong `backend/app/static/brand`.
+- [x] Xuất thêm PNG `120x120` từ thiết kế mới để có thể upload trực tiếp lên Google Cloud Branding.
+- [x] Preview lại PNG mới tại local để chắc logo hiển thị rõ `JR`, giữ palette ấm-sạch đang dùng trong app và tăng khả năng qua brand verification.
+### 2026-03-26 21:22
+- [x] Rà lại rule dự án, `docs/UI_SYSTEM.md` và shell hiện có để nối favicon theo đúng icon đang dùng ở trang login bên trái, không tạo thêm brand mới ngoài hệ.
+- [x] Tạo `backend/app/static/brand/site-favicon.svg` và nối favicon dùng chung cho `public_home`, `public_legal`, `admin/login`, `admin/_layout`, `user_dashboard`.
+- [x] Verify local bằng `backend/venv` rằng `/home`, `/privacy-policy`, `/login` đều render HTML chứa `site-favicon.svg`.
+- [!] Thử deploy lên VPS `82.197.71.6` nhưng bị chặn ở bước SSH do máy hiện tại không có credential hợp lệ cho host (`Permission denied (publickey,password)`), nên chưa thể rollout live từ phiên này.
+### 2026-03-26 21:24
+- [x] Dùng SSH root do user cung cấp để vào host `82.197.71.6`, xác nhận app runtime nằm ở `/opt/youtube-upload-lush` và `youtube-upload-web.service` đang `active`.
+- [x] Backup runtime cũ vào `/opt/youtube-upload-lush/.backup/favicon-20260326-212434` rồi rollout đúng 6 file favicon/template liên quan bằng `pscp`.
+- [x] Restart `youtube-upload-web.service` sau deploy và verify live rằng `/home` trả link `site-favicon.svg`, asset `https://ytb.jazzrelaxation.com/static/brand/site-favicon.svg` phản hồi `200 OK`.
+### 2026-03-26 22:59
+- [x] Rà lại `PROJECT_CONTEXT`, `DECISIONS`, `WORKLOG`, `UI_SYSTEM` và skill `uncodixfy` trước khi sửa UX của ô `Hẹn lịch đăng`.
+- [x] Cập nhật `backend/app/static/js/user_dashboard.js` để ô `scheduleAt` khi được click/focus sẽ tự nhảy về `new Date()` của máy client, đồng thời bấm `Enter` khi picker đang mở sẽ chốt và đóng lịch ngay.
+- [x] Tăng cache-bust version trong `backend/app/templates/user_dashboard.html` lên `20260326-schedule-now-enter`.
+- [x] Verify local bằng browser thật trên `127.0.0.1:8011`: click vào ô lịch đổi giá trị từ mốc cũ về giờ hiện tại của client (`22:58` trong lúc test), rồi `Enter` đóng picker thành công.
+- [x] Rollout `user_dashboard.js` và `user_dashboard.html` lên host `82.197.71.6`, backup runtime cũ vào `/opt/youtube-upload-lush/.backup/schedule-now-enter-20260326-225856`, restart `youtube-upload-web.service`, verify origin/public health đều `ok`.
+### 2026-03-27 07:35
+- [x] Rà lại bộ nhớ dự án và trạng thái git local trước khi đẩy mã nguồn, xác nhận workspace đang có một cụm thay đổi chưa lên `origin/main`.
+- [x] Chạy kiểm tra nhanh `python -m compileall backend/app` và `node --check backend/app/static/js/user_dashboard.js` để tránh đẩy lên GitHub khi còn lỗi syntax.
+- [x] Chuẩn bị stage, commit và push toàn bộ cụm thay đổi hiện tại gồm public pages, branding/favicon và UX lịch hẹn lên `origin/main`.

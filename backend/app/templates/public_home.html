@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ page_title }}</title>
+  <link rel="icon" type="image/svg+xml" href="{{ request.url_for('static', path='brand/site-favicon.svg') }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              500: '#6b74f0',
+              600: '#5d67df',
+              700: '#4b56c9',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            display: ['Be Vietnam Pro', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans">
+  <div class="min-h-screen">
+    <header class="border-b border-slate-200 bg-white">
+      <div class="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+        <a href="{{ home_url }}" class="flex items-center gap-3 text-slate-900">
+          <span class="flex h-10 w-10 items-center justify-center rounded-xl border border-orange-200 bg-orange-50 text-xl font-bold text-orange-600">M</span>
+          <div>
+            <p class="font-display text-base font-semibold">{{ app_name }}</p>
+            <p class="text-sm text-slate-500">Public application profile</p>
+          </div>
+        </a>
+        <nav class="flex items-center gap-3 text-sm font-medium">
+          <a href="{{ privacy_url }}" class="rounded-lg px-3 py-2 text-slate-600 hover:bg-slate-100 hover:text-slate-900">Privacy Policy</a>
+          <a href="{{ terms_url }}" class="rounded-lg px-3 py-2 text-slate-600 hover:bg-slate-100 hover:text-slate-900">Terms</a>
+          <a href="{{ workspace_url }}" class="rounded-lg border border-slate-200 px-4 py-2 text-slate-700 hover:border-slate-300 hover:bg-slate-50">Open Workspace</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="mx-auto max-w-6xl px-6 py-10">
+      <section class="grid gap-8 lg:grid-cols-[minmax(0,1.5fr)_minmax(280px,0.9fr)]">
+        <div class="rounded-2xl border border-slate-200 bg-white p-8">
+          <p class="text-sm font-semibold text-brand-600">Application Overview</p>
+          <h1 class="mt-3 font-display text-3xl font-semibold tracking-tight text-slate-900">{{ hero_title }}</h1>
+          <p class="mt-4 max-w-3xl text-base leading-7 text-slate-600">{{ hero_description }}</p>
+
+          <div class="mt-8 flex flex-wrap gap-3">
+            <a href="{{ workspace_url }}" class="rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-700">Go to Login</a>
+            <a href="{{ privacy_url }}" class="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Read Privacy Policy</a>
+          </div>
+        </div>
+
+        <aside class="rounded-2xl border border-slate-200 bg-white p-6">
+          <h2 class="font-display text-lg font-semibold text-slate-900">Application details</h2>
+          <dl class="mt-5 space-y-4 text-sm">
+            <div>
+              <dt class="text-slate-500">Brand</dt>
+              <dd class="mt-1 font-medium text-slate-900">JazzRelaxation</dd>
+            </div>
+            <div>
+              <dt class="text-slate-500">Primary use</dt>
+              <dd class="mt-1 font-medium text-slate-900">Internal publishing and render operations</dd>
+            </div>
+            <div>
+              <dt class="text-slate-500">Support contact</dt>
+              <dd class="mt-1 font-medium text-slate-900">{{ support_email }}</dd>
+            </div>
+            <div>
+              <dt class="text-slate-500">Policy links</dt>
+              <dd class="mt-2 flex flex-col gap-2">
+                <a href="{{ privacy_url }}" class="text-brand-600 hover:text-brand-700">Privacy Policy</a>
+                <a href="{{ terms_url }}" class="text-brand-600 hover:text-brand-700">Terms of Service</a>
+              </dd>
+            </div>
+          </dl>
+        </aside>
+      </section>
+
+      <section class="mt-8 rounded-2xl border border-slate-200 bg-white">
+        <div class="border-b border-slate-200 px-8 py-5">
+          <h2 class="font-display text-lg font-semibold text-slate-900">What this application does</h2>
+        </div>
+        <div class="grid gap-0 md:grid-cols-3">
+          {% for item in feature_items %}
+          <article class="border-t border-slate-200 px-8 py-6 md:border-t-0 md:border-l first:md:border-l-0">
+            <h3 class="font-display text-base font-semibold text-slate-900">{{ item.title }}</h3>
+            <p class="mt-3 text-sm leading-6 text-slate-600">{{ item.description }}</p>
+          </article>
+          {% endfor %}
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

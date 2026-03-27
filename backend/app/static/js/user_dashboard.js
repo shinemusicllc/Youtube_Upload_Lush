@@ -162,13 +162,46 @@
 
   const initFlatpickr = () => {
     if (!window.flatpickr) return;
-    window.flatpickr("#scheduleAt", {
+    const scheduleInput = document.getElementById("scheduleAt");
+    if (!(scheduleInput instanceof HTMLInputElement)) return;
+
+    const setPickerToClientNow = (instance) => {
+      const now = new Date();
+      instance.setDate(now, true);
+      instance.jumpToDate(now);
+    };
+
+    const picker = window.flatpickr(scheduleInput, {
       enableTime: true,
       time_24hr: true,
       allowInput: true,
       minuteIncrement: 5,
       dateFormat: "d/m/Y H:i",
       locale: window.flatpickr.l10ns.vn || window.flatpickr.l10ns.default,
+      onOpen: [
+        (_selectedDates, _dateStr, instance) => {
+          setPickerToClientNow(instance);
+        },
+      ],
+    });
+
+    const syncScheduleInputToClientNow = () => {
+      setPickerToClientNow(picker);
+    };
+
+    scheduleInput.addEventListener("focus", syncScheduleInputToClientNow);
+    scheduleInput.addEventListener("click", syncScheduleInputToClientNow);
+
+    scheduleInput.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" || !picker.isOpen) return;
+      event.preventDefault();
+      if (!picker.selectedDates.length) {
+        setPickerToClientNow(picker);
+      } else {
+        picker.setDate(picker.selectedDates[0], true);
+      }
+      picker.close();
+      scheduleInput.blur();
     });
   };
 

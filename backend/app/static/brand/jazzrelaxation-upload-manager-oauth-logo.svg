@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120" fill="none">
+  <rect width="120" height="120" rx="24" fill="#FFF8F5"/>
+  <rect x="0.75" y="0.75" width="118.5" height="118.5" rx="23.25" stroke="#F0D7CC" stroke-width="1.5"/>
+  <rect x="12" y="12" width="96" height="96" rx="18" fill="#FFFFFF"/>
+  <rect x="12.75" y="12.75" width="94.5" height="94.5" rx="17.25" stroke="#E6EDF5" stroke-width="1.5"/>
+  <path d="M28 24.5c-2.21 0-3.8 1.58-3.8 3.8v20.53c0 11.07 8.9 20.2 19.97 20.2h7.65c2.21 0 3.8-1.58 3.8-3.8 0-2.21-1.58-3.8-3.8-3.8h-7.65c-6.91 0-12.38-5.63-12.38-12.54V28.3c0-2.21-1.58-3.8-3.79-3.8Z" fill="#FF5528"/>
+  <text x="60" y="72" text-anchor="middle" fill="#18212F" font-family="'Segoe UI', sans-serif" font-size="41" font-weight="700" letter-spacing="-3">JR</text>
+  <text x="60" y="90" text-anchor="middle" fill="#6A7280" font-family="'Segoe UI', sans-serif" font-size="8" font-weight="600" letter-spacing="1.8">JAZZRELAX</text>
+  <rect x="40" y="97" width="28" height="4" rx="2" fill="#4B56C9"/>
+  <circle cx="74" cy="99" r="2" fill="#FF5528"/>
+</svg>

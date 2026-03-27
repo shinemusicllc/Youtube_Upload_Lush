@@ -28,6 +28,9 @@ from ..store import store
 templates = Jinja2Templates(directory=Path(__file__).resolve().parents[1] / "templates")
 router = APIRouter(tags=["web"])
 
+PUBLIC_APP_NAME = "JazzRelaxation Upload Manager"
+PUBLIC_SUPPORT_EMAIL = "hoangpear99@gmail.com"
+
 
 def _admin_identity_payload(current_user: AdminSessionUser) -> dict:
     return {
@@ -38,6 +41,21 @@ def _admin_identity_payload(current_user: AdminSessionUser) -> dict:
         "role": current_user.role,
         "role_label": "Admin" if current_user.role == "admin" else "Manager",
         "role_text": "Control plane" if current_user.role == "admin" else "Manager scope",
+    }
+
+
+def _public_shell_payload(*, request: Request, page_title: str, active_page: str) -> dict[str, object]:
+    base_url = str(request.base_url).rstrip("/")
+    return {
+        "request": request,
+        "page_title": page_title,
+        "app_name": PUBLIC_APP_NAME,
+        "support_email": PUBLIC_SUPPORT_EMAIL,
+        "home_url": f"{base_url}/home",
+        "privacy_url": f"{base_url}/privacy-policy",
+        "terms_url": f"{base_url}/terms-of-service",
+        "workspace_url": f"{base_url}/login",
+        "active_page": active_page,
     }
 
 
@@ -174,6 +192,142 @@ async def root(request: Request):
     if get_admin_session_user(request):
         return RedirectResponse(url="/admin/user/index", status_code=302)
     return RedirectResponse(url="/login", status_code=302)
+
+
+@router.get("/home", response_class=HTMLResponse)
+async def public_home(request: Request):
+    return templates.TemplateResponse(
+        "public_home.html",
+        {
+            **_public_shell_payload(
+                request=request,
+                page_title=PUBLIC_APP_NAME,
+                active_page="home",
+            ),
+            "hero_title": PUBLIC_APP_NAME,
+            "hero_description": "A private web application for connecting YouTube channels with Google OAuth, preparing render jobs, and managing upload automation for JazzRelaxation workflows.",
+            "feature_items": [
+                {
+                    "title": "Google OAuth channel connection",
+                    "description": "Users connect their own Google and YouTube accounts to authorize uploads and channel management.",
+                },
+                {
+                    "title": "Render job orchestration",
+                    "description": "The control plane schedules loop-video and audio jobs, then distributes work to dedicated render workers.",
+                },
+                {
+                    "title": "Managed publishing workflow",
+                    "description": "The application stores job history, channel metadata, worker assignments, and upload status for internal operations.",
+                },
+            ],
+        },
+    )
+
+
+@router.get("/privacy-policy", response_class=HTMLResponse)
+async def privacy_policy(request: Request):
+    return templates.TemplateResponse(
+        "public_legal.html",
+        {
+            **_public_shell_payload(
+                request=request,
+                page_title=f"Privacy Policy | {PUBLIC_APP_NAME}",
+                active_page="privacy",
+            ),
+            "legal_title": "Privacy Policy",
+            "legal_updated_at": "March 26, 2026",
+            "legal_sections": [
+                {
+                    "heading": "Who this application is for",
+                    "body": [
+                        "JazzRelaxation Upload Manager is a private operational tool used by authorized team members to connect YouTube channels, prepare render jobs, and manage upload automation.",
+                    ],
+                },
+                {
+                    "heading": "Google and YouTube data we access",
+                    "body": [
+                        "When a user connects a Google account, the application may access basic profile data such as account identifier, email address, and profile information.",
+                        "When a user grants YouTube permissions, the application may access channel identity and upload-related permissions required to publish videos on behalf of that connected channel.",
+                    ],
+                },
+                {
+                    "heading": "How we use the data",
+                    "body": [
+                        "Connected account data is used only to identify the authorized channel, maintain channel configuration inside the application, and perform user-approved upload operations.",
+                        "The application does not sell connected account data and does not use Google user data for advertising.",
+                    ],
+                },
+                {
+                    "heading": "Storage and retention",
+                    "body": [
+                        "The application stores operational metadata, channel mappings, worker assignments, and OAuth tokens needed to keep the publishing workflow running.",
+                        "Access is limited to authorized operators and administrators who manage the internal publishing system.",
+                    ],
+                },
+                {
+                    "heading": "User controls",
+                    "body": [
+                        "Users can disconnect a connected channel inside the application and can revoke Google account access from their Google security settings at any time.",
+                    ],
+                },
+                {
+                    "heading": "Contact",
+                    "body": [
+                        f"For privacy questions related to this application, contact {PUBLIC_SUPPORT_EMAIL}.",
+                    ],
+                },
+            ],
+        },
+    )
+
+
+@router.get("/terms-of-service", response_class=HTMLResponse)
+async def terms_of_service(request: Request):
+    return templates.TemplateResponse(
+        "public_legal.html",
+        {
+            **_public_shell_payload(
+                request=request,
+                page_title=f"Terms of Service | {PUBLIC_APP_NAME}",
+                active_page="terms",
+            ),
+            "legal_title": "Terms of Service",
+            "legal_updated_at": "March 26, 2026",
+            "legal_sections": [
+                {
+                    "heading": "Authorized use",
+                    "body": [
+                        "This application is intended only for authorized internal users and approved operators managing JazzRelaxation publishing workflows.",
+                    ],
+                },
+                {
+                    "heading": "User responsibilities",
+                    "body": [
+                        "Users are responsible for connecting only Google and YouTube accounts they are authorized to manage.",
+                        "Users must ensure that uploaded content, metadata, and automation activity comply with applicable platform rules and internal policies.",
+                    ],
+                },
+                {
+                    "heading": "Service availability",
+                    "body": [
+                        "The application is provided on an operational best-effort basis and may be updated, suspended, or restricted for maintenance, security, or compliance reasons.",
+                    ],
+                },
+                {
+                    "heading": "Account and access controls",
+                    "body": [
+                        "Administrators may restrict, suspend, or remove access if misuse, policy violations, or security concerns are detected.",
+                    ],
+                },
+                {
+                    "heading": "Contact",
+                    "body": [
+                        f"For service questions related to this application, contact {PUBLIC_SUPPORT_EMAIL}.",
+                    ],
+                },
+            ],
+        },
+    )
 
 
 @router.get("/login", response_class=HTMLResponse)

@@ -42,6 +42,10 @@ Du an dang duoc rebuild lai theo huong `FastAPI + Python backend` va UI HTML/CSS
 - Host thu nghiem dang chay tai `http://82.197.71.6:8000`; 2 worker da heartbeat thanh cong ve control plane. `simulate job processing` hien dang tat mac dinh tren worker env.
 - Host shared da duoc gan route domain phia server cho `ytb.jazzrelaxation.com` thong qua Caddy chung cua may, reverse proxy ve app `172.17.0.1:8000`, va `.env` cua app da doi `APP_BASE_URL / APP_DOMAIN / GOOGLE_REDIRECT_URI` sang domain moi.
 - Host web app tren shared VPS hien da duoc quan ly bang `systemd` service `youtube-upload-web.service`, bind `0.0.0.0:8000` de Caddy container reverse proxy vao on dinh.
+- Da bo sung public pages phuc vu Google OAuth brand verification:
+  - `/home` la homepage public
+  - `/privacy-policy` la trang privacy public
+  - `/terms-of-service` la trang terms public
 - `ytb.jazzrelaxation.com` da tro DNS ve `82.197.71.6` va Caddy da xin cert Let's Encrypt thanh cong; app dang len that qua HTTPS.
 - Backend da co worker-authenticated asset route `GET /api/workers/jobs/{job_id}/assets/{slot}` de worker tai local upload qua control plane.
 - Worker Python da duoc tach module thanh `config / control_plane / downloader / ffmpeg_pipeline / job_runner`; co the download local asset, download Google Drive/HTTP, va chay FFmpeg fast-path `copy/remux`.

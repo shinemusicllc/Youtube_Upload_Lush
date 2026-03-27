@@ -248,6 +248,20 @@
 - Fixed: Trang thai deployment tren VPS da dong bo voi local/GitHub o cac file da audit, khong con tinh trang host va worker-02 lech version.
 - Affected files: `backend/app/store.py`, `backend/app/routers/api_user.py`, `workers/agent/config.py`, `workers/agent/control_plane.py`, `workers/agent/job_runner.py`, `scripts/bootstrap_worker.sh`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`
 - Impact/Risk: Thap-trung binh; restart service co nhiep ngat ngan, nhung health/public va worker state da duoc verify sau sync.
+
+### 2026-03-26 21:50 - Add public verification pages
+- Added: Public homepage, privacy policy page, and terms page for Google OAuth brand verification.
+- Changed: Root route now renders a public application profile instead of redirecting anonymous visitors directly to `/login`.
+- Fixed: `https://ytb.jazzrelaxation.com/` and legal URLs now return basic HTML pages that Google reviewers can access without authentication.
+- Affected files: `backend/app/routers/web.py`, `backend/app/templates/public_home.html`, `backend/app/templates/public_legal.html`, `docs/PROJECT_CONTEXT.md`, `docs/DECISIONS.md`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`
+- Impact/Risk: Thap; thay doi hanh vi public root route de uu tien brand verification, nhung workflow login/app cua user van giu nguyen qua `/login` va `/app`.
+
+### 2026-03-26 21:58 - Move public homepage to /home
+- Added: Public verification homepage is now available at `/home`.
+- Changed: Root route returns to the previous login-first behavior, while legal pages keep linking to the public `/home`.
+- Fixed: Trang goc cua domain lai de dang cho van hanh dang nhap, trong khi Google verification van co trang public rieng de dung.
+- Affected files: `backend/app/routers/web.py`, `docs/PROJECT_CONTEXT.md`, `docs/DECISIONS.md`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`
+- Impact/Risk: Thap; can cap nhat lai URL homepage trong Google Cloud tu `/` sang `/home`.
 ### 2026-03-26 22:10 - Local bootstrap after latest pull
 - Added: Tao `.venv` local, cai dependency cho `backend` va `workers/agent`, va tao `.env` dev toi thieu de boot control plane local.
 - Changed: Restart backend local bang `.venv\Scripts\python.exe -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000` thay cho process Python cu.
@@ -545,3 +559,39 @@
 - Fixed: The progress column no longer depends on inferred spacing guesses for this pass; it now reflects the explicit offset values the user requested.
 - Affected files: backend/app/templates/user_dashboard.html, backend/app/static/js/user_dashboard.js, runtime /opt/youtube-upload-lush/backend/app/templates/user_dashboard.html, runtime /opt/youtube-upload-lush/backend/app/static/js/user_dashboard.js, docs/WORKLOG.md.
 - Impact/Risk: View-layer only; deploy completed cleanly and both origin/public health checks returned `200`.
+### 2026-03-26 18:26 - Sync local workspace with origin/main
+- Added: A sync record noting that the local workspace was updated to the latest remote state before any further work.
+- Changed: Local `main` fast-forwarded from `97df154` to `cb071ee` via `git pull --ff-only`; latest remote commit title is `Implement auth flow and refine dashboard runtime`.
+- Fixed: The workspace is no longer behind `origin/main`, reducing the risk of working on stale code.
+- Affected files: docs/WORKLOG.md, docs/CHANGELOG.md, local git metadata.
+- Impact/Risk: Low risk; repository content now matches the latest remote commit, with only local project-log docs changed by this sync record.
+### 2026-03-26 18:42 - Create a stronger OAuth brand logo for Google verification
+- Added: A new square OAuth logo set built around a `JR` monogram tied to `JazzRelaxation`, including SVG, preview HTML, and a ready-to-upload PNG.
+- Changed: The recommended Google branding asset is no longer the old icon-only mark; it now uses a more explicit brand identifier designed to read as `JazzRelaxation` at small size.
+- Fixed: The previous logo was too generic for Google's branding review and did not clearly identify the app's brand and identity.
+- Affected files: backend/app/static/brand/jazzrelaxation-upload-manager-oauth-logo.svg, backend/app/static/brand/jazzrelaxation-upload-manager-oauth-logo-preview.html, backend/app/static/brand/jazzrelaxation-upload-manager-oauth-logo.png, docs/WORKLOG.md, docs/CHANGELOG.md.
+- Impact/Risk: Low risk; this only adds branding assets and project documentation, with no runtime behavior changes.
+### 2026-03-26 21:22 - Standardize the shared favicon across public and app pages
+- Added: A shared static favicon asset at `backend/app/static/brand/site-favicon.svg` based on the same orange icon already used in the login shell.
+- Changed: `public_home`, `public_legal`, `admin/login`, `admin/_layout`, and `user_dashboard` now reference the shared favicon file instead of relying on missing or inline-only page-specific icon handling.
+- Fixed: Public pages such as `/home` can now show the same browser-tab icon as the login page, eliminating the mismatch visible in the tab bar.
+- Affected files: backend/app/static/brand/site-favicon.svg, backend/app/templates/public_home.html, backend/app/templates/public_legal.html, backend/app/templates/admin/login.html, backend/app/templates/admin/_layout.html, backend/app/templates/user_dashboard.html, docs/WORKLOG.md.
+- Impact/Risk: Low runtime risk; local verification passed for `/home`, `/privacy-policy`, and `/login`, but live VPS deployment is still pending because SSH access from this machine was denied.
+### 2026-03-26 21:24 - Deploy the shared favicon to the live VPS
+- Added: A live runtime copy of the shared favicon and updated templates on the production host, with a backup snapshot stored before overwrite.
+- Changed: The VPS at `82.197.71.6:/opt/youtube-upload-lush` now serves the same favicon wiring as local for public, login, admin, and user dashboard pages.
+- Fixed: The public `/home` tab on `ytb.jazzrelaxation.com` now uses the same orange icon as the login tab instead of appearing without a favicon.
+- Affected files: runtime /opt/youtube-upload-lush/backend/app/static/brand/site-favicon.svg, runtime /opt/youtube-upload-lush/backend/app/templates/public_home.html, runtime /opt/youtube-upload-lush/backend/app/templates/public_legal.html, runtime /opt/youtube-upload-lush/backend/app/templates/admin/login.html, runtime /opt/youtube-upload-lush/backend/app/templates/admin/_layout.html, runtime /opt/youtube-upload-lush/backend/app/templates/user_dashboard.html, runtime /opt/youtube-upload-lush/.backup/favicon-20260326-212434, docs/WORKLOG.md.
+- Impact/Risk: Low risk; deploy only touched view/static files, `youtube-upload-web.service` returned `active`, and live favicon fetch returned `200 OK`.
+### 2026-03-26 22:59 - Make the schedule picker jump to client time on click
+- Added: A direct client-time shortcut for the `scheduleAt` picker so clicking or focusing the field immediately syncs it to the user's current system time.
+- Changed: `backend/app/static/js/user_dashboard.js` now pushes `new Date()` into Flatpickr on `focus` and `click`, and pressing `Enter` while the picker is open confirms the selected value and closes the calendar; `backend/app/templates/user_dashboard.html` now serves JS version `20260326-schedule-now-enter`.
+- Fixed: Users no longer need to manually scroll the calendar/time wheels just to set \"now\"; they can click the field and press `Enter` right away for a fast schedule input flow.
+- Affected files: backend/app/static/js/user_dashboard.js, backend/app/templates/user_dashboard.html, runtime /opt/youtube-upload-lush/backend/app/static/js/user_dashboard.js, runtime /opt/youtube-upload-lush/backend/app/templates/user_dashboard.html, runtime /opt/youtube-upload-lush/.backup/schedule-now-enter-20260326-225856, docs/WORKLOG.md.
+- Impact/Risk: Low risk; behavior change is isolated to the schedule input, local browser verification passed, and both origin/public health checks stayed `ok` after deploy.
+### 2026-03-27 07:35 - Prepare the current workspace for GitHub sync
+- Added: A project-log entry capturing that the latest local workspace bundle is being packaged for GitHub sync.
+- Changed: The pending local bundle now includes the public OAuth pages, branding/favicon assets, and the schedule-picker shortcut work that had already been verified and deployed live.
+- Fixed: The repository is no longer left in a \"live changed but not yet pushed\" state once this sync is completed.
+- Affected files: docs/WORKLOG.md, docs/CHANGELOG.md, local git metadata.
+- Impact/Risk: Low risk; no runtime behavior changes are introduced by this log entry itself, but it documents the code bundle about to be pushed.
