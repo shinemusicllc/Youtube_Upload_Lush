@@ -1,0 +1,54 @@
+# Deployment Flow
+
+## Source Of Truth
+- `origin/main` la source of truth duy nhat cho code chay tren local va VPS.
+- Khong sua source truc tiep tren VPS neu khong phai hotfix khan cap. Neu co hotfix tren VPS, phai backport len git ngay sau do.
+
+## Runtime Layout Tren VPS
+- Repo checkout: `/opt/youtube-upload-lush`
+- Runtime control-plane: `/opt/youtube-upload-lush-runtime`
+  - `.env`
+  - `.venv`
+  - `.backup`
+  - `backend-data`
+- Runtime worker: `/opt/youtube-upload-lush-runtime`
+  - `.venv`
+  - `.backup`
+  - `worker-data`
+
+Trong repo checkout, cac duong dan runtime duoc mount lai bang symlink:
+- `/opt/youtube-upload-lush/.env -> /opt/youtube-upload-lush-runtime/.env`
+- `/opt/youtube-upload-lush/.venv -> /opt/youtube-upload-lush-runtime/.venv`
+- `/opt/youtube-upload-lush/.backup -> /opt/youtube-upload-lush-runtime/.backup`
+- `/opt/youtube-upload-lush/backend/data -> /opt/youtube-upload-lush-runtime/backend-data`
+- `/opt/youtube-upload-lush/worker-data -> /opt/youtube-upload-lush-runtime/worker-data`
+
+## Bootstrap / Update
+
+### Control-plane
+```bash
+APP_DIR=/opt/youtube-upload-lush \
+RUNTIME_DIR=/opt/youtube-upload-lush-runtime \
+REPO_URL=https://github.com/shinemusicllc/Youtube_Upload_Lush.git \
+BRANCH=main \
+bash /opt/youtube-upload-lush/scripts/bootstrap_host.sh
+```
+
+### Worker
+```bash
+APP_DIR=/opt/youtube-upload-lush \
+RUNTIME_DIR=/opt/youtube-upload-lush-runtime \
+REPO_URL=https://github.com/shinemusicllc/Youtube_Upload_Lush.git \
+BRANCH=main \
+bash /opt/youtube-upload-lush/scripts/bootstrap_worker.sh
+```
+
+## Local -> GitHub -> VPS
+1. Tren may local: `git pull`, sua code, test, `git commit`, `git push origin main`.
+2. Tren control-plane: chay `bootstrap_host.sh` de `fetch/reset` ve `origin/main`, giu nguyen runtime va restart service.
+3. Tren tung worker: chay `bootstrap_worker.sh` de `fetch/reset` ve `origin/main`, giu nguyen runtime va restart service.
+
+## Safety Rules
+- Khong commit `.env`, `.venv`, `backend/data`, `worker-data`, `.backup`.
+- Truoc khi migrate layout, dam bao job dang chay da ve `completed` hoac `idle`.
+- Moi lan doi deploy flow, cap nhat `docs/PROJECT_CONTEXT.md`, `docs/DECISIONS.md`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`.

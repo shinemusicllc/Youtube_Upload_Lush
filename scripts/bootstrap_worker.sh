@@ -2,14 +2,31 @@
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/opt/youtube-upload-lush}"
+RUNTIME_DIR="${RUNTIME_DIR:-/opt/youtube-upload-lush-runtime}"
+REPO_URL="${REPO_URL:-https://github.com/shinemusicllc/Youtube_Upload_Lush.git}"
+BRANCH="${BRANCH:-main}"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$SCRIPT_DIR/git_runtime_layout.sh"
 
 apt-get update
-apt-get install -y python3 python3-venv ffmpeg
+apt-get install -y ffmpeg
 
-mkdir -p "$APP_DIR"
+mkdir -p "$RUNTIME_DIR"
+install_base_packages
+adopt_runtime_path "$APP_DIR" "$RUNTIME_DIR" ".venv" ".venv"
+adopt_runtime_path "$APP_DIR" "$RUNTIME_DIR" ".backup" ".backup"
+adopt_runtime_path "$APP_DIR" "$RUNTIME_DIR" "worker-data" "worker-data"
+ensure_git_checkout "$APP_DIR" "$REPO_URL" "$BRANCH"
+link_runtime_path "$APP_DIR" "$RUNTIME_DIR" ".venv" ".venv"
+link_runtime_path "$APP_DIR" "$RUNTIME_DIR" ".backup" ".backup"
+link_runtime_path "$APP_DIR" "$RUNTIME_DIR" "worker-data" "worker-data"
+
 cd "$APP_DIR"
 
-python3 -m venv .venv
+if [ ! -d "$RUNTIME_DIR/.venv" ]; then
+  python3 -m venv .venv
+fi
 . .venv/bin/activate
 pip install --upgrade pip
 pip install -r workers/agent/requirements.txt

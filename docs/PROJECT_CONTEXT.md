@@ -4,18 +4,18 @@
 Du an dang duoc rebuild lai theo huong `FastAPI + Python backend` va UI HTML/CSS co san, thay vi tiep tuc frontend React/Vite cu.
 
 ## Current Reset State
-- Root workspace da bi don sach phan lon frontend/backend prototype cu.
+- Root workspace da bi don sach phan lon frontend/backend prototype cu va repo .NET tham chieu da duoc loai bo khoi source chinh.
 - Hien co:
-  - `YoutubeBOTUpload-master/` lam nguon tham chieu UI/domain tu app .NET cu.
   - `final_user_ui.html` la mockup user UI moi can noi vao backend.
-  - `backend/` da co scaffold FastAPI toi thieu cho web route + template user page.
-  - `frontend/` gan nhu khong con source app, chu yeu con `node_modules`.
+  - `backend/` la source chinh cho web route, template user/admin va SQLite snapshot.
+  - `workers/` la source chinh cho worker render/upload.
+  - `scripts/` + `infra/` giu bootstrap/deploy/runtime layout cho host va worker.
 
 ## Target Architecture
 - Backend: `FastAPI + Python`
 - Worker: `Python worker + FFmpeg`
 - Data target: `Postgres + Redis`
-- Deploy target: `Docker Compose` tren `1 control VPS + nhieu worker VPS`
+- Deploy target: `git-first checkout` tren `1 control VPS + nhieu worker VPS`, runtime (`.env`, `.venv`, `backend/data`, `worker-data`, `.backup`) tach rieng khoi repo.
 - OAuth: Google / YouTube OAuth cho connect channel.
 
 ## Product Flows
@@ -24,7 +24,7 @@ Du an dang duoc rebuild lai theo huong `FastAPI + Python backend` va UI HTML/CSS
 
 ## UI Sources
 - `final_user_ui.html` la visual source of truth cho ca user va admin UI moi.
-- `YoutubeBOTUpload-master/BaseSource.AppUI` chi con la nguon tham chieu workflow, route, va nghiep vu admin/user cua app cu; khong con la nguon visual chinh.
+- Khong con repo .NET tham chieu trong workspace; workflow/nghiep vu da duoc chuyen hoa vao backend/docs hien tai.
 
 ## Current Backend State
 - `backend/app/templates/user_dashboard.html` la template user duy nhat dang duoc render boi FastAPI.
