@@ -107,3 +107,5 @@
 - [x] Verify clean worktree bang python -m compileall backend/app, python -m compileall workers/agent, 
 ode --check backend/app/static/js/user_dashboard.js, 
 ode --check backend/app/static/js/admin_tables.js.
+### 2026-03-30 14:36
+- [x] Xac nhan lai sau cutover: control-plane tra pi/health = 200 va ca 2 worker tro lai trang thai online trong SQLite snapshot.
