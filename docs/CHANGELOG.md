@@ -903,3 +903,113 @@
 - Fixed: Loai bo broken preview cho cac job Drive nhu `job-ab465f91`; row se quay ve icon/placeholder on dinh va meta line hien `00:02:00` dung dinh dang.
 - Affected files: backend/app/store.py, docs/DECISIONS.md, docs/WORKLOG.md, docs/CHANGELOG.md
 - Impact/Risk: Chi doi payload build cho user render list; live VPS da restart va verify payload job loi.
+
+### 2026-03-27 21:32 - Audit slow Drive job phase transitions
+- Added: Ghi nhan ket qua audit runtime cho job Drive `job-eb28b91f` tren VPS.
+- Changed: Khong doi code; doi chieu worker flow va state live de xac nhan phase transition dang dung contract hien tai.
+- Fixed: Lam ro nham lan van hanh: job Drive co the cham, nhung worker khong set `rendering` truoc khi tai xong toan bo asset.
+- Affected files: docs/WORKLOG.md, docs/CHANGELOG.md
+- Impact/Risk: Khong tac dong runtime; thong tin nay dung de quyet dinh neu can bo sung progress download ro hon o UI.
+
+### 2026-03-29 11:40 - Show dedicated source download progress before render
+- Added: Progress theo byte cho local asset, HTTP asset va Google Drive asset trong worker downloader; payload dashboard moi co `progress_mode` va `download_progress`.
+- Changed: Row render list chi hien thanh `Download` khi job dang tai nguon, sau khi tai xong moi chuyen sang cap `Render/Upload` nhu user mong muon.
+- Fixed: Khong con cam giac job Drive nhay vao `render` trong khi thuc te van dang tai file nguon lon ve VPS.
+- Affected files: workers/agent/downloader.py, workers/agent/job_runner.py, backend/app/store.py, backend/app/static/js/user_dashboard.js, backend/app/templates/user_dashboard.html, docs/DECISIONS.md, docs/WORKLOG.md, docs/CHANGELOG.md
+- Impact/Risk: Logic tai Google Drive duoc thay bang stream co progress; can smoke live tren worker/VPS de xac nhan confirm-token cua Drive van on voi cac link dang dung.
+
+### 2026-03-29 12:02 - Deploy live download-progress phase and verify on real Drive job
+- Added: Rollout live control plane + worker for `download_progress`/`progress_mode`, kem backup runtime moi tren host va workers.
+- Changed: Worker downloader Google Drive da doc confirm HTML an toan trong stream mode (`response.read().decode(...)`) de giu duoc byte-progress ma khong crash.
+- Fixed: Job Drive tren live gio hien phase `Dang tai nguon` rieng tren row va chi chuyen sang `Dang render` sau khi tai xong; loi worker `Attempted to access streaming response content...` da duoc hotfix ngay trong pass deploy.
+- Affected files: backend/app/store.py, backend/app/static/js/user_dashboard.js, backend/app/templates/user_dashboard.html, workers/agent/downloader.py, workers/agent/job_runner.py, runtime /opt/youtube-upload-lush on control plane and both workers, docs/WORKLOG.md, docs/CHANGELOG.md
+- Impact/Risk: Da verify bang job Drive that `job-9c924cd9` tren worker-01; tuy nhien lien quan YouTube upload van tao mot video private test tren channel live va can xoa thu cong neu khong muon giu.
+
+### 2026-03-29 12:09 - Audit live cleanup for downloaded assets and rendered outputs
+- Added: SSH audit thuc te tren control plane + 2 worker de thong ke file con ton sau cac lan test va doi chieu voi state/job hien tai.
+- Changed: Khong doi runtime; pass nay chi xac nhan behavior cleanup dang chay o success path va chi ra rac cu con sot tren host/worker.
+- Fixed: Lam ro 2 lo hong cleanup hien co: worker output co the con lai neu upload fail/disable, va direct multipart upload vao `api_user.py` co the de rac asset tren control plane vi khong co `asset_id` de cleanup.
+- Affected files: workers/agent/config.py, workers/agent/job_runner.py, backend/app/store.py, backend/app/routers/api_user.py, runtime /opt/youtube-upload-lush/backend/data/uploads, runtime /opt/youtube-upload-lush/backend/data/previews, runtime /opt/youtube-upload-lush/worker-data on worker-01/02, docs/WORKLOG.md, docs/CHANGELOG.md
+- Impact/Risk: Hien tai he thong van chay duoc, nhung neu tiep tuc test local/direct-upload hoac gap upload fail sau render thi disk se tiep tuc phinh dan neu khong co cleanup patch bo sung.
+### 2026-03-29 13:12 - Sync runtime render-row layout with current HTML
+- Added: Runtime helper `renderCopy`, DOM sync cho cac cell `Tien Do`, `Timeline`, `Tac Vu`, va cache-bust moi cho `user_dashboard.js`.
+- Changed: `user_dashboard.js` gio re-apply markup cho row sau moi lan render/live refresh de job that bam dung layout row trong `user_dashboard.html` thay vi giu runtime markup cu.
+- Fixed: Khong con tinh trang HTML dat vi tri row/progress mot kieu nhung job that sau khi JS repaint lai hien sang vi tri/copy khac; summary text va action labels runtime cung duoc chuan hoa.
+- Affected files: backend/app/static/js/user_dashboard.js, backend/app/templates/user_dashboard.html, docs/WORKLOG.md, docs/CHANGELOG.md
+- Impact/Risk: Da verify tren local app bang smoke job `job-f7d7a7ea`; de thay doi xuat hien tren browser dang mo can tai lai trang 1 lan de nhan file JS moi theo query version.
+### 2026-03-29 13:18 - Deploy render-row runtime sync to live app
+- Added: Backup runtime control-plane tai `/opt/youtube-upload-lush/.backup/render-row-sync-20260329-131603` truoc khi rollout pass sync row.
+- Changed: Live app tren `82.197.71.6` da nhan `user_dashboard.js` va `user_dashboard.html` moi voi asset version `v=20260329-render-row-sync`.
+- Fixed: Render list tren live khong con nguy co dung row runtime cu cho cac cell `Tien Do`, `Timeline`, `Tac Vu` sau khi JS repaint/live refresh.
+- Affected files: backend/app/static/js/user_dashboard.js, backend/app/templates/user_dashboard.html, runtime /opt/youtube-upload-lush on 82.197.71.6, docs/WORKLOG.md, docs/CHANGELOG.md
+- Impact/Risk: Browser dang mo co the can hard refresh 1 lan de bo cache file JS cu; rollback nhanh co san trong backup runtime moi tao.
+### 2026-03-29 13:35 - Investigate live Drive job failure on worker-01
+- Added: Audit log control-plane + worker cho `job-01c18ebe` va reproduce truc tiep 2 URL Drive tren worker-01.
+- Changed: Khong doi code/runtime trong pass nay.
+- Fixed: Xac dinh ro nguyen nhan that cua loi tao job Drive moi khong nam o render pipeline hay UI deploy, ma do asset Drive dau tien tra ve trang dang nhap Google thay vi file public.
+- Affected files: docs/WORKLOG.md, docs/CHANGELOG.md
+- Impact/Risk: Job Drive se tiep tuc fail neu user dan link chua public/yeu cau login; can share file theo che do `Anyone with the link` hoac tiep tuc mot pass rieng neu muon backend hien message cu the hon theo tung slot.
+### 2026-03-29 14:05 - admin_bot_table_live_refresh
+- Added: Live polling for BOT VPS admin table using /api/admin/bots and in-place row rerender.
+- Changed: admin_tables.js now supports row refresh events; admin dialog open/close now uses event delegation.
+- Fixed: BOT table metrics no longer stay stale after heartbeat updates; dynamic rows keep dialog actions working.
+- Affected files: backend/app/static/js/admin_tables.js, backend/app/templates/admin/_layout.html, backend/app/templates/admin/worker_index.html
+- Impact/Risk: Admin BOT table stays closer to real worker telemetry; verify browser cache refresh on deploy because admin_tables.js version changed.
+### 2026-03-29 14:14 - admin_render_manager_scope_fix
+- Added: Canonical manager resolution helpers for render jobs based on worker/channel relationships.
+- Changed: Admin render list filtering now scopes by resolved manager identity instead of raw job.manager_name text.
+- Fixed: Admin render list no longer drops jobs/channels when manager usernames have drifted between historical jobs and current manager records; render rows now expose the external channel id when available.
+- Affected files: backend/app/store.py, docs/WORKLOG.md, docs/CHANGELOG.md, docs/DECISIONS.md
+- Impact/Risk: Admin render list should match the real job set more closely; related stale manager-name data remains in persisted records but no longer hides rows in this screen.
+
+### 2026-03-29 14:52 - worker_heartbeat_reconcile_and_admin_channel_scope
+- Added: ctive_job_ids in worker heartbeat so control plane only keeps leases for jobs the worker still runs.
+- Changed: admin channel scope now resolves manager through worker/channel relation instead of stale channel.manager_name text.
+- Fixed: stale uploading jobs can be auto-reconciled to completed when the video already exists on the owner YouTube channel.
+- Affected files: backend/app/schemas.py, backend/app/store.py, workers/agent/control_plane.py, workers/agent/main.py
+- Impact/Risk: reduces stuck uploading jobs after worker restart/network loss; reconciliation depends on matching recent owner-visible YouTube uploads by title/time.
+
+
+### 2026-03-29 15:04 - my_channel_row_polish
+- Added: green accent link treatment for channel_id in My Channel rows.
+- Changed: connected status icon switched from badge-check to Lucide circle-check, and worker/IP pill was removed from the meta line.
+- Fixed: backend template and final_user_ui source of truth are aligned for My Channel row styling.
+- Affected files: backend/app/templates/user_dashboard.html, final_user_ui.html
+- Impact/Risk: visual-only change on user workspace channel list; no API or runtime contract changed.
+
+
+### 2026-03-29 15:10 - my_channel_internal_scroll
+- Added: internal scrollbar styling and capped height for My Channel list.
+- Changed: My Channel panel now keeps header fixed while only the channel list area scrolls.
+- Fixed: many connected channels no longer stretch the top workspace panel vertically.
+- Affected files: backend/app/templates/user_dashboard.html, final_user_ui.html
+- Impact/Risk: visual-only layout change on user workspace; no data or API contract impact.
+
+
+### 2026-03-29 19:55 - schedule_enter_fix_for_publish_picker
+- Added: cache-bust marker moi cho `user_dashboard.js` de browser lay dung runtime sau khi sua date picker.
+- Changed: logic `Hẹn lịch đăng` chi seed `time now` khi field rong; Enter tren input se uu tien parse gia tri user vua nhap.
+- Fixed: user co the mo lich de lay gio hien tai roi sua thanh gio khac va nhan `Enter` ma khong bi reset ve `time now`.
+- Affected files: backend/app/static/js/user_dashboard.js, backend/app/templates/user_dashboard.html, docs/WORKLOG.md, docs/CHANGELOG.md
+- Impact/Risk: bug thao tac form duoc sua tren live; browser dang giu JS cu co the can hard refresh mot lan moi thay doi co hieu luc ngay.
+
+### 2026-03-29 20:15 - scheduled_wait_note_and_progress_sync
+- Added: `scheduled_waiting` va `scheduled_wait_at` vao payload render list user de row cho lich hien duoc moc `Hẹn:` ro rang trong timeline.
+- Changed: progress cell cua job hẹn lịch dang cho chuyen sang placeholder `Đợi lịch` thay vi 2 thanh `Render/Upload 0%`; template HTML va JS runtime dung chung cung pattern.
+- Fixed: live refresh khong con render progress cell lech so voi HTML cho job cho lich, va user khong bi nham job pending la loi vi thieu thong tin thoi gian hẹn.
+- Affected files: backend/app/store.py, backend/app/static/js/user_dashboard.js, backend/app/templates/user_dashboard.html, docs/UI_SYSTEM.md, docs/WORKLOG.md, docs/CHANGELOG.md
+- Impact/Risk: job pending co lich hen de doc hon tren live; browser dang cache JS/template cu co the can hard refresh mot lan de thay doi xuat hien ngay.
+
+### 2026-03-29 21:10 - scheduled_wait_ui_revert_to_timeline_only
+- Added: note correction trong UI system cho pattern job hẹn lịch đang chờ.
+- Changed: job chờ lịch chỉ còn hiện dòng `Hẹn:` ở `Timeline`; cột `Tiến Độ` quay về layout pipeline mặc định của workspace.
+- Fixed: JS runtime không còn repaint progress/timeline theo markup lệch so với HTML khi row live refresh.
+- Affected files: backend/app/static/js/user_dashboard.js, backend/app/templates/user_dashboard.html, docs/UI_SYSTEM.md, docs/WORKLOG.md, docs/CHANGELOG.md
+- Impact/Risk: giao diện job chờ lịch quay về đồng bộ với hệ thiết kế hiện tại; nếu trình duyệt còn giữ JS cũ thì cần hard refresh một lần.
+
+### 2026-03-30 09:10 - remove_legacy_dotnet_reference_repo
+- Added: avatar compatibility asset noi bo tai ackend/app/static/admin-themes/assets/img/avatar/avatar-1.png.
+- Changed: ackend/app/main.py chi mount static tu ackend/app/static, dong thoi giu /legacy va /admin-themes tro vao asset noi bo de khong gay link gay.
+- Fixed: co the xoa thu muc YoutubeBOTUpload-master ma khong con phu thuoc runtime vao repo .NET cu.
+- Affected files: AGENTS.md, backend/app/main.py, backend/app/static/admin-themes/assets/img/avatar/avatar-1.png, docs/ADMIN_PARITY_CHECKLIST.md, docs/CHANGELOG.md, docs/DECISIONS.md, docs/PROJECT_CONTEXT.md, docs/UI_SYSTEM.md, docs/WORKLOG.md, YoutubeBOTUpload-master/*
+- Impact/Risk: repo nhe hon va ro source of truth hon; can push branch hien tai de xoa thu muc nay tren GitHub.

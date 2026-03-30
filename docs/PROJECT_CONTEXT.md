@@ -6,7 +6,6 @@ Du an dang duoc rebuild lai theo huong `FastAPI + Python backend` va UI HTML/CSS
 ## Current Reset State
 - Root workspace da bi don sach phan lon frontend/backend prototype cu.
 - Hien co:
-  - `YoutubeBOTUpload-master/` lam nguon tham chieu UI/domain tu app .NET cu.
   - `final_user_ui.html` la mockup user UI moi can noi vao backend.
   - `backend/` da co scaffold FastAPI toi thieu cho web route + template user page.
   - `frontend/` gan nhu khong con source app, chu yeu con `node_modules`.
@@ -24,7 +23,7 @@ Du an dang duoc rebuild lai theo huong `FastAPI + Python backend` va UI HTML/CSS
 
 ## UI Sources
 - `final_user_ui.html` la visual source of truth cho ca user va admin UI moi.
-- `YoutubeBOTUpload-master/BaseSource.AppUI` chi con la nguon tham chieu workflow, route, va nghiep vu admin/user cua app cu; khong con la nguon visual chinh.
+- Luong nghiep vu admin/user da duoc chot lai ngay trong `backend/` va bo docs hien tai; khong con phu thuoc repo .NET cu trong workspace.
 
 ## Current Backend State
 - `backend/app/templates/user_dashboard.html` la template user duy nhat dang duoc render boi FastAPI.

@@ -203,3 +203,18 @@
 - Render list preview quay lai ty le 4:3; thong tin job co them kind label uppercase nho (UPLOAD/DRIVE) dat tren title de cell khong bi trong.
 ## Sort Header Note
 - Render list table sort icon giu pattern cu: cap `arrow-up/arrow-down` inline nam ngay sau label, khong dung stack icon doc.
+
+- My Channel row: giu 1 dong meta gon chi voi channel link/public id; khong dung worker/IP pill mau do trong row compact, va channel link co the dung accent xanh la de tang do nhan dien.
+
+- My Channel list: khi so kenh vuot nguong, panel giu header co dinh va chi phan danh sach ben trong duoc scroll; khong de cot My Channel keo dai lam vo nh?p top layout.
+
+## Scheduled Queue Note
+- Job h?n l?ch còn dang ch? ph?i hi?n rõ dòng `H?n:` trong timeline và dùng progress placeholder `Ð?i l?ch`; khi job b?t d?u x? lý thì hai d?u hi?u này t? bi?n m?t.
+
+## Scheduled Queue Correction
+- Job h?n l?ch còn dang ch? ch? thêm dòng `H?n:` trong timeline; c?t `Ti?n Ð?` v?n gi? layout pipeline s?n có thay vì dùng placeholder riêng.
+
+## Legacy Reference Removal
+- YoutubeBOTUpload-master/ da duoc go khoi workspace.
+- Khong con dung repo .NET cu lam source tham chieu hay runtime asset.
+- Moi compatibility asset con lai cho admin/user duoc phuc vu tu ackend/app/static.

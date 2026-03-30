@@ -647,3 +647,95 @@ ode --check backend/app/static/js/user_dashboard.js, va TestClient login demo-us
 - [x] Sua `backend/app/store.py` de khong con suy doan thumbnail tu raw Google Drive file link; neu job chua co preview that thi render list se quay ve icon/placeholder on dinh.
 - [x] Bo sung helper format render duration de payload live normalize `00:2:00` thanh `00:02:00` trong meta line cua render row.
 - [x] Rollout rieng `backend/app/store.py` len host `82.197.71.6`, backup runtime cu tai `/opt/youtube-upload-lush/.backup/drive-preview-fix-20260327-200649`, restart `youtube-upload-web.service`, verify payload live cua `job-ab465f91` da co `preview_url=null` va `meta` moi.
+
+### 2026-03-27 21:32
+- [x] Trace job Drive `job-eb28b91f` tren VPS va doi chieu state/log control-plane de phan biet giua treo that va chay cham.
+- [x] Xac nhan worker code chi doi sang `rendering` sau khi `_download_assets()` tra ve; khong co doan nao set `rendering` truoc khi tai xong toan bo asset.
+- [x] Kiem tra state live cua job tren host: `created_at=20:23`, `upload_started_at=20:25`, va den luc audit job da `completed`, cho thay luong van chay het va khong deadlock.
+- [x] Kiem tra `journalctl` cua `youtube-upload-web.service`: control-plane nhan lien tuc heartbeat/progress/thumbnail/youtube-target cho `job-eb28b91f`, nen nghieng ve ket luan job Drive dang cham o worker thay vi treo o control-plane.
+
+### 2026-03-29 11:40
+- [x] Audit lai luong worker download -> render -> upload va xac nhan dashboard hien tai chi co 2 thanh `render/upload`, trong khi worker download asset chi bao progress theo asset hoan tat nen user khong thay duoc phase tai nguon thuc te.
+- [x] Thay `workers/agent/downloader.py` de stream local asset, HTTP asset va Google Drive asset theo byte, co `progress_callback`, va bo fallback `gdown.download(...)` de worker co the bao phan tram tai nguon lien tuc.
+- [x] Cap nhat `workers/agent/job_runner.py` de gom progress download theo tung slot thanh mot phase `downloading` 0..100 va chi chuyen sang `rendering` sau khi `_download_assets()` tra ve xong.
+- [x] Mo rong payload dashboard trong `backend/app/store.py` voi `progress_mode` + `download_progress`; dong bo `backend/app/templates/user_dashboard.html` va `backend/app/static/js/user_dashboard.js` de row hien thanh `Download` rieng khi dang tai nguon, sau do moi doi sang `Render/Upload`.
+- [x] Verify bang `python -m compileall backend/app workers/agent`, `node --check backend/app/static/js/user_dashboard.js`, va smoke test logic progress view gia lap cho 3 phase `downloading/rendering/uploading`.
+
+### 2026-03-29 12:02
+- [x] Doc lai `PROJECT_CONTEXT`, `DECISIONS`, `WORKLOG`, xac nhan can rollout dong bo control plane + worker cho pass `download progress` vi thay doi nay dung vao ca payload dashboard va worker downloader.
+- [x] Rollout control plane len `82.197.71.6:/opt/youtube-upload-lush`: cap nhat `backend/app/store.py`, `backend/app/static/js/user_dashboard.js`, `backend/app/templates/user_dashboard.html`, compile `backend/app`, restart `youtube-upload-web.service`, verify `https://ytb.jazzrelaxation.com/api/health = 200`.
+- [x] Rollout worker code len `109.123.233.131` va `62.72.46.42`: cap nhat `workers/agent/downloader.py`, `workers/agent/job_runner.py`, compile `workers/agent`, restart `youtube-upload-worker.service` tren ca hai may.
+- [x] Tao job smoke `job-dc487906` tren live de test progress Drive, bat duoc loi runtime moi trong worker-01: `Attempted to access streaming response content, without having called read()` khi parse trang confirm cua Google Drive trong stream mode.
+- [x] Hotfix `workers/agent/downloader.py` bang cach `response.read().decode(...)` truoc khi parse confirm HTML, rollout lai rieng `downloader.py` len ca hai worker va restart service.
+- [x] Tao lai job smoke `job-9c924cd9` tren channel `channel-5e012410` (worker-01 / `109.123.233.131`), theo doi live bang tai khoan user `user/1234` va xac nhan row chay dung `Dang tai nguon` voi `download_progress` 50 -> 62 -> 74 -> 90, sau do moi chuyen `Dang render` -> `Dang upload` -> `Da upload YouTube`.
+- [x] Verify ket qua smoke live: job `job-9c924cd9` `completed`, watch URL `https://www.youtube.com/watch?v=8Vfl60YNUAE`, host service `active`, worker-01 va worker-02 deu `active`; backup runtime moi nam o `/opt/youtube-upload-lush/.backup/download-progress-20260329-115503-control`, `/opt/youtube-upload-lush/.backup/download-progress-20260329-115548-worker-01`, `/opt/youtube-upload-lush/.backup/download-progress-20260329-115548-worker-02`, va hotfix worker backup o `/opt/youtube-upload-lush/.backup/download-progress-hotfix-20260329-115900-worker-*`.
+
+### 2026-03-29 12:09
+- [x] Doc lai `PROJECT_CONTEXT`, `DECISIONS`, `WORKLOG` va ra soat code cleanup trong `workers/agent/config.py`, `workers/agent/job_runner.py`, `backend/app/store.py`, `backend/app/routers/api_user.py` de phan biet logic dang dung voi rac runtime cu.
+- [x] SSH audit control plane `82.197.71.6`: `backend/data/uploads/assets` con 6 file cu (~13 MB, gom 2 file e2e va 4 file 0 byte), `backend/data/previews` con 3 preview cho 3 job completed, `upload_sessions = 0`; doi chieu state cho thay cac file asset con ton khong con duoc job hien tai tham chieu.
+- [x] SSH audit `worker-01` (`109.123.233.131`): `WORKER_KEEP_JOB_DIRS` khong set (mac dinh false), `worker-data` con lai ~26 MB duoi `job-1d61621e/render/*`; job test moi `job-9c924cd9` khong de lai download/output residue, cho thay cleanup success path hien tai dang chay dung.
+- [x] SSH audit `worker-02` (`62.72.46.42`): `WORKER_KEEP_JOB_DIRS` khong set (mac dinh false), nhung `worker-data` con ~109 MB rac cu (`job-74b761bc/*` va 3 file trong `outputs/`) tu cac bai test/luot chay cu.
+- [x] Ket luan logic: worker hien tai da xoa `job_dir/downloads+render` trong `finally`, va xoa `outputs/<job>.mp4` sau upload YouTube thanh cong; tuy nhien output se bi giu lai neu upload fail/bi tat, va control-plane direct upload path trong `api_user.py` van co the ro ri file vi khong di qua `upload_sessions/asset_id` cleanup.
+### 2026-03-29 12:48
+- [x] Hoan tat patch cleanup cho flow cancel/delete: ackend/app/store.py chot helper chan worker tiep tuc khi job da cancelled/completed/error, dong thoi cleanup local upload khong con phu thuoc rieng upload_sessions/asset_id ma d?n duoc ca file direct-upload theo ile_name.
+- [x] Cap nhat worker workers/agent/control_plane.py, workers/agent/main.py, workers/agent/job_runner.py de map 404/409/410 thanh JobStoppedError, worker tu dung an toan khi control plane bao job da bi huy/xoa, va outputs/<job>.mp4 cung duoc xoa neu job bi dung sau khi da render xong nhung chua upload YouTube thanh cong.
+- [x] Verify local bang python -m compileall backend/app workers/agent, 
+ode --check backend/app/static/js/user_dashboard.js, va smoke test Python cho 3 case: cancelled job bi chan progress/asset route, deleted job tra KeyError, va direct-upload file + aborted rendered output deu duoc cleanup.
+- [x] Rollout runtime moi len 82.197.71.6, 109.123.233.131, 62.72.46.42; restart youtube-upload-web.service + youtube-upload-worker.service, verify public health https://ytb.jazzrelaxation.com/api/health = 200 {\"status\":\"ok\"} va ca 2 worker deu ctive.
+- [x] Smoke live bang tai khoan user/1234: tao job Drive job-2f39a829, doi den pha Dang tai nguon (download_progress len 15), goi cancel + delete qua API user, xac nhan row bien mat ngay tren /api/user/dashboard/live va worker-01 khong con job_dir/outputs cua job nay.
+- [x] Don rac cu sau audit: xoa 6 file asset khong con tham chieu tren control plane (sset-e2e-20260327* va 4 file 0-byte), xoa job-1d61621e tren worker-01, xoa job-74b761bc + 3 output cu tren worker-02; verify sau cleanup ca worker-data/job-* va worker-data/outputs/job-* deu rong tren 2 worker.
+### 2026-03-29 13:12
+- [x] Doc lai `PROJECT_CONTEXT`, `DECISIONS`, `WORKLOG`, `UI_SYSTEM` va doi chieu `backend/app/templates/user_dashboard.html` voi `backend/app/static/js/user_dashboard.js` de kiem tra render list row runtime co bi lech layout so voi HTML hay khong.
+- [x] Xac nhan bang Playwright rang render list bi JS repaint sau khi load/live refresh, nen `job that` dang phu thuoc vao runtime markup trong `user_dashboard.js` thay vi dung nguyen markup server-render trong HTML.
+- [x] Cap nhat `backend/app/static/js/user_dashboard.js` theo huong sync DOM cho cac cell `Tien Do`, `Timeline`, `Tac Vu` sau moi lan `renderRenderTable()`, dong thoi bo sung `renderCopy` va mo rong `buildLivePayloadSignature()` de row duoc repaint khi metadata/layout field thay doi.
+- [x] Tang cache-bust script trong `backend/app/templates/user_dashboard.html` len `v=20260329-render-row-sync` de browser lay JS moi thay vi giu runtime cu.
+- [x] Verify bang `node --check backend/app/static/js/user_dashboard.js`, `python -m compileall backend/app`, Playwright local `http://127.0.0.1:8000/app`, va tao smoke job `job-f7d7a7ea` de xac nhan row runtime hien dung `Render/Upload`, `Tao/Render/Upload`, va `Sua/Huy/Xoa` theo layout HTML hien tai.
+### 2026-03-29 13:18
+- [x] Doc lai `PROJECT_CONTEXT`, `DECISIONS`, `WORKLOG` truoc khi deploy pass sync render row len host app.
+- [x] Xac nhan dung host control-plane `82.197.71.6` va app path `/opt/youtube-upload-lush`; service `youtube-upload-web.service` dang `active` truoc deploy.
+- [x] Backup runtime tren host vao `/opt/youtube-upload-lush/.backup/render-row-sync-20260329-131603`, sau do rollout `backend/app/static/js/user_dashboard.js` va `backend/app/templates/user_dashboard.html` len VPS.
+- [x] Compile lai `backend/app` bang `python3 -m compileall backend/app`, restart `youtube-upload-web.service`, va verify file marker `v=20260329-render-row-sync`, `syncRenderedTableMarkup`, `renderJobActionsRuntimeMarkup` da co mat tren host.
+- [x] Verify sau deploy: `https://ytb.jazzrelaxation.com/api/health` tra `{"status":"ok"}`, Playwright mo live `/app` thanh cong va render list row/runtime van hien dung cau truc `Tien Do / Timeline / Tac Vu` sau live repaint.
+### 2026-03-29 13:35
+- [x] Doc lai `PROJECT_CONTEXT`, `DECISIONS`, `WORKLOG` truoc khi dieu tra loi job Drive moi tren live.
+- [x] Doi chieu payload live qua browser va xac nhan job loi la `job-01c18ebe`, status `error`, progress dung o `1%`, bot `109.123.233.131`.
+- [x] Kiem tra control-plane log tren `82.197.71.6`: job nay nhan `POST /api/workers/jobs/job-01c18ebe/progress` roi lap tuc `POST /api/workers/jobs/job-01c18ebe/fail`, cho thay worker fail som o runtime thay vi loi UI.
+- [x] Doc truc tiep `store.jobs` tren host va lay `error_message` cua job: `Khong the lay duoc link tai Google Drive. Kiem tra lai quyen chia se hoac dinh dang link.`
+- [x] Reproduce tren worker-01 voi chinh 2 URL asset cua job: file `1i3ZDvk-lXi9IPxZ0NWwmWboJBh9q0QBe` redirect sang Google Sign-In va `_download_google_drive_asset()` fail; file `14SFEO04EE_aXkuqbQpDfJjKR93ncmbTx` tai duoc binh thuong. Ket luan root cause la link video Drive dau tien chua public/chua share dung cho download anonymous tu VPS.
+- 2026-03-29 14:05 | Admin BOT table live refresh | Added live polling on /admin/ManagerBOT/index via /api/admin/bots, refreshed admin table rows in-place, switched admin dialog open/close to event delegation, verified polling updates after worker heartbeat.
+- 2026-03-29 14:14 | Admin render list manager-scope fix | Traced live mismatch where store.jobs had 5 jobs but admin render context only returned 3 because filtering relied on stale job.manager_name text. Added canonical manager resolution for jobs via channel/worker/manager_id, updated admin render context to filter by resolved manager id and emit canonical manager/channel ids, then verified with a synthetic mixed-name scenario.
+
+- 2026-03-29 14:52 | Worker heartbeat reconcile + admin channel scope | Added active_job_ids heartbeat reconciliation to stop stale upload leases, auto-recovered stuck uploaded jobs via YouTube owner search, and switched admin channel manager resolution to worker->manager_id for full admin visibility. Deployed control plane + both workers; live jobs job-9496bbf4, job-ae647f77, job-fa5f0d08 moved to completed and admin channel rows returned 2/2.
+
+- 2026-03-29 15:04 | My Channel row polish | Removed worker/IP pill from My Channel meta line, switched connected status icon to Lucide circle-check, and changed channel_id link accent to green. Synced backend/app/templates/user_dashboard.html + final_user_ui.html and rolled template live to control plane.
+
+- 2026-03-29 15:10 | My Channel internal scroll | Added fixed-height internal scroll container for My Channel so long channel lists no longer stretch the top panel block. Synced backend/app/templates/user_dashboard.html + final_user_ui.html and rolled the template live to control plane.
+
+### 2026-03-29 19:55
+- [x] Doc lai `PROJECT_CONTEXT`, `DECISIONS`, `WORKLOG`, `UI_SYSTEM` va doi chieu logic `H?n l?ch dang` trong `backend/app/static/js/user_dashboard.js` voi cache-bust script trong `backend/app/templates/user_dashboard.html`.
+- [x] Xac nhan fix local da dung huong: chi seed `time now` khi field rong, con khi user go tay gia tri khac va nhan `Enter` thi parse/giu lai gia tri vua nhap thay vi reset ve gio hien tai.
+- [x] Verify local bang `node --check backend/app/static/js/user_dashboard.js` va `python -m compileall backend/app`.
+- [x] Rollout dong bo `backend/app/static/js/user_dashboard.js` va `backend/app/templates/user_dashboard.html` len `82.197.71.6`, backup runtime cu vao `/opt/youtube-upload-lush/.backup/schedule-enter-fix-20260329-195031`, restart `youtube-upload-web.service`, va verify service `active`.
+- [x] Test live bang Playwright tren `https://ytb.jazzrelaxation.com/app`: go `31/03/2026 22:15` vao `#scheduleAt`, nhan `Enter`, va xac nhan input giu nguyen gia tri moi thay vi quay ve `time now`.
+
+### 2026-03-29 20:15
+- [x] Doc lai `PROJECT_CONTEXT`, `DECISIONS`, `WORKLOG`, `UI_SYSTEM` va doi chieu payload user render list giua `backend/app/store.py`, `backend/app/templates/user_dashboard.html`, `backend/app/static/js/user_dashboard.js` cho case job h?n l?ch còn ch?.
+- [x] Bo sung `scheduled_waiting` + `scheduled_wait_at` vao payload render job user; note `H?n:` chi hien khi job van o `pending/queueing` va `scheduled_at` nam trong tuong lai.
+- [x] Doi progress cell cua job h?n l?ch sang placeholder `Ð?i l?ch`, dong bo ca template Jinja va JS runtime de live refresh khong con lech markup so voi HTML.
+- [x] Verify local bang `node --check backend/app/static/js/user_dashboard.js` va `python -m compileall backend/app`.
+- [x] Rollout `backend/app/store.py`, `backend/app/static/js/user_dashboard.js`, `backend/app/templates/user_dashboard.html` len `82.197.71.6`, backup runtime cu vao `/opt/youtube-upload-lush/.backup/scheduled-note-fix-20260329-200909`, restart `youtube-upload-web.service`, va verify service `active`.
+- [x] Test live bang Playwright tren `https://ytb.jazzrelaxation.com/app`: 2 row cho lich hien `H?n: 30/03/2026 07:00` trong timeline, progress cell hien `Ð?i l?ch`, va cac row da bat dau/hoan tat khong con note nay.
+
+### 2026-03-29 21:10
+- [x] Doc lai `PROJECT_CONTEXT`, `DECISIONS`, `WORKLOG`, `UI_SYSTEM` sau feedback ve UI `Ð?i l?ch` khong dong bo voi he thiet ke san co.
+- [x] Bo placeholder progress `Ð?i l?ch` khoi `backend/app/templates/user_dashboard.html` va `backend/app/static/js/user_dashboard.js`, giu note h?n l?ch chi o `Timeline`.
+- [x] Dong bo runtime row markup de JS dung chung helper `renderJobTimelineMarkup()` voi HTML, tranh repaint timeline theo vi tri cu.
+- [x] Verify local bang `node --check backend/app/static/js/user_dashboard.js` va `python -m compileall backend/app`.
+- [x] Rollout `backend/app/static/js/user_dashboard.js` va `backend/app/templates/user_dashboard.html` len `82.197.71.6`, backup runtime cu vao `/opt/youtube-upload-lush/.backup/scheduled-timeline-only-20260329-210607`, restart `youtube-upload-web.service`, va verify service `active`.
+- [x] Test live bang Playwright tren `https://ytb.jazzrelaxation.com/app`: 2 row cho lich chi con `H?n: 30/03/2026 07:00` o `Timeline`, c?t `Ti?n Ð?` quay lai `Render 0% / Upload 0%`, va vi tri runtime khop voi HTML sau reload.
+### 2026-03-30 09:10
+- [x] Doc lai PROJECT_CONTEXT, DECISIONS, WORKLOG truoc khi go thu muc YoutubeBOTUpload-master theo yeu cau user.
+- [x] Ra soat runtime va xac nhan phu thuoc con sot nam o ackend/app/main.py va fallback avatar /legacy + /admin-themes trong ackend/app/store.py.
+- [x] Chuyen compatibility static path sang ackend/app/static, tao file ackend/app/static/admin-themes/assets/img/avatar/avatar-1.png, va cap nhat ackend/app/main.py de mount /legacy, /admin-themes, /static tu asset noi bo thay vi repo .NET cu.
+- [x] Cap nhat AGENTS.md, docs/PROJECT_CONTEXT.md, va bo sung note vao docs/UI_SYSTEM.md, docs/ADMIN_PARITY_CHECKLIST.md, docs/DECISIONS.md de loai bo gia dinh repo .NET cu van con trong workspace.
+- [x] Xoa thu muc YoutubeBOTUpload-master khoi local workspace, se duoc xoa tren GitHub sau khi commit/push branch hien tai.

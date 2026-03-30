@@ -345,3 +345,8 @@
   - channel -> user/render
   - render -> detail
 - Dữ liệu admin không còn phụ thuộc hoàn toàn vào seed in-memory
+
+## Legacy Reference Removal
+- Tu 2026-03-30, parity admin duoc duy tri truc tiep trong FastAPI + docs noi bo.
+- Khong con phu thuoc YoutubeBOTUpload-master/BaseSource.AppUI trong workspace hay runtime.
+- Neu can doi chieu hanh vi, uu tien ackend/app/templates, ackend/app/static, ackend/app/store.py va bo docs parity hien tai.
