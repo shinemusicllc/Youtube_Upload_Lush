@@ -662,29 +662,13 @@
     }
 
     .channel-row-meta-link {
-      color: inherit;
+      color: rgb(22 163 74);
+      font-weight: 600;
       transition: color 120ms ease;
     }
 
     .channel-row-meta-link:hover {
-      color: rgb(93 103 223);
-    }
-
-    .channel-row-worker-note {
-      display: inline-flex;
-      align-items: center;
-      max-width: 100%;
-      padding: 1px 6px;
-      border-radius: 999px;
-      border: 1px solid rgba(254, 205, 211, 0.96);
-      background: rgba(255, 241, 242, 0.96);
-      color: rgb(225 29 72);
-      font-size: 9px;
-      font-weight: 600;
-      line-height: 1.2;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      color: rgb(21 128 61);
     }
 
     .channel-row-action {
@@ -730,6 +714,39 @@
       visibility: visible;
       pointer-events: auto;
       transform: translateX(0);
+    }
+
+    .my-channel-scroll {
+      flex: 1 1 auto;
+      min-height: 0;
+      max-height: 328px;
+      overflow-y: auto;
+      padding-right: 4px;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(148, 163, 184, 0.75) transparent;
+    }
+
+    .my-channel-scroll::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .my-channel-scroll::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .my-channel-scroll::-webkit-scrollbar-thumb {
+      background: rgba(148, 163, 184, 0.75);
+      border-radius: 999px;
+    }
+
+    .my-channel-scroll::-webkit-scrollbar-thumb:hover {
+      background: rgba(100, 116, 139, 0.88);
+    }
+
+    @media (max-width: 1279px) {
+      .my-channel-scroll {
+        max-height: 296px;
+      }
     }
 
     .job-preview-media {
@@ -1115,7 +1132,7 @@
                 <button id="connectYouTubeButton" type="button" class="shrink-0 -mr-1 px-2.5 py-1.5 text-[12px] font-semibold text-brand-600 hover:text-brand-700 hover:bg-brand-50 rounded-lg transition-all">+ Th&#234;m K&#234;nh</button>
               </div>
 
-              <div class="space-y-3 flex-1 overflow-y-auto pr-1">
+              <div class="my-channel-scroll space-y-3">
                 {% for channel in dashboard.connected_channels %}
                 <div class="channel-row group flex items-center gap-3 p-2.5 border-l-2 border-y border-r border-slate-200/70 rounded-xl bg-white min-w-0 transition-all cursor-pointer" data-channel-id="{{ channel.id | e }}">
                   <a href="{{ channel.public_url | e }}" target="_blank" rel="noopener noreferrer" class="channel-avatar-shell focus:outline-none">
@@ -1133,15 +1150,11 @@
                     </div>
                     <div class="flex min-w-0 items-center gap-2 text-[10px] text-slate-500 font-mono">
                       <a href="{{ channel.public_url | e }}" target="_blank" rel="noopener noreferrer" class="channel-row-meta-link truncate">{{ channel.channel_id | e }}</a>
-                      {% if channel.worker_label %}
-                      <span class="text-slate-300">|</span>
-                      <span class="channel-row-worker-note">{{ channel.worker_label | e }}</span>
-                      {% endif %}
                     </div>
                   </div>
                   <div class="channel-row-action">
                     <div class="channel-status flex items-center justify-end gap-1.5 text-[10px] font-semibold text-emerald-700 whitespace-nowrap transition-opacity">
-                      <i data-lucide="badge-check" class="w-3.5 h-3.5"></i>
+                      <i data-lucide="circle-check" class="w-3.5 h-3.5"></i>
                       <span class="truncate">&#272;&#227; k&#7871;t n&#7889;i</span>
                     </div>
                     <button type="button" data-channel-action="delete" data-channel-id="{{ channel.id | e }}" data-channel-title="{{ channel.title | e }}" class="channel-remove absolute inset-y-0 right-0 inline-flex items-center gap-1.5 text-[11px] font-semibold text-rose-600 hover:text-rose-700 opacity-0 pointer-events-none transition-opacity" title="X&#243;a k&#234;nh">
@@ -1257,6 +1270,19 @@
                     </div>
                   </td>
                   <td class="progress-cell px-6 py-4">
+                    {% if job.progress_mode == 'download' %}
+                    <div class="w-[92px] mx-auto flex flex-col justify-start pt-[6px]">
+                        <div>
+                            <div class="flex items-center justify-between gap-2 text-[9px] font-mono font-semibold uppercase tracking-[0.08em] text-sky-700">
+                                <span>Download</span>
+                                <span>{{ job.download_progress }}%</span>
+                            </div>
+                            <div class="mt-0.5 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                                <div class="h-full bg-sky-500" style="width: {{ job.download_progress }}%;"></div>
+                            </div>
+                        </div>
+                    </div>
+                    {% else %}
                     <div class="w-[92px] mx-auto flex flex-col justify-start gap-1 pt-0">
                         <div style="margin-top: 6px;">
                             <div class="flex items-center justify-between gap-2 text-[9px] font-mono font-semibold uppercase tracking-[0.08em] text-emerald-700">
@@ -1277,8 +1303,12 @@
                             </div>
                         </div>
                     </div>
+                    {% endif %}
                   </td>
                   <td class="px-6 py-4 text-[10px] text-slate-500 font-mono leading-relaxed">
+                    {% if job.scheduled_wait_at %}
+                    <p class="truncate"><span class="text-amber-600">Hẹn:</span> <span class="font-semibold text-amber-700">{{ job.scheduled_wait_at | e }}</span></p>
+                    {% endif %}
                     <p class="truncate"><span class="text-slate-500">T&#7841;o:</span> <span class="text-slate-700">{{ job.created_at | e }}</span></p>
                     <p class="truncate mt-0.5"><span class="text-slate-500">Render:</span> <span class="text-slate-700">{{ job.render_at | e }}</span></p>
                     <p class="truncate mt-0.5"><span class="text-slate-500">Upload:</span> <span class="text-slate-700">{{ job.uploaded_at | e }}</span></p>
@@ -1329,6 +1359,6 @@
   </main>
   <script id="dashboard-seed" type="application/json">{{ dashboard | tojson }}</script>
 
-  <script src="/static/js/user_dashboard.js?v=20260327-delete-scroll-fix"></script>
+  <script src="/static/js/user_dashboard.js?v=20260329-scheduled-timeline-only"></script>
 </body>
 </html>

@@ -15,6 +15,20 @@
   let liveRefreshHandle = null;
   let liveRefreshInFlight = false;
   let lastLivePayloadSignature = "";
+  const renderCopy = {
+    openYoutube: "\u004d\u1edf YouTube",
+    edit: "S\u1eeda",
+    cancel: "H\u1ee7y",
+    delete: "X\u00f3a",
+    created: "T\u1ea1o:",
+    noSearchResults: "Kh\u00f4ng t\u00ecm th\u1ea5y job n\u00e0o ph\u00f9 h\u1ee3p",
+    emptyQueue: "Ch\u01b0a c\u00f3 job n\u00e0o trong h\u00e0ng \u0111\u1ee3i",
+    emptyPage: "Kh\u00f4ng c\u00f3 job n\u00e0o trong trang n\u00e0y",
+    noJobsToDelete: "Kh\u00f4ng c\u00f3 job n\u00e0o \u0111\u1ec3 x\u00f3a tr\u00ean trang n\u00e0y",
+    deleteVisible: (count) => `X\u00f3a nhanh ${count} job \u0111ang hi\u1ec3n th\u1ecb`,
+    summary: (from, to, total) => `Hi\u1ec3n th\u1ecb ${from} \u0111\u1ebfn ${to} trong s\u1ed1 ${total} k\u1ebft qu\u1ea3`,
+    reloadError: "Kh\u00f4ng th\u1ec3 t\u1ea3i l\u1ea1i danh s\u00e1ch job.",
+  };
 
   const escapeHtml = (value) =>
     String(value ?? "")
@@ -76,11 +90,14 @@
 
   const getRenderSortValue = (job, key) => {
     if (key === "stt") return Number(job.index) || 0;
-    if (key === "job") return `${job.title || ""} ${job.job_id || ""} ${job.description || ""}`.trim().toLowerCase();
+    if (key === "job") return `${job.title || ""} ${job.job_id || ""} ${job.description || ""} ${job.scheduled_wait_at || ""}`.trim().toLowerCase();
     if (key === "channel") return String(job.channel_name || "").toLowerCase();
     if (key === "vps") return String(job.bot || "").toLowerCase();
-    if (key === "progress") return (Number(job.render_progress) || 0) * 1000 + (Number(job.upload_progress) || 0);
-    if (key === "timeline") return `${job.created_at || ""} ${job.render_at || ""} ${job.uploaded_at || ""}`.toLowerCase();
+    if (key === "progress") {
+      if (job.progress_mode === "download") return Number(job.download_progress) || 0;
+      return 1000 + ((Number(job.render_progress) || 0) * 1000) + (Number(job.upload_progress) || 0);
+    }
+    if (key === "timeline") return `${job.scheduled_wait_at || ""} ${job.created_at || ""} ${job.render_at || ""} ${job.uploaded_at || ""}`.toLowerCase();
     if (key === "status") return String(job.status || "").toLowerCase();
     return "";
   };
@@ -195,10 +212,17 @@
     const scheduleInput = document.getElementById("scheduleAt");
     if (!(scheduleInput instanceof HTMLInputElement)) return;
 
+    const hasInputValue = () => scheduleInput.value.trim().length > 0;
+
     const setPickerToClientNow = (instance) => {
       const now = new Date();
       instance.setDate(now, true);
       instance.jumpToDate(now);
+    };
+
+    const ensurePickerSeedValue = (instance) => {
+      if (hasInputValue() || instance.selectedDates.length) return;
+      setPickerToClientNow(instance);
     };
 
     const picker = window.flatpickr(scheduleInput, {
@@ -210,13 +234,13 @@
       locale: window.flatpickr.l10ns.vn || window.flatpickr.l10ns.default,
       onOpen: [
         (_selectedDates, _dateStr, instance) => {
-          setPickerToClientNow(instance);
+          ensurePickerSeedValue(instance);
         },
       ],
     });
 
     const syncScheduleInputToClientNow = () => {
-      setPickerToClientNow(picker);
+      ensurePickerSeedValue(picker);
     };
 
     scheduleInput.addEventListener("focus", syncScheduleInputToClientNow);
@@ -225,10 +249,15 @@
     scheduleInput.addEventListener("keydown", (event) => {
       if (event.key !== "Enter" || !picker.isOpen) return;
       event.preventDefault();
-      if (!picker.selectedDates.length) {
-        setPickerToClientNow(picker);
-      } else {
+      const typedDate = hasInputValue()
+        ? window.flatpickr.parseDate(scheduleInput.value.trim(), picker.config.dateFormat)
+        : null;
+      if (typedDate instanceof Date && !Number.isNaN(typedDate.getTime())) {
+        picker.setDate(typedDate, true);
+      } else if (picker.selectedDates.length) {
         picker.setDate(picker.selectedDates[0], true);
+      } else {
+        setPickerToClientNow(picker);
       }
       picker.close();
       scheduleInput.blur();
@@ -316,6 +345,69 @@
     </div>
   `;
 
+  const renderJobProgressMarkup = (job) => {
+    if (job.progress_mode === "download") {
+      return `
+        <div class="w-[92px] mx-auto flex flex-col justify-start pt-[6px]">
+          <div>
+            <div class="flex items-center justify-between gap-2 text-[9px] font-mono font-semibold uppercase tracking-[0.08em] text-sky-700">
+              <span>Download</span>
+              <span>${escapeHtml(job.download_progress)}%</span>
+            </div>
+            <div class="mt-0.5 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+              <div class="h-full bg-sky-500" style="width: ${Number(job.download_progress) || 0}%;"></div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="w-[92px] mx-auto flex flex-col justify-start gap-1 pt-0">
+        <div style="margin-top: 6px;">
+          <div class="flex items-center justify-between gap-2 text-[9px] font-mono font-semibold uppercase tracking-[0.08em] text-emerald-700">
+            <span>Render</span>
+            <span>${escapeHtml(job.render_progress)}%</span>
+          </div>
+          <div class="mt-0.5 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+            <div class="h-full bg-emerald-500" style="width: ${Number(job.render_progress) || 0}%;"></div>
+          </div>
+        </div>
+        <div style="margin-top: 1px;">
+          <div class="flex items-center justify-between gap-2 text-[9px] font-mono font-semibold uppercase tracking-[0.08em] text-amber-700">
+            <span>Upload</span>
+            <span>${escapeHtml(job.upload_progress)}%</span>
+          </div>
+          <div class="mt-0.5 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+            <div class="h-full bg-amber-500" style="width: ${Number(job.upload_progress) || 0}%;"></div>
+          </div>
+        </div>
+      </div>
+    `;
+  };
+
+  const renderJobActionsRuntimeMarkup = (job) => `
+    <div class="flex flex-nowrap items-center justify-end gap-2 whitespace-nowrap">
+      ${job.youtube_watch_url ? `
+        <a href="${escapeHtml(job.youtube_watch_url)}" target="_blank" rel="noopener noreferrer" class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-sky-700 bg-sky-50 border border-sky-200 rounded-lg hover:bg-sky-100 hover:text-sky-800 hover:shadow-sm transition-all" title="${renderCopy.openYoutube}">
+          <i data-lucide="external-link" class="w-3 h-3"></i> Xem
+        </a>
+      ` : ""}
+      <button type="button" class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 rounded-lg hover:bg-emerald-100 hover:text-emerald-900 hover:shadow-sm transition-all" title="${renderCopy.edit}"><i data-lucide="edit-2" class="w-3 h-3"></i> ${renderCopy.edit}</button>
+      ${job.can_cancel ? `
+        <button type="button" data-job-action="cancel" data-job-id="${escapeHtml(job.id)}" class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 hover:text-amber-800 hover:shadow-sm transition-all" title="${renderCopy.cancel}"><i data-lucide="x-circle" class="w-3 h-3"></i> ${renderCopy.cancel}</button>
+      ` : ""}
+      <button type="button" data-job-action="delete" data-job-id="${escapeHtml(job.id)}" class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 hover:text-rose-800 hover:shadow-sm transition-all" title="${renderCopy.delete}"><i data-lucide="trash" class="w-3 h-3"></i> ${renderCopy.delete}</button>
+    </div>
+  `;
+
+  const renderJobTimelineMarkup = (job) => `
+    ${job.scheduled_wait_at ? `<p class="truncate"><span class="text-amber-600">Hẹn:</span> <span class="font-semibold text-amber-700">${escapeHtml(job.scheduled_wait_at)}</span></p>` : ""}
+    <p class="truncate${job.scheduled_wait_at ? " mt-0.5" : ""}"><span class="text-slate-500">${renderCopy.created}</span> <span class="text-slate-700">${escapeHtml(job.created_at)}</span></p>
+    <p class="truncate mt-0.5"><span class="text-slate-500">Render:</span> <span class="text-slate-700">${escapeHtml(job.render_at)}</span></p>
+    <p class="truncate mt-0.5"><span class="text-slate-500">Upload:</span> <span class="text-slate-700">${escapeHtml(job.uploaded_at)}</span></p>
+  `;
+
   const renderJobRowMarkup = (job) => `
     <tr class="hover:bg-slate-50 transition-colors group" data-job-id="${escapeHtml(job.id)}">
       <td class="px-6 py-5 text-left font-mono text-[13px] text-slate-500">${escapeHtml(job.index)}</td>
@@ -346,37 +438,16 @@
         </div>
       </td>
       <td class="progress-cell px-6 py-4">
-        <div class="w-[92px] mx-auto flex flex-col justify-start gap-1 pt-0">
-          <div style="margin-top: 6px;">
-            <div class="flex items-center justify-between gap-2 text-[9px] font-mono font-semibold uppercase tracking-[0.08em] text-emerald-700">
-              <span>Render</span>
-              <span>${escapeHtml(job.render_progress)}%</span>
-            </div>
-            <div class="mt-0.5 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-              <div class="h-full bg-emerald-500" style="width: ${Number(job.render_progress) || 0}%;"></div>
-            </div>
-          </div>
-          <div style="margin-top: 1px;">
-            <div class="flex items-center justify-between gap-2 text-[9px] font-mono font-semibold uppercase tracking-[0.08em] text-amber-700">
-              <span>Upload</span>
-              <span>${escapeHtml(job.upload_progress)}%</span>
-            </div>
-            <div class="mt-0.5 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-              <div class="h-full bg-amber-500" style="width: ${Number(job.upload_progress) || 0}%;"></div>
-            </div>
-          </div>
-        </div>
+        ${renderJobProgressMarkup(job)}
       </td>
       <td class="px-6 py-4 text-[10px] text-slate-500 font-mono leading-relaxed">
-        <p class="truncate"><span class="text-slate-500">Tạo:</span> <span class="text-slate-700">${escapeHtml(job.created_at)}</span></p>
-        <p class="truncate mt-0.5"><span class="text-slate-500">Render:</span> <span class="text-slate-700">${escapeHtml(job.render_at)}</span></p>
-        <p class="truncate mt-0.5"><span class="text-slate-500">Upload:</span> <span class="text-slate-700">${escapeHtml(job.uploaded_at)}</span></p>
+        ${renderJobTimelineMarkup(job)}
       </td>
       <td class="px-6 py-4">
         <span class="inline-flex justify-center items-center px-2.5 py-1 ${escapeHtml(job.status_class)} text-[10px] font-bold border rounded-full whitespace-nowrap">${escapeHtml(job.status)}</span>
       </td>
       <td class="px-6 py-4 text-right">
-        ${renderJobActionsMarkup(job)}
+        ${renderJobActionsRuntimeMarkup(job)}
       </td>
     </tr>
   `;
@@ -386,6 +457,63 @@
       <td colspan="8" class="px-6 py-10 text-center text-[13px] text-slate-500">${escapeHtml(message)}</td>
     </tr>
   `;
+
+  const getRenderEmptyStateMessage = (hasFilteredJobs, hasQuery) => {
+    if (hasFilteredJobs) return renderCopy.emptyPage;
+    return hasQuery ? renderCopy.noSearchResults : renderCopy.emptyQueue;
+  };
+
+  const updateRenderSummaryRuntime = (start, visibleCount, totalCount) => {
+    if (!renderSummaryNode) return;
+    if (totalCount <= 0) {
+      renderSummaryNode.textContent = renderSearchInput?.value.trim() ? renderCopy.noSearchResults : renderCopy.emptyQueue;
+      return;
+    }
+    const from = start + 1;
+    const to = start + visibleCount;
+    renderSummaryNode.textContent = renderCopy.summary(from, to, totalCount);
+  };
+
+  const updateDeleteVisibleJobsButtonRuntime = (pageJobs, totalCount) => {
+    if (!(deleteVisibleJobsButton instanceof HTMLButtonElement)) return;
+    const disabled = !pageJobs.length;
+    deleteVisibleJobsButton.disabled = disabled;
+    deleteVisibleJobsButton.dataset.visibleCount = String(pageJobs.length);
+    deleteVisibleJobsButton.title = disabled ? renderCopy.noJobsToDelete : renderCopy.deleteVisible(pageJobs.length);
+    deleteVisibleJobsButton.classList.toggle("opacity-80", totalCount > 0 && !pageJobs.length);
+  };
+
+  const syncRenderedTableMarkup = () => {
+    if (!renderTableBody) return;
+    const jobsById = new Map(
+      (Array.isArray(renderJobsState) ? renderJobsState : []).map((job) => [String(job.id || ""), job])
+    );
+
+    renderTableBody.querySelectorAll("tr[data-job-id]").forEach((row) => {
+      if (!(row instanceof HTMLTableRowElement)) return;
+      const jobId = row.dataset.jobId || "";
+      const job = jobsById.get(jobId);
+      if (!job) return;
+
+      const progressCell = row.querySelector("td.progress-cell");
+      if (progressCell instanceof HTMLTableCellElement) {
+        progressCell.className = "progress-cell px-6 py-4";
+        progressCell.innerHTML = renderJobProgressMarkup(job);
+      }
+
+      const timelineCell = row.children[5];
+      if (timelineCell instanceof HTMLTableCellElement) {
+        timelineCell.className = "px-6 py-4 text-[10px] text-slate-500 font-mono leading-relaxed";
+        timelineCell.innerHTML = renderJobTimelineMarkup(job);
+      }
+
+      const actionCell = row.children[7];
+      if (actionCell instanceof HTMLTableCellElement) {
+        actionCell.className = "px-6 py-4 text-right";
+        actionCell.innerHTML = renderJobActionsRuntimeMarkup(job);
+      }
+    });
+  };
 
   const getFilteredRenderJobs = () => {
     const query = renderSearchInput ? renderSearchInput.value.trim().toLowerCase() : "";
@@ -397,6 +525,7 @@
           job.title,
           job.job_id,
           job.description,
+          job.scheduled_wait_at,
           job.channel_name,
           job.bot,
           job.bot_meta,
@@ -526,9 +655,7 @@
 
     const { filteredJobs, totalPages, start, pageJobs } = getVisibleRenderPageJobs();
     if (!pageJobs.length) {
-      renderTableBody.innerHTML = renderEmptyRowMarkup(
-        filteredJobs.length ? "Khong co job nao trong trang nay" : renderSearchInput?.value.trim() ? "Khong tim thay job nao phu hop" : "Chua co job nao trong hang doi"
-      );
+      renderTableBody.innerHTML = renderEmptyRowMarkup(getRenderEmptyStateMessage(filteredJobs.length > 0, Boolean(renderSearchInput?.value.trim())));
     } else {
       renderTableBody.innerHTML = pageJobs
         .map((job, index) =>
@@ -540,9 +667,10 @@
         .join("");
     }
 
-    updateRenderSummary(start, pageJobs.length, filteredJobs.length);
+    updateRenderSummaryRuntime(start, pageJobs.length, filteredJobs.length);
     renderPaginationControls(renderPaginationState.page, totalPages);
-    updateDeleteVisibleJobsButton(pageJobs, filteredJobs.length);
+    updateDeleteVisibleJobsButtonRuntime(pageJobs, filteredJobs.length);
+    syncRenderedTableMarkup();
     initJobActions();
     initJobPreviewVideos();
     if (window.lucide) window.lucide.createIcons();
@@ -597,17 +725,33 @@
       render_jobs: Array.isArray(payload.render_jobs)
         ? payload.render_jobs.map((job) => [
             job.id,
+            job.kind,
+            job.title,
+            job.job_id,
+            job.meta,
+            job.description,
+            job.scheduled_waiting,
+            job.scheduled_wait_at,
             job.status,
             job.status_class,
+            job.progress_mode,
+            job.download_progress,
             job.render_progress,
             job.upload_progress,
             job.created_at,
             job.render_at,
             job.uploaded_at,
+            job.channel_name,
             job.queue_label,
             job.bot,
+            job.bot_meta,
             job.owner,
             job.preview_url,
+            job.preview_kind,
+            job.preview_text,
+            job.icon,
+            job.icon_class,
+            job.channel_avatar,
             job.channel_avatar_url,
             job.youtube_watch_url,
             job.can_cancel,
@@ -644,7 +788,7 @@
       headers: { Accept: "application/json", "Cache-Control": "no-cache" },
     });
     if (!response.ok) {
-      throw new Error("Khong the tai lai danh sach job.");
+      throw new Error(renderCopy.reloadError);
     }
     const payload = await response.json();
     lastLivePayloadSignature = buildLivePayloadSignature(payload);

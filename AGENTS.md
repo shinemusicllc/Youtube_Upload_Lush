@@ -13,18 +13,19 @@
 ### Coding conventions
 - UI task bat buoc theo huong `uncodixfy`: phang, it radius, it nested cards, uu tien border/divider ro rang.
 - Backend uu tien FastAPI router mong, schema ro rang, khong nhot business logic vao route handler.
-- Muc tieu hien tai la rebuild sach tu giao dien co san (`final_user_ui.html`) thay vi tiep tuc React cu.
+- Muc tieu hien tai la rebuild sach tu giao dien co san (`BaseSource.AppUI` + `final_user_ui.html`) thay vi tiep tuc React cu.
 
 ### Module Boundaries
 - `backend/`: FastAPI, templates, static assets, API routers, seed/store prototype.
 - `frontend/`: chi giu lai neu can tai su dung asset/build tooling; khong xem la source chinh cua UI moi.
 - `workers/`: worker agent Python, logic heartbeat/claim/render trong tuong lai; khong nhot vao `backend/`.
 - `infra/`: Docker, reverse proxy, systemd va deploy artifact; khong dat business logic vao day.
+- `YoutubeBOTUpload-master/`: repo .NET cu, chi dung lam nguon tham chieu UI/domain.
 
 ### Debug Workflow
 - Neu loi template/static: kiem tra `backend/app/templates`, `backend/app/static`, route web.
 - Neu loi API/domain: kiem tra `backend/app/routers`, `backend/app/schemas`, `backend/app/store`.
-- Neu loi template/static: uu tien doi chieu `backend/app/templates`, `backend/app/static`, va `final_user_ui.html`.
+- Neu can doi chieu flow cu: doc lai `YoutubeBOTUpload-master/BaseSource.AppUI` va service/domain trong repo cu.
 
 ### Safety Rules
 - Khong sua repo `.NET` cu khi chua co migration plan ro rang.

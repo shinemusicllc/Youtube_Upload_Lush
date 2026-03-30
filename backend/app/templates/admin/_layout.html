@@ -980,21 +980,22 @@
           lucide.createIcons();
         }
 
-        document.querySelectorAll('[data-dialog-open]').forEach(function (button) {
-          button.addEventListener('click', function () {
-            const dialog = document.getElementById(button.getAttribute('data-dialog-open'));
+        document.addEventListener('click', function (event) {
+          const openButton = event.target.closest('[data-dialog-open]');
+          if (openButton) {
+            const dialog = document.getElementById(openButton.getAttribute('data-dialog-open'));
             if (!dialog) return;
             dialog.showModal();
-          });
-        });
+            return;
+          }
 
-        document.querySelectorAll('[data-dialog-close]').forEach(function (button) {
-          button.addEventListener('click', function () {
-            const dialog = button.closest('dialog');
+          const closeButton = event.target.closest('[data-dialog-close]');
+          if (closeButton) {
+            const dialog = closeButton.closest('dialog');
             if (dialog) {
               dialog.close();
             }
-          });
+          }
         });
 
         document.querySelectorAll('[data-manager-picker]').forEach(function (picker) {
@@ -1272,7 +1273,7 @@
         location.reload();
       }
     </script>
-    <script defer src="{{ request.url_for('static', path='js/admin_tables.js') }}?v=20260327-admin-delete-scroll-fix"></script>
+    <script defer src="{{ request.url_for('static', path='js/admin_tables.js') }}?v=20260329-admin-bot-live"></script>
     {% block page_scripts %}{% endblock %}
 </body>
 </html>

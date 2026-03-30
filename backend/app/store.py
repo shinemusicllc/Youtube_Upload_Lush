@@ -831,6 +831,13 @@ class AppStore:
             if asset.source_mode == "local" and str(asset.asset_id or "").strip()
         }
 
+    def _job_local_asset_file_names(self, job: RenderJobRecord) -> set[str]:
+        return {
+            str(asset.file_name).strip()
+            for asset in job.assets
+            if asset.source_mode == "local" and str(asset.file_name or "").strip()
+        }
+
     def _is_asset_referenced_by_other_job(self, asset_id: str, *, exclude_job_id: str | None = None) -> bool:
         normalized = asset_id.strip()
         if not normalized:
@@ -839,6 +846,17 @@ class AppStore:
             if exclude_job_id and job.id == exclude_job_id:
                 continue
             if normalized in self._job_uploaded_asset_ids(job):
+                return True
+        return False
+
+    def _is_local_file_referenced_by_other_job(self, file_name: str, *, exclude_job_id: str | None = None) -> bool:
+        normalized = file_name.strip()
+        if not normalized:
+            return False
+        for job in self.jobs:
+            if exclude_job_id and job.id == exclude_job_id:
+                continue
+            if normalized in self._job_local_asset_file_names(job):
                 return True
         return False
 
@@ -856,21 +874,44 @@ class AppStore:
             for asset_id in self._job_uploaded_asset_ids(job)
             if not self._is_asset_referenced_by_other_job(asset_id, exclude_job_id=exclude_job_id)
         }
-        if not removable_asset_ids:
+        removable_file_names = {
+            file_name
+            for file_name in self._job_local_asset_file_names(job)
+            if not self._is_local_file_referenced_by_other_job(file_name, exclude_job_id=exclude_job_id)
+        }
+        if not removable_asset_ids and not removable_file_names:
             return False
 
         changed = False
         keep_sessions: list[UploadSessionRecord] = []
+        removed_file_names: set[str] = set()
         for session in self.upload_sessions:
             asset_id = str(session.asset_id or "").strip()
-            if asset_id and asset_id in removable_asset_ids:
+            stored_file_name = str(session.stored_file_name or "").strip()
+            temp_path_name = Path(str(session.temp_path or "").strip()).name
+            if (
+                (asset_id and asset_id in removable_asset_ids)
+                or (stored_file_name and stored_file_name in removable_file_names)
+                or (temp_path_name and temp_path_name in removable_file_names)
+            ):
                 self._remove_upload_session_file(session)
+                if stored_file_name:
+                    removed_file_names.add(stored_file_name)
+                if temp_path_name:
+                    removed_file_names.add(temp_path_name)
                 changed = True
                 continue
             keep_sessions.append(session)
 
         if changed:
             self.upload_sessions = keep_sessions
+        for file_name in removable_file_names:
+            if file_name in removed_file_names:
+                continue
+            file_path = self.upload_asset_dir / file_name
+            if file_path.exists():
+                file_path.unlink(missing_ok=True)
+                changed = True
         return changed
 
     def _purge_job_artifacts(self, job: RenderJobRecord, *, exclude_job_id: str | None = None) -> None:
@@ -963,22 +1004,27 @@ class AppStore:
         }
 
     @staticmethod
-    def _job_user_progress_view(job: RenderJobRecord) -> dict[str, int]:
+    def _job_user_progress_view(job: RenderJobRecord) -> dict[str, int | str]:
+        download_progress = 0
         render_progress = 0
         upload_progress = 0
 
-        if job.status == "rendering":
+        if job.status == "downloading":
+            download_progress = min(max(job.progress, 0), 100)
+        elif job.status == "rendering":
+            download_progress = 100
             render_progress = job.progress
         elif job.status in {"uploading", "completed"}:
+            download_progress = 100
             render_progress = 100
         elif job.status in {"error", "cancelled"}:
             if job.upload_started_at or AppStore._is_youtube_watch_url(job.output_url):
+                download_progress = 100
                 render_progress = 100
                 upload_progress = min(max(job.progress, 0), 100)
             else:
+                download_progress = 100 if job.started_at or job.claimed_at or job.completed_at else min(max(job.progress, 0), 100)
                 render_progress = min(max(job.progress, 0), 100)
-        elif job.status == "downloading":
-            render_progress = 0
 
         if job.status == "uploading":
             upload_progress = job.progress
@@ -986,6 +1032,8 @@ class AppStore:
             upload_progress = 100
 
         return {
+            "mode": "download" if job.status == "downloading" else "pipeline",
+            "download": min(max(download_progress, 0), 100),
             "render": min(max(render_progress, 0), 100),
             "upload": min(max(upload_progress, 0), 100),
         }
@@ -1150,7 +1198,14 @@ class AppStore:
         worker.disk_total_gb = payload.disk_total_gb or worker.disk_total_gb
         worker.threads = payload.threads
         worker.last_seen_at = now
-        self._refresh_worker_job_leases(worker.id, now)
+        if payload.active_job_ids is None:
+            self._refresh_worker_job_leases(worker.id, now)
+        else:
+            self._reconcile_worker_jobs_from_heartbeat(
+                worker,
+                active_job_ids=payload.active_job_ids,
+                now=now,
+            )
         if self._count_worker_running_jobs(worker) > 0:
             worker.status = "busy"
         else:
@@ -1202,6 +1257,15 @@ class AppStore:
                 return job
         raise KeyError(job_id)
 
+    @staticmethod
+    def _ensure_worker_job_can_continue(job: RenderJobRecord) -> None:
+        if job.status == "cancelled":
+            raise ValueError("Job da bi huy tren control plane.")
+        if job.status == "completed":
+            raise ValueError("Job da hoan tat tren control plane.")
+        if job.status == "error":
+            raise ValueError("Job da dung voi trang thai loi tren control plane.")
+
     def update_worker_job_progress(
         self,
         *,
@@ -1214,6 +1278,7 @@ class AppStore:
     ) -> RenderJobRecord:
         worker = self._authenticate_worker(worker_id, shared_secret)
         job = self._find_claimed_job(job_id, worker_id)
+        self._ensure_worker_job_can_continue(job)
         now = self._now()
 
         job.claimed_by_worker_id = worker_id
@@ -1244,6 +1309,7 @@ class AppStore:
     ) -> RenderJobRecord:
         worker = self._authenticate_worker(worker_id, shared_secret)
         job = self._find_claimed_job(job_id, worker_id)
+        self._ensure_worker_job_can_continue(job)
         now = self._now()
 
         job.status = "completed"
@@ -1525,14 +1591,14 @@ class AppStore:
 
     def _user_worker_count(self, user: UserSummary) -> int:
         if user.role == "manager":
-            return len([worker for worker in self.workers if worker.manager_name == user.username])
+            return len([worker for worker in self.workers if worker.manager_id == user.id])
         if user.role == "admin":
             return len(self.workers)
         return len([link for link in self.user_worker_links if link["user_id"] == user.id])
 
     def _user_channel_count(self, user: UserSummary) -> int:
         if user.role == "manager":
-            return len([channel for channel in self.channels if channel.manager_name == user.username])
+            return len([channel for channel in self.channels if self._resolve_channel_manager_id(channel) == user.id])
         if user.role == "admin":
             return len(self.channels)
         return len([link for link in self.channel_user_links if link["user_id"] == user.id])
@@ -1558,6 +1624,217 @@ class AppStore:
             if job.id == job_id:
                 return job
         raise KeyError(job_id)
+
+    def _find_channel_optional(self, channel_id: str | None) -> ChannelRecord | None:
+        if not channel_id:
+            return None
+        try:
+            return self._find_channel(channel_id)
+        except KeyError:
+            return None
+
+    def _find_worker_optional(self, worker_id: str | None) -> WorkerRecord | None:
+        if not worker_id:
+            return None
+        try:
+            return self._find_worker(worker_id)
+        except KeyError:
+            return None
+
+    def _manager_username_to_id_map(self) -> dict[str, str]:
+        return {
+            user.username: user.id
+            for user in self.users
+            if user.role == "manager"
+        }
+
+    def _manager_username_from_id(self, manager_id: str | None) -> str | None:
+        if not manager_id:
+            return None
+        try:
+            user = self._find_user(manager_id)
+        except KeyError:
+            return None
+        return user.username if user.role == "manager" else None
+
+    def _resolve_channel_manager_id(self, channel: ChannelRecord) -> str | None:
+        worker = self._find_worker_optional(channel.worker_id)
+        if worker and worker.manager_id:
+            return worker.manager_id
+        manager_name = str(channel.manager_name or "").strip()
+        if not manager_name:
+            return None
+        return self._manager_username_to_id_map().get(manager_name)
+
+    def _resolve_channel_manager_name(self, channel: ChannelRecord) -> str:
+        manager_name = self._manager_username_from_id(self._resolve_channel_manager_id(channel))
+        if manager_name:
+            return manager_name
+        worker = self._find_worker_optional(channel.worker_id)
+        if worker and worker.manager_name:
+            return worker.manager_name
+        return str(channel.manager_name or "-")
+
+    def _resolve_job_manager_id(self, job: RenderJobRecord) -> str | None:
+        username_to_id = self._manager_username_to_id_map()
+        channel = self._find_channel_optional(job.channel_id)
+        if channel:
+            manager_id = self._resolve_channel_manager_id(channel)
+            if manager_id:
+                return manager_id
+
+        worker = self._find_worker_optional(job.claimed_by_worker_id or job.worker_name)
+        if worker and worker.manager_id:
+            return worker.manager_id
+
+        return username_to_id.get(str(job.manager_name or "").strip() or "")
+
+    def _resolve_job_manager_name(self, job: RenderJobRecord) -> str:
+        manager_name = self._manager_username_from_id(self._resolve_job_manager_id(job))
+        if manager_name:
+            return manager_name
+
+        channel = self._find_channel_optional(job.channel_id)
+        if channel:
+            return self._resolve_channel_manager_name(channel)
+
+        worker = self._find_worker_optional(job.claimed_by_worker_id or job.worker_name)
+        if worker and worker.manager_name:
+            return worker.manager_name
+
+        return str(job.manager_name or "-")
+
+    @staticmethod
+    def _normalize_text(value: str | None) -> str:
+        return re.sub(r"\s+", " ", str(value or "").strip()).casefold()
+
+    @classmethod
+    def _parse_google_datetime(cls, value: str | None) -> datetime | None:
+        cleaned = str(value or "").strip()
+        if not cleaned:
+            return None
+        try:
+            parsed = datetime.fromisoformat(cleaned.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return cls._normalize_datetime(parsed)
+
+    def _exchange_channel_refresh_token(self, channel: ChannelRecord) -> str:
+        refresh_token = str(channel.oauth_refresh_token or "").strip()
+        client_id = str(os.getenv("GOOGLE_CLIENT_ID", "")).strip()
+        client_secret = str(os.getenv("GOOGLE_CLIENT_SECRET", "")).strip()
+        if not refresh_token:
+            raise ValueError("Kênh chưa có refresh token OAuth thật.")
+        if not client_id or not client_secret:
+            raise ValueError("Thiếu GOOGLE_CLIENT_ID hoặc GOOGLE_CLIENT_SECRET trên control plane.")
+        token_payload = self._post_form_json(
+            "https://oauth2.googleapis.com/token",
+            {
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "refresh_token": refresh_token,
+                "grant_type": "refresh_token",
+            },
+        )
+        access_token = str(token_payload.get("access_token") or "").strip()
+        if not access_token:
+            raise ValueError("Google không trả về access_token khi refresh token.")
+        return access_token
+
+    def _recover_uploaded_watch_url(self, job: RenderJobRecord) -> str | None:
+        channel = self._find_channel_optional(job.channel_id)
+        if not channel:
+            return None
+        try:
+            access_token = self._exchange_channel_refresh_token(channel)
+            payload = self._get_json(
+                "https://www.googleapis.com/youtube/v3/search?"
+                + urlencode(
+                    {
+                        "part": "id,snippet",
+                        "forMine": "true",
+                        "type": "video",
+                        "order": "date",
+                        "maxResults": 10,
+                        "q": job.title,
+                    }
+                ),
+                access_token,
+            )
+        except ValueError:
+            return None
+
+        target_title = self._normalize_text(job.title)
+        expected_start = job.upload_started_at or job.completed_at or job.created_at
+        best_match: tuple[int, datetime, str] | None = None
+        for item in payload.get("items") or []:
+            snippet = item.get("snippet") or {}
+            video_id = str((item.get("id") or {}).get("videoId") or "").strip()
+            published_at = self._parse_google_datetime(snippet.get("publishedAt"))
+            candidate_title = self._normalize_text(snippet.get("title"))
+            if not video_id or not published_at or candidate_title != target_title:
+                continue
+            delta_seconds = abs(int((published_at - expected_start).total_seconds())) if expected_start else 0
+            candidate = (delta_seconds, published_at, f"https://www.youtube.com/watch?v={video_id}")
+            if best_match is None or candidate < best_match:
+                best_match = candidate
+        return best_match[2] if best_match else None
+
+    def _release_worker_job_claim(self, job: RenderJobRecord, *, reset_status: str = "pending", message: str | None = None) -> None:
+        job.status = reset_status  # type: ignore[assignment]
+        job.progress = 0 if reset_status == "pending" else job.progress
+        job.can_cancel = reset_status not in {"completed", "error"}
+        job.claimed_by_worker_id = None
+        job.claimed_at = None
+        job.lease_expires_at = None
+        job.download_started_at = None if reset_status == "pending" else job.download_started_at
+        job.upload_started_at = None if reset_status == "pending" else job.upload_started_at
+        if message:
+            job.error_message = message
+
+    def _complete_recovered_job(self, job: RenderJobRecord, *, output_url: str, completed_at: datetime | None = None) -> None:
+        finished_at = completed_at or self._now()
+        job.status = "completed"
+        job.progress = 100
+        job.completed_at = finished_at
+        job.can_cancel = False
+        job.output_url = output_url
+        job.error_message = None
+        job.lease_expires_at = None
+        if self._is_youtube_watch_url(output_url):
+            self._cleanup_uploaded_assets_for_job(job, exclude_job_id=job.id)
+
+    def _reconcile_worker_jobs_from_heartbeat(
+        self,
+        worker: WorkerRecord,
+        *,
+        active_job_ids: list[str],
+        now: datetime,
+    ) -> None:
+        active_job_id_set = {str(job_id).strip() for job_id in active_job_ids if str(job_id).strip()}
+        for job in self.jobs:
+            if job.claimed_by_worker_id != worker.id or job.status not in self._worker_active_job_statuses():
+                continue
+            if job.id in active_job_id_set:
+                job.lease_expires_at = now + timedelta(minutes=5)
+                continue
+            if job.status == "uploading":
+                recovered_watch_url = self._recover_uploaded_watch_url(job)
+                if recovered_watch_url:
+                    self._complete_recovered_job(job, output_url=recovered_watch_url)
+                    continue
+                job.status = "error"
+                job.completed_at = now
+                job.can_cancel = False
+                job.lease_expires_at = None
+                job.error_message = "Worker mất tracking ở pha upload; cần kiểm tra lại YouTube hoặc tạo lại job."
+                continue
+            self._release_worker_job_claim(
+                job,
+                reset_status="pending",
+                message="Job được đưa lại hàng chờ vì worker không còn báo đang xử lý.",
+            )
+        self._refresh_queue_positions()
 
     def _job_username(self, job: RenderJobRecord) -> str:
         user_ids = [link["user_id"] for link in self.channel_user_links if link["channel_id"] == job.channel_id]
@@ -1624,6 +1901,8 @@ class AppStore:
             preview = self._resolve_job_preview(job)
             status_view = self._job_user_status_view(job)
             progress_view = self._job_user_progress_view(job)
+            scheduled_waiting = bool(job.scheduled_at and job.status in {"pending", "queueing"} and job.scheduled_at > now)
+            scheduled_wait_at = self._format_compact_datetime(job.scheduled_at) if scheduled_waiting else ""
             worker_display_name = self._resolve_job_worker_display_name(job)
             bot_meta = job.worker_name if worker_display_name != (job.worker_name or "-") else (job.manager_name or "-")
             render_jobs.append(
@@ -1644,11 +1923,15 @@ class AppStore:
                     "bot_meta": bot_meta,
                     "owner": job.manager_name or "-",
                     "progress": f"{job.progress}%",
+                    "progress_mode": progress_view["mode"],
+                    "download_progress": progress_view["download"],
                     "render_progress": progress_view["render"],
                     "upload_progress": progress_view["upload"],
                     "created_at": self._format_datetime(job.created_at),
                     "render_at": status_view["render_at"],
                     "uploaded_at": status_view["upload_at"],
+                    "scheduled_waiting": scheduled_waiting,
+                    "scheduled_wait_at": scheduled_wait_at,
                     "status": status_view["label"],
                     "status_class": status_view["class"],
                     "progress_text_class": status_view["progress_text_class"],
@@ -2810,12 +3093,15 @@ class AppStore:
         user_id: str | None = None,
         bot_id: str | None = None,
     ) -> tuple[list[ChannelRecord], dict[str, Any] | None, dict[str, Any] | None]:
-        selected_manager_ids = self._selected_manager_ids(manager_ids)
-        manager_names = {self._find_user(manager_id).username for manager_id in selected_manager_ids} if selected_manager_ids else set()
+        selected_manager_ids = set(self._selected_manager_ids(manager_ids))
 
         channel_source = list(self.channels)
-        if manager_names:
-            channel_source = [channel for channel in channel_source if channel.manager_name in manager_names]
+        if selected_manager_ids:
+            channel_source = [
+                channel
+                for channel in channel_source
+                if self._resolve_channel_manager_id(channel) in selected_manager_ids
+            ]
 
         filtered_user: dict[str, Any] | None = None
         filtered_bot: dict[str, Any] | None = None
@@ -2838,6 +3124,7 @@ class AppStore:
         for index, channel in enumerate(channel_source, start=1):
             status_label, status_class = self._channel_status_badge(channel.status)
             worker = next((item for item in self.workers if item.id == channel.worker_id), None)
+            manager_name = self._resolve_channel_manager_name(channel)
             rows.append(
                 {
                     "index": index,
@@ -2847,11 +3134,11 @@ class AppStore:
                     "channel_id": channel.channel_id,
                     "channel_link": self._channel_link(channel),
                     "gmail": channel.oauth_email or "-",
-                    "manager_name": channel.manager_name,
+                    "manager_name": manager_name,
                     "users": self._channel_users(channel),
                     "worker_id": channel.worker_id,
                     "worker_name": self._resolve_channel_worker_display_name(channel),
-                    "group": (worker.group if worker and worker.group else channel.manager_name),
+                    "group": (worker.group if worker and worker.group else manager_name),
                     "status_label": status_label,
                     "status_class": status_class,
                     "created_at": self._format_full_datetime(channel.oauth_connected_at),
@@ -2901,9 +3188,17 @@ class AppStore:
     ) -> dict[str, Any]:
         user = self._find_user(user_id)
         if user.role == "user":
-            channel_source = [channel for channel in self.channels if channel.manager_name == user.manager_name]
+            channel_source = [
+                channel
+                for channel in self.channels
+                if self._resolve_channel_manager_id(channel) == user.manager_id
+            ]
         elif user.role == "manager":
-            channel_source = [channel for channel in self.channels if channel.manager_name == user.username]
+            channel_source = [
+                channel
+                for channel in self.channels
+                if self._resolve_channel_manager_id(channel) == user.id
+            ]
         else:
             channel_source = list(self.channels)
 
@@ -2958,7 +3253,7 @@ class AppStore:
         available_users = [
             {"id": user.id, "username": user.username}
             for user in self.users
-            if user.role == "user" and user.manager_name == channel.manager_name
+            if user.role == "user" and user.manager_id and user.manager_id == self._resolve_channel_manager_id(channel)
         ]
 
         context = self._admin_shell_context(
@@ -2986,7 +3281,7 @@ class AppStore:
         channel = self._find_channel(channel_id)
         if user.role != "user":
             raise ValueError("Chỉ user thường mới được gán vào kênh.")
-        if user.manager_name and channel.manager_name != user.manager_name:
+        if user.manager_id and self._resolve_channel_manager_id(channel) != user.manager_id:
             raise ValueError("User không cùng manager với kênh này.")
 
         existing = next(
@@ -3069,11 +3364,13 @@ class AppStore:
             notice_level=notice_level,
         )
 
-        selected_manager_ids = self._selected_manager_ids(manager_ids)
-        manager_names = {self._find_user(manager_id).username for manager_id in selected_manager_ids} if selected_manager_ids else set()
+        selected_manager_ids = set(self._selected_manager_ids(manager_ids))
         job_source = list(self.jobs)
-        if manager_names:
-            job_source = [job for job in job_source if (job.manager_name or "") in manager_names]
+        if selected_manager_ids:
+            job_source = [
+                job for job in job_source
+                if self._resolve_job_manager_id(job) in selected_manager_ids
+            ]
 
         filtered_channel: dict[str, Any] | None = None
         if channel_id:
@@ -3085,19 +3382,21 @@ class AppStore:
         for index, job in enumerate(sorted(job_source, key=lambda item: item.created_at, reverse=True), start=1):
             status_label, status_class = self._render_status_badge(job)
             primary_asset = next((asset for asset in job.assets if asset.url or asset.file_name), None)
+            channel = self._find_channel_optional(job.channel_id)
+            manager_name = self._resolve_job_manager_name(job)
             render_rows.append(
                 {
                     "index": index,
                     "id": job.id,
-                    "manager_name": job.manager_name or "-",
+                    "manager_name": manager_name,
                     "username": self._job_username(job),
                     "created_at": self._format_full_datetime(job.created_at),
                     "title": job.title,
                     "worker_name": self._resolve_job_worker_display_name(job),
-                    "group": job.manager_name or "-",
+                    "group": manager_name,
                     "avatar_url": job.channel_avatar_url or "/legacy/admin-themes/assets/img/avatar/avatar-1.png",
                     "channel_name": job.channel_name,
-                    "channel_id": job.channel_id,
+                    "channel_id": channel.channel_id if channel else job.channel_id,
                     "video_link": primary_asset.url if primary_asset and primary_asset.url else (primary_asset.file_name if primary_asset else "-"),
                     "time_render_string": job.time_render_string,
                     "download_started_at": self._format_full_datetime(job.download_started_at),
@@ -3557,6 +3856,7 @@ class AppStore:
     ) -> dict[str, Any]:
         self._authenticate_worker(worker_id, shared_secret)
         job = self._find_claimed_job(job_id, worker_id)
+        self._ensure_worker_job_can_continue(job)
         asset = self._find_job_asset(job, slot)
         if asset.source_mode != "local" or not asset.file_name:
             raise ValueError("Asset này không phải local upload.")
@@ -3618,6 +3918,7 @@ class AppStore:
     ) -> RenderJobRecord:
         self._authenticate_worker(worker_id, shared_secret)
         job = self._find_claimed_job(job_id, worker_id)
+        self._ensure_worker_job_can_continue(job)
         if not payload:
             raise ValueError("Preview payload rong.")
 
@@ -3644,6 +3945,7 @@ class AppStore:
     ) -> WorkerYouTubeUploadTarget:
         self._authenticate_worker(worker_id, shared_secret)
         job = self._find_claimed_job(job_id, worker_id)
+        self._ensure_worker_job_can_continue(job)
         channel = self._find_channel(job.channel_id)
         refresh_token = str(channel.oauth_refresh_token or "").strip()
         client_id = str(os.getenv("GOOGLE_CLIENT_ID", "")).strip()

@@ -31,7 +31,7 @@
         </div>
 
         <div class="table-shell">
-            <table class="admin-table" data-admin-list-table>
+            <table class="admin-table" data-admin-list-table="worker-index">
                 <thead>
                     <tr>
                         <th class="w-14">STT</th>
@@ -45,9 +45,9 @@
                         <th class="text-right">Tác vụ</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody data-worker-live-body data-live-endpoint="/api/admin/bots">
                     {% for worker in dashboard.workers %}
-                    <tr>
+                    <tr data-worker-row-id="{{ worker.id }}" data-search-text="{{ worker.name }} {{ worker.group }} {{ worker.manager_name }}">
                         <td class="table-mono text-slate-500">{{ worker.index }}</td>
                         <td>
                             <div>
@@ -213,31 +213,230 @@
 {% block page_scripts %}
 <script>
   document.addEventListener('DOMContentLoaded', function () {
-    document.querySelectorAll('[data-dialog-open="edit-bot-dialog"]').forEach(function (button) {
-      button.addEventListener('click', function () {
+    const table = document.querySelector('table[data-admin-list-table="worker-index"]');
+    const tbody = table ? table.querySelector('[data-worker-live-body]') : null;
+    if (!table || !tbody) {
+      return;
+    }
+
+    const pollMs = 5000;
+    let pollingController = null;
+    let pollingTimer = null;
+    let lastPayloadSignature = '';
+
+    function escapeHtml(value) {
+      return String(value === null || value === undefined ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function clampPercent(value) {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) {
+        return 0;
+      }
+      return Math.max(0, Math.min(100, Math.round(numeric)));
+    }
+
+    function buildManagerQuery(url) {
+      const currentParams = new URLSearchParams(window.location.search);
+      currentParams.forEach(function (value, key) {
+        if (key === 'manager_ids') {
+          url.searchParams.append(key, value);
+        }
+      });
+    }
+
+    function buildWorkerSearchText(worker) {
+      return [
+        worker.name,
+        worker.raw_name,
+        worker.group,
+        worker.manager_name,
+        worker.bandwidth_text,
+        worker.disk_text,
+        worker.status_label,
+        worker.thread_text
+      ].filter(Boolean).join(' ');
+    }
+
+    function buildWorkerRowMarkup(worker) {
+      const loadPercent = clampPercent(worker.load_percent);
+      const workerId = escapeHtml(worker.id);
+      const workerName = escapeHtml(worker.name);
+      const rawWorkerName = escapeHtml(worker.raw_name || worker.name);
+      const workerIdParam = encodeURIComponent(String(worker.id || ''));
+      const workerNameParam = encodeURIComponent(String(worker.raw_name || worker.name || ''));
+      const workerGroup = escapeHtml(worker.group);
+      const managerName = escapeHtml(worker.manager_name);
+      const managerId = escapeHtml(worker.manager_id || '');
+      const statusLabel = escapeHtml(worker.status_label);
+      const statusClass = escapeHtml(worker.status_class);
+      const threadText = escapeHtml(worker.thread_text || '0/1');
+      const bandwidthText = escapeHtml(worker.bandwidth_text);
+      const diskText = escapeHtml(worker.disk_text);
+      const totalUsers = escapeHtml(worker.total_users);
+      const totalChannels = escapeHtml(worker.total_channels);
+      const searchText = escapeHtml(buildWorkerSearchText(worker));
+
+      return [
+        '<tr data-worker-row-id="', workerId, '" data-search-text="', searchText, '">',
+        '  <td class="table-mono text-slate-500">', escapeHtml(worker.index), '</td>',
+        '  <td>',
+        '    <div>',
+        '      <p class="text-[13px] font-semibold text-slate-900">', workerName, '</p>',
+        '      <p class="table-meta">Nh&#243;m ', workerGroup, '</p>',
+        '    </div>',
+        '  </td>',
+        '  <td>',
+        '    <p class="text-[12px] font-medium text-slate-800">', managerName, '</p>',
+        '    <p class="table-meta">', totalUsers, ' user &#8226; ', totalChannels, ' k&#234;nh</p>',
+        '  </td>',
+        '  <td><span class="', statusClass, '">', statusLabel, '</span></td>',
+        '  <td>',
+        '    <p class="table-mono font-semibold text-slate-800">', String(loadPercent), '%</p>',
+        '    <div class="mt-2 h-1.5 w-24 overflow-hidden rounded-full bg-slate-100">',
+        '      <div class="h-full rounded-full bg-brand-500" style="width: ', String(loadPercent), '%;"></div>',
+        '    </div>',
+        '  </td>',
+        '  <td class="table-mono text-slate-700">', diskText, '</td>',
+        '  <td class="table-mono text-slate-700">', bandwidthText, '</td>',
+        '  <td>',
+        '    <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-700">',
+               threadText,
+        '    </span>',
+        '  </td>',
+        '  <td>',
+        '    <div class="flex items-center justify-end gap-2">',
+        '      <a href="/admin/channel/bot?botId=', workerIdParam, '&botName=', workerNameParam, '" class="action-btn action-btn-sky">',
+        '        <i data-lucide="link-2" class="h-3.5 w-3.5"></i>',
+        '        DS k&#234;nh',
+        '      </a>',
+        '      <a href="/admin/bot/userofbot?botId=', workerIdParam, '&botName=', workerNameParam, '" class="action-btn action-btn-primary">',
+        '        <i data-lucide="users" class="h-3.5 w-3.5"></i>',
+        '        DS user',
+        '      </a>',
+        '      <button type="button" class="action-btn action-btn-amber" data-dialog-open="thread-bot-dialog" data-worker-id="', workerId, '" data-worker-name="', workerName, '" data-thread="', escapeHtml(worker.threads), '">',
+        '        <i data-lucide="waypoints" class="h-3.5 w-3.5"></i>',
+        '        Lu&#7891;ng',
+        '      </button>',
+        '      <button type="button" class="action-btn action-btn-emerald" data-dialog-open="edit-bot-dialog" data-worker-id="', workerId, '" data-worker-name="', rawWorkerName, '" data-group="', workerGroup, '" data-manager-id="', managerId, '">',
+        '        <i data-lucide="pencil" class="h-3.5 w-3.5"></i>',
+        '        S&#7917;a',
+        '      </button>',
+        '      <button type="button" class="action-btn action-btn-rose" data-dialog-open="delete-bot-dialog" data-worker-id="', workerId, '" data-worker-name="', workerName, '">',
+        '        <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>',
+        '        X&#243;a',
+        '      </button>',
+        '      <form method="post" action="/admin/managerbot/delete" data-bulk-delete-form class="hidden">',
+        '        <input type="hidden" name="Id" value="', workerId, '">',
+        '      </form>',
+        '    </div>',
+        '  </td>',
+        '</tr>'
+      ].join('');
+    }
+
+    function fillDialogFields(button) {
+      if (!button) {
+        return;
+      }
+
+      if (button.matches('[data-dialog-open="edit-bot-dialog"]')) {
         document.getElementById('edit-bot-id').value = button.dataset.workerId || '';
         document.getElementById('edit-bot-name').value = button.dataset.workerName || '';
         document.getElementById('edit-bot-group').value = button.dataset.group || '';
         const managerSelect = document.getElementById('edit-bot-manager-id');
         managerSelect.value = button.dataset.managerId || '';
         managerSelect.dispatchEvent(new Event('change', { bubbles: true }));
-      });
-    });
+        return;
+      }
 
-    document.querySelectorAll('[data-dialog-open="delete-bot-dialog"]').forEach(function (button) {
-      button.addEventListener('click', function () {
+      if (button.matches('[data-dialog-open="delete-bot-dialog"]')) {
         document.getElementById('delete-bot-id').value = button.dataset.workerId || '';
         document.getElementById('delete-bot-name').textContent = button.dataset.workerName || '';
-      });
-    });
+        return;
+      }
 
-    document.querySelectorAll('[data-dialog-open="thread-bot-dialog"]').forEach(function (button) {
-      button.addEventListener('click', function () {
+      if (button.matches('[data-dialog-open="thread-bot-dialog"]')) {
         document.getElementById('thread-bot-id').value = button.dataset.workerId || '';
         document.getElementById('thread-bot-name').value = button.dataset.workerName || '';
         document.getElementById('thread-bot-value').value = button.dataset.thread || '1';
-      });
+      }
+    }
+
+    document.addEventListener('click', function (event) {
+      const button = event.target.closest('[data-dialog-open]');
+      if (!button) {
+        return;
+      }
+      fillDialogFields(button);
     });
+
+    async function fetchLiveWorkers() {
+      if (!table || !tbody) {
+        return;
+      }
+      if (document.hidden || document.querySelector('dialog[open]')) {
+        return;
+      }
+
+      if (pollingController) {
+        pollingController.abort();
+      }
+      pollingController = new AbortController();
+
+      const endpoint = tbody.dataset.liveEndpoint;
+      const requestUrl = new URL(endpoint, window.location.origin);
+      buildManagerQuery(requestUrl);
+
+      const response = await fetch(requestUrl.toString(), {
+        method: 'GET',
+        credentials: 'same-origin',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        signal: pollingController.signal
+      });
+      if (!response.ok) {
+        throw new Error('Failed to fetch live BOT rows.');
+      }
+
+      const payload = await response.json();
+      const items = Array.isArray(payload.items) ? payload.items : [];
+      const signature = JSON.stringify(items);
+      if (signature === lastPayloadSignature) {
+        return;
+      }
+
+      lastPayloadSignature = signature;
+      tbody.innerHTML = items.map(buildWorkerRowMarkup).join('');
+      table.dispatchEvent(new CustomEvent('admin-table:refresh-rows'));
+    }
+
+    function scheduleLivePoll() {
+      window.clearTimeout(pollingTimer);
+      pollingTimer = window.setTimeout(async function () {
+        try {
+          await fetchLiveWorkers();
+        } catch (error) {
+          if (!error || error.name !== 'AbortError') {
+            console.error(error);
+          }
+        } finally {
+          scheduleLivePoll();
+        }
+      }, pollMs);
+    }
+
+    lastPayloadSignature = JSON.stringify(
+      Array.from(tbody.querySelectorAll(':scope > tr')).map(function (row) {
+        return row.textContent.replace(/\s+/g, ' ').trim();
+      })
+    );
+
+    scheduleLivePoll();
   });
 </script>
 {% endblock %}

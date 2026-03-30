@@ -31,11 +31,6 @@ class RenderResult:
     output_path: Path
 
 
-@dataclass
-class PreviewImageResult:
-    output_path: Path
-
-
 def _safe_name(value: str) -> str:
     value = re.sub(r"[^A-Za-z0-9._-]+", "-", value.strip())
     return value.strip(".-") or "out"
@@ -387,33 +382,3 @@ def render_job_assets(
         progress_callback(98, "Đã render xong file output")
 
     return RenderResult(output_path=output_path)
-
-
-def capture_preview_image(
-    config: WorkerConfig,
-    *,
-    source_path: Path,
-    working_dir: Path,
-    file_stem: str,
-    seek_seconds: float = 1.0,
-) -> PreviewImageResult:
-    output_path = working_dir / f"{_safe_name(file_stem)}-preview.jpg"
-    _run_ffmpeg(
-        config.ffmpeg_bin,
-        [
-            "-y",
-            "-ss",
-            f"{max(0.0, seek_seconds):.3f}",
-            "-i",
-            str(source_path),
-            "-frames:v",
-            "1",
-            "-q:v",
-            "3",
-            str(output_path),
-        ],
-        working_dir=working_dir,
-    )
-    if not output_path.exists() or output_path.stat().st_size <= 0:
-        raise RuntimeError("Khong tao duoc preview image cho job.")
-    return PreviewImageResult(output_path=output_path)

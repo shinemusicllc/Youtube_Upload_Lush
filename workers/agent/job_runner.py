@@ -6,9 +6,9 @@ from pathlib import Path
 import httpx
 
 from .config import WorkerConfig
-from .control_plane import complete_job, get_job_youtube_target, update_job_progress, upload_job_thumbnail
+from .control_plane import complete_job, get_job_youtube_target, update_job_progress
 from .downloader import download_local_asset, download_remote_asset
-from .ffmpeg_pipeline import capture_preview_image, render_job_assets
+from .ffmpeg_pipeline import render_job_assets
 from .youtube_uploader import upload_video
 
 
@@ -46,29 +46,6 @@ def _download_assets(
     return downloaded
 
 
-def _upload_cached_preview(
-    client: httpx.Client,
-    config: WorkerConfig,
-    job_id: str,
-    output_path: Path,
-    working_dir: Path,
-) -> None:
-    preview_result = capture_preview_image(
-        config,
-        source_path=output_path,
-        working_dir=working_dir,
-        file_stem=job_id,
-    )
-    upload_job_thumbnail(
-        client,
-        config,
-        job_id,
-        file_name=preview_result.output_path.name,
-        content_type="image/jpeg",
-        payload=preview_result.output_path.read_bytes(),
-    )
-
-
 def run_job(client: httpx.Client, config: WorkerConfig, job: dict) -> None:
     job_id = str(job["id"])
     job_dir = config.work_root / job_id
@@ -103,10 +80,6 @@ def run_job(client: httpx.Client, config: WorkerConfig, job: dict) -> None:
         final_output_path = outputs_dir / f"{job_id}-{result.output_path.name}"
         shutil.move(str(result.output_path), str(final_output_path))
         local_output_url = f"worker://{config.worker_name}/{final_output_path.as_posix()}"
-        try:
-            _upload_cached_preview(client, config, job_id, final_output_path, job_dir)
-        except Exception:
-            pass
 
         if config.youtube_upload_enabled:
             update_job_progress(
@@ -137,8 +110,6 @@ def run_job(client: httpx.Client, config: WorkerConfig, job: dict) -> None:
                 job_id,
                 output_url=upload_result.watch_url,
             )
-            if not config.keep_job_dirs and final_output_path.exists():
-                final_output_path.unlink(missing_ok=True)
         else:
             complete_job(client, config, job_id, output_url=local_output_url)
     finally:

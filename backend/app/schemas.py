@@ -237,6 +237,7 @@ class WorkerHeartbeatPayload(BaseModel):
     disk_total_gb: float = 0
     threads: int = 1
     status: WorkerStatus = "online"
+    active_job_ids: list[str] | None = None
 
 
 class WorkerControlResponse(BaseModel):

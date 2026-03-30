@@ -207,7 +207,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     const panel = tableShell.parentElement;
-    const rows = Array.from(tbody.querySelectorAll(":scope > tr"));
+    let rows = Array.from(tbody.querySelectorAll(":scope > tr"));
     const headers = table.tHead ? Array.from(table.tHead.rows[0].cells) : [];
     const pageSize = Math.max(parseInt(table.dataset.pageSize || "10", 10) || 10, 1);
     const totalColumns = headers.length || 1;
@@ -375,6 +375,10 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function ensureEmptyRow(shouldShow) {
+      if (emptyRow && !tbody.contains(emptyRow)) {
+        emptyRow = null;
+      }
+
       if (!shouldShow) {
         if (emptyRow) {
           emptyRow.remove();
@@ -396,6 +400,13 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function rowDeleteControl(row) {
       return row.querySelector("[data-bulk-delete-form], a[data-bulk-delete-link]");
+    }
+
+    function refreshBodyRows() {
+      rows = Array.from(tbody.querySelectorAll(":scope > tr")).filter(function (row) {
+        return !row.hasAttribute("data-admin-table-empty");
+      });
+      bindRowDeleteControls();
     }
 
     function bindRowDeleteControls() {
@@ -590,12 +601,20 @@ document.addEventListener("DOMContentLoaded", function () {
 
     restoreTableUiState();
     refreshHeaderButtons();
-    bindRowDeleteControls();
+    refreshBodyRows();
     applyTableState();
 
     if (window.lucide) {
       lucide.createIcons();
     }
+
+    table.addEventListener("admin-table:refresh-rows", function () {
+      refreshBodyRows();
+      applyTableState();
+      if (window.lucide) {
+        lucide.createIcons();
+      }
+    });
 
     table.dataset.adminTableReady = "true";
   });

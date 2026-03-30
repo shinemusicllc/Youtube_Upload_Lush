@@ -3,7 +3,7 @@
 ## Pham vi
 - `infra/docker/`: build/runtime cho host app.
 - `infra/caddy/`: reverse proxy/TLS.
-- `infra/systemd/`: service files cho worker va host app.
+- `infra/systemd/`: service files cho worker.
 
 ## Rule
 - Infra chi chua packaging va service config, khong chua business logic.
