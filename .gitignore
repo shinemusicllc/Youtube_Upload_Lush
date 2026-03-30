@@ -3,15 +3,22 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.venv
 .venv/
 .env
+.backup
+.backup/
 .DS_Store
 Thumbs.db
 
+backend/data
+backend/data/
 backend/app/data/app_state.db
 backend/app/data/uploads/
 backend/data/app_state.db
 backend/data/uploads/
+worker-data
+worker-data/
 artifacts/
 Youtube_Upload_Lush/
 backend/*.log
