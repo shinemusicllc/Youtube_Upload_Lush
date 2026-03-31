@@ -255,13 +255,28 @@
       .admin-select-option-value {
         min-width: 0;
         flex: 1;
+      }
+
+      .admin-select-option-copy {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .admin-select-option-label {
+        font-weight: 600;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
       }
 
-      .admin-select-option-label {
-        font-weight: 600;
+      .admin-select-option-description {
+        font-size: 11px;
+        color: rgb(100 116 139);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
 
       .admin-select-option-check {
@@ -1330,9 +1345,16 @@
                 item.disabled = true;
               }
               item.innerHTML =
-                '<span class="admin-select-option-value"><span class="admin-select-option-label"></span></span>' +
+                '<span class="admin-select-option-value"><span class="admin-select-option-copy"><span class="admin-select-option-label"></span><span class="admin-select-option-description"></span></span></span>' +
                 '<span class="admin-select-option-check" aria-hidden="true">&#10003;</span>';
               item.querySelector('.admin-select-option-label').textContent = (option.textContent || '').trim();
+              const descriptionNode = item.querySelector('.admin-select-option-description');
+              const optionDescription = (option.dataset.optionDescription || '').trim();
+              if (optionDescription) {
+                descriptionNode.textContent = optionDescription;
+              } else {
+                descriptionNode.remove();
+              }
               item.addEventListener('click', function (event) {
                 event.preventDefault();
                 if (option.disabled) {

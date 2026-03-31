@@ -84,7 +84,7 @@
                                     Kênh
                                 </a>
                                 <a
-                                    href="{% if user.role == 'manager' %}/admin/ManagerBOT/index?manager_ids={{ user.id }}{% elif user.role == 'user' %}/admin/ManagerBOT/index?userId={{ user.id }}{% else %}/admin/ManagerBOT/index{% endif %}"
+                                    href="{% if user.role == 'manager' %}/admin/bot/assignment?manager_ids={{ user.id }}{% elif user.role == 'user' %}/admin/bot/assignment?userId={{ user.id }}{% else %}/admin/bot/assignment{% endif %}"
                                     class="action-btn action-btn-primary"
                                 >
                                     <i data-lucide="server" class="h-3.5 w-3.5"></i>

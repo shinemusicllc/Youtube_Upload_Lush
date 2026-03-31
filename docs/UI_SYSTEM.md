@@ -45,6 +45,18 @@
   - thay module thao tác theo nghiệp vụ admin
   - không đổi design system
 
+## Screen Exceptions
+- Màn `Cấp phát BOT` là ngoại lệ có chủ đích:
+  - không dùng dải KPI ngang chuẩn của admin
+  - không cần hero/panel mở đầu riêng nếu không phục vụ thao tác
+  - stat chips ưu tiên nằm ngay trong header của panel `Danh sách BOT`, sát cụm view toggle
+  - dưới là workspace split `Danh sách BOT bên trái / target pane bên phải`
+  - có thể có rail chuyển giữa hai cột nếu cần bám mockup thao tác
+  - vẫn giữ nguyên font, palette, border, radius, icon system của admin shell hiện tại
+- Lý do:
+  - đây là màn thao tác điều phối, không phải màn quan sát KPI
+  - thay vì KPI strip chuẩn hoặc hero riêng, màn này ưu tiên toàn bộ không gian cho chọn BOT, stage danh sách gán và chọn người nhận
+
 ## Palette
 - Background app: `#f3f5f9`
 - Surface: `#ffffff`

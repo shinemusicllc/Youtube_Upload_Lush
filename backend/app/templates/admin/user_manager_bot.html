@@ -10,7 +10,7 @@
                 </div>
                 <div>
                     <h2 class="section-title">BOT của {{ dashboard.user_record.username }}</h2>
-                    <p class="section-note">Trang này chỉ giữ thông tin BOT hiện tại. Mọi thao tác cấp, đổi hoặc thu hồi BOT được gom về tab Danh sách BOT để quản lý tập trung.</p>
+                    <p class="section-note">Trang này chỉ giữ thông tin BOT hiện tại. Mọi thao tác cấp, đổi hoặc thu hồi BOT được gom về tab Cấp phát BOT để quản lý tập trung.</p>
                 </div>
             </div>
             {% include "admin/_user_tabs.html" %}
@@ -37,13 +37,13 @@
                         Chưa được cấp BOT.
                         {% endif %}
                     </p>
-                    <p class="mt-1 text-[11px] text-slate-500">Nếu cần đổi BOT, dùng nút bên dưới để sang màn quản lý tập trung.</p>
+                    <p class="mt-1 text-[11px] text-slate-500">Nếu cần đổi BOT, dùng nút bên dưới để sang tab cấp phát tập trung.</p>
                 </div>
 
                 <div class="flex flex-wrap gap-3 border-t border-slate-200 pt-4">
-                    <a href="/admin/ManagerBOT/index?userId={{ dashboard.user_record.id }}" class="action-btn action-btn-emerald px-4 py-2 text-[13px]">
-                        <i data-lucide="server" class="h-4 w-4"></i>
-                        Mở Danh sách BOT
+                    <a href="/admin/bot/assignment?userId={{ dashboard.user_record.id }}" class="action-btn action-btn-emerald px-4 py-2 text-[13px]">
+                        <i data-lucide="arrow-right-left" class="h-4 w-4"></i>
+                        Mở Cấp phát BOT
                     </a>
                     <a href="/admin/user/index" class="action-btn action-btn-slate px-4 py-2 text-[13px]">
                         Quay lại user

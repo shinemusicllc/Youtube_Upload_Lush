@@ -224,3 +224,108 @@
 - Fixed: Chua co thay doi logic moi; task nay chi dong bo ma nguon.
 - Affected files: docs/DECISIONS.md, docs/WORKLOG.md, docs/CHANGELOG.md, backend/*, workers/*, scripts/*, infra/*
 - Impact/Risk: GitHub se mat cac file/logic moi chi ton tai o local neu VPS khong co; doi lai GitHub se phan anh dung code dang duoc sua nong tren server.
+
+### 2026-03-31 22:44 - split_bot_assignment_into_dedicated_admin_tab
+- Added: Trang admin moi `Cấp phát BOT` tai `/admin/bot/assignment`, nav sidebar rieng, va template `backend/app/templates/admin/bot_assignment.html` dung lai luong chon manager/user + kho BOT trong theo visual system hien co.
+- Changed: `Danh sách BOT` bo panel cap phat o dau trang va quay ve vai tro quan sat cum BOT VPS; cac link tu trang user lien quan BOT nay tro ve tab cap phat moi.
+- Fixed: Giam tinh trang man `Danh sách BOT` vua list vua form thao tac day dac; luong cap/doi BOT nay co mot diem vao tap trung, de scan va de huong dan hon.
+- Affected files: `backend/app/store.py`, `backend/app/routers/web.py`, `backend/app/templates/admin/worker_index.html`, `backend/app/templates/admin/bot_assignment.html`, `backend/app/templates/admin/user_index.html`, `backend/app/templates/admin/user_manager_bot.html`, `docs/DECISIONS.md`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`
+- Impact/Risk: Chua deploy production; local smoke da pass, nhung UI live tren VPS se chi doi sau khi commit/push va rollout len host.
+
+### 2026-03-31 23:02 - align_bot_assignment_screen_with_attached_mockup
+- Added: Page-specific split-dispatch layout rules cho `Cấp phát BOT`, giu sidebar cua app va dua manager scope filter len thanh tieu de mong phia tren.
+- Changed: Bo dải KPI khoi man `Cấp phát BOT`, chuyen content ve layout sat file `bot_assignment_ui.html`: trai la `Bảng điều phối`, phai la `BOT còn trống` voi toolbar va card grid phang hon.
+- Fixed: Man cap phat truoc do van con mang nhieu dau vet cua shell admin tong quat, chua giong mockup user dua; ban moi tap trung hon va khop huong visual mong muon.
+- Affected files: `backend/app/templates/admin/bot_assignment.html`, `docs/UI_SYSTEM.md`, `docs/DECISIONS.md`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`
+- Impact/Risk: Chi sua local UI cua route `/admin/bot/assignment`; backend contract cap phat giu nguyen, nhung can user xem local truoc khi commit/push.
+
+### 2026-03-31 23:13 - make_bot_assignment_match_workspace_mockup_more_closely
+- Added: Layout moi cho `Cấp phát BOT` theo workspace dieu phoi gan sat anh mau: top stat chips, panel `Danh sách BOT`, rail chuyen, target pane `Gán cho người nhận`, va danh sach BOT stage truoc khi luu.
+- Changed: `backend/app/store.py` bo sung data contract cho worker rows day du, target options manager/user, default target, va count `available/assigned/offline` de template moi render dung shape.
+- Fixed: Loi render local do `assignment_worker_rows` thieu `index/status_key`; sau khi bo sung context, route `/admin/bot/assignment` render `200` sau login va giu nguyen flow submit `/admin/bot/assign`.
+- Affected files: `backend/app/templates/admin/bot_assignment.html`, `backend/app/store.py`, `docs/UI_SYSTEM.md`, `docs/DECISIONS.md`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`
+- Impact/Risk: UI moi bam mockup hon nhung chua co visual screenshot tu browser automation trong thread nay; can user xem local de chot cam quan truoc khi commit/push.
+
+### 2026-03-31 23:23 - tighten_bot_assignment_spacing_and_default_target
+- Added: Manager mac dinh cho man `Cấp phát BOT` khi local state chi co 1 manager, giup khu `Gán cho người nhận` co target som ngay luc mo man.
+- Changed: Giam `space-y` va padding dau trang trong `bot_assignment.html` de nhip cach voi header/shell sat hon cac tab admin khac.
+- Fixed: Local server da duoc restart sach, `/api/health` tro lai `ok`, va route `/admin/bot/assignment` van render HTML co du worker/user/manager that trong local snapshot.
+- Affected files: `backend/app/store.py`, `backend/app/templates/admin/bot_assignment.html`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`
+- Impact/Risk: Local snapshot hien van chi co `1 manager + 1 user`, nen dropdown khong dai nhu mockup; neu can DS phong phu hon de review UI, can seed them du lieu mau hoac import state that.
+
+### 2026-03-31 23:41 - align_bot_assignment_top_spacing_with_other_admin_tabs
+- Added: Offset am nhe cho section `Cấp phát BOT` de panel dau tien nhich gan top bar hon, khop nhịp voi cac tab admin khac.
+- Changed: Khong doi cau truc panel hay logic cap phat; chi chinh vertical spacing o dau man.
+- Fixed: Khoang ho tren dau man `Cấp phát BOT` khong con lech nhin so voi `Danh sách BOT`.
+- Affected files: `backend/app/templates/admin/bot_assignment.html`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`
+- Impact/Risk: Dieu chinh chi o muc layout spacing local, an toan va de rollback neu user muon sat hon/thoang hon them.
+
+### 2026-03-31 23:43 - raise_bot_assignment_header_panel_further
+- Added: Offset top manh hon cho section `Cấp phát BOT` de panel dau tien len them 1 nấc nua theo feedback visual.
+- Changed: Gia tri offset section doi tu `-mt-2` sang `-mt-4`; khong dong vao structure hay JS.
+- Fixed: Canh top panel cua tab `Cấp phát BOT` sat top bar hon va de dong bo hon voi cac tab admin khac.
+- Affected files: `backend/app/templates/admin/bot_assignment.html`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`
+- Impact/Risk: Tinh chinh layout nho, an toan; neu user muon sat them nua thi co the tiep tuc vi task nay doc lap voi business logic.
+
+### 2026-03-31 23:49 - remove_bot_assignment_hero_and_inline_stats_into_pool_header
+- Added: 3 badge `Trống / Đã cấp / Offline` duoc dua vao header panel `Danh sách BOT`, nam ben trai cum view toggle de sat mockup hon.
+- Changed: Bo han hero card mo dau, nho hoa card BOT, va canh lai workspace split de 2 panel chiem toan bo khong gian theo huong anh mau.
+- Fixed: Thanh mo dau khong con chiem cho vo nghia; kich co card BOT va nhịp header nay gan hon file `bot_assignment_ui.html`.
+- Affected files: `backend/app/templates/admin/bot_assignment.html`, `docs/UI_SYSTEM.md`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`
+- Impact/Risk: Khong doi business logic; man nay gio lech khoi mo ta `top hero` cu, nen UI system da duoc cap nhat lai cho dong bo.
+
+### 2026-03-31 23:51 - tune_bot_assignment_panel_and_grid_sizes_for_50_bots
+- Added: Breakpoint grid co dinh cho danh sach BOT de man rong co the len den 5 cot, phu hop hon voi bai toan 50 BOT va mockup user dua.
+- Changed: Tinh chinh them gap workspace, split width trai/phai, va card BOT (`min-height`, `padding`) de mat do panel va item sat kich co trong file `bot_assignment_ui.html`.
+- Fixed: Truoc do card BOT van con bi co gian tu do theo `auto-fill`, khien khi du lieu dong se khong giong mockup; ban moi on dinh hon tren man hinh rong.
+- Affected files: `backend/app/templates/admin/bot_assignment.html`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`
+- Impact/Risk: Case 50 BOT tren desktop se gan mockup hon, nhung neu user muon pixel-fit tiep cho tung breakpoint cu the thi van co the tinh chinh them sau khi xem local.
+
+### 2026-03-31 23:53 - restore_top_offset_for_bot_assignment_workspace
+- Added: Offset top `-mt-4` duoc dat lai cho section `Cấp phát BOT` sau khi bo hero panel.
+- Changed: Chi chinh vi tri khoi workspace theo truc doc de panel dau tien sat top bar hon.
+- Fixed: Khoang cach top bar -> panel dau tien cua tab `Cấp phát BOT` quay ve gan nhịp voi cac tab admin khac.
+- Affected files: `backend/app/templates/admin/bot_assignment.html`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`
+- Impact/Risk: Dieu chinh layout nho, an toan; neu can sat hon nua thi co the tinh tiep ma khong anh huong business logic.
+
+### 2026-04-01 00:16 - rebalance_bot_assignment_width_and_bottom_spacing
+- Added: Them `padding-bottom` nhe cho section `Cấp phát BOT` de khoang tho phia duoi workspace can doi hon voi khoang cach phia tren.
+- Changed: Dieu chinh gap workspace, split trai/phai, breakpoint 5 cot, va card BOT/stage list sizing de man desktop bam sat hon mockup va uu tien du 5 card ngang.
+- Fixed: Giam tinh trang panel vuon sat day viewport qua muc va mat do card con hoi to so voi file mau.
+- Affected files: `backend/app/templates/admin/bot_assignment.html`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`
+- Impact/Risk: Hieu ung chi nam o layout desktop/local; neu can pixel-fit them theo do phan giai man hinh that cua user, van co the tinh chinh tiep ma khong dong vao logic.
+
+### 2026-04-01 00:21 - tighten_bot_assignment_bottom_edge_and_add_preview_fifth_card
+- Added: Them 1 card BOT preview (`VPS-005`) chi tren man `Cấp phát BOT` khi local chua du 5 BOT that, de user nhin dung nhịp 5 cot tren desktop.
+- Changed: Bo `padding-bottom` vua them, tang lai `min-height` stage list, va tinh lai split desktop de mep day hai panel sat hon voi y do can doi ban dau.
+- Fixed: Layout khong con bi hieu nguoc thanh tang khoang ho duoi panel; user xem duoc card thu 5 ma khong can sua du lieu that.
+- Affected files: `backend/app/store.py`, `backend/app/templates/admin/bot_assignment.html`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`
+- Impact/Risk: Card thu 5 hien la preview-only tren local, checkbox bi khoa va khong tham gia luong assign that; truoc khi deploy co the giu hoac bo tuy muc dich demo UI.
+
+### 2026-04-01 00:24 - sync_bot_assignment_preview_count_and_restart_local_server
+- Added: Badge tong BOT cua man `Cấp phát BOT` tinh ca card preview de title va grid nhat quan khi demo 5 cot.
+- Changed: Restart lai local `uvicorn` tren `127.0.0.1:8000` de browser nhan dung template/store moi nhat.
+- Fixed: Trang local truoc do van co the hien nhu cu do hit vao process cu, khien user khong thay `VPS-005` du code da cap nhat.
+- Affected files: `backend/app/store.py`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`
+- Impact/Risk: Khong doi business logic assign; chi dong bo local demo state va runtime de user duyệt UI de hon.
+
+### 2026-04-01 00:27 - remove_bot_assignment_cta_from_bot_list_header
+- Added: Khong co thay doi chuc nang moi; panel `Danh sách BOT` duoc tra lai dung vai tro quan sat thuần.
+- Changed: Xoa CTA `Mở tab Cấp phát BOT` va dua header panel ve layout chi con title + manager picker.
+- Fixed: Panel dau trang cua `Danh sách BOT` khong con bi day rong va lech nhịp so voi phien ban gon truoc do.
+- Affected files: `backend/app/templates/admin/worker_index.html`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`
+- Impact/Risk: Chi la tinh chinh UI local, khong anh huong route hay luong cap phat BOT rieng.
+
+### 2026-04-01 00:41 - make_assignment_target_picker_searchable_and_fix_selected_state
+- Added: Picker `CHỌN MANAGER / USER` tren man `Cấp phát BOT` ho tro search inline bang pattern `admin-select` co san cua app.
+- Changed: Bo sung `data-search-text` cho option va doi marker hien thi target detail sang namespace rieng de JS update dung node.
+- Fixed: Truong hop chon xong dropdown nhung panel ben duoi van hien `Chưa chọn người nhận`.
+- Affected files: `backend/app/templates/admin/bot_assignment.html`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`
+- Impact/Risk: Chi tinh chinh UI/JS local cho man cap phat; khong doi contract submit `/admin/bot/assign`.
+
+### 2026-04-01 00:46 - auto_stage_bots_on_select_in_assignment_workspace
+- Added: Chon BOT la them thang vao danh sach gan; label/count va hint trong workspace duoc doi sang copy moi phan anh dung hanh vi nay.
+- Changed: Loai bo cum mui ten o giua va doi desktop split thanh 2 panel truc tiep, giup panel trai rong hon va thao tac gon hon.
+- Fixed: Khong con can tick BOT roi bam mui ten moi thay xuat hien ben phai.
+- Affected files: `backend/app/templates/admin/bot_assignment.html`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`
+- Impact/Risk: Chi doi UI/JS tren man cap phat; submit contract van giu nguyen, nhung flow thao tac cua user da duoc don sang auto-add.

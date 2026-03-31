@@ -138,3 +138,45 @@ ode --check backend/app/static/js/admin_tables.js.
 - [2026-03-31 22:15] Mirror lai workspace local theo source deploy tren `82.197.71.6:/opt/youtube-upload-lush`, giu VPS lam source of truth va loai tru runtime artifact khi dong bo.
 - [2026-03-31 22:15] Xac nhan snapshot VPS compile duoc o local (`python -m compileall backend/app`, `python -m compileall workers/agent`) truoc khi stage va push len GitHub.
 - [2026-03-31 22:15] Chuan bi stage toan bo thay doi phan anh dung state code tren VPS, bao gom ca file untracked tren server (`backend/app/api_user.py`, `backend/app/api_worker.py`, `backend/app/web.py`, `.bak-*`) va cac deletion cua worker browser-flow moi ma VPS khong co.
+- [2026-03-31 22:44] Tach panel `Cấp phát BOT` khoi `backend/app/templates/admin/worker_index.html` va tao man rieng `backend/app/templates/admin/bot_assignment.html` theo cung visual system admin hien tai.
+- [2026-03-31 22:44] Them route `/admin/bot/assignment`, nav sidebar moi `Cấp phát BOT`, va doi cac link tu user pages sang tab cap phat tap trung thay vi quay ve man list BOT.
+- [2026-03-31 22:44] Verify local bang `python -m compileall backend/app` va `backend\\venv\\Scripts\\python.exe` + `TestClient`: `/admin/bot/assignment` tra `200`, `/admin/ManagerBOT/index` tra `200`, va trang list BOT khong con form `POST /admin/bot/assign`.
+- [2026-03-31 23:02] Refine lai `backend/app/templates/admin/bot_assignment.html` de bam sat `C:\Users\PC\Downloads\bot_assignment_ui.html` va phan content ben phai cua mockup user dua, giu sidebar cua app nhung bo hẳn KPI strip.
+- [2026-03-31 23:02] Chuyen man nay sang layout `header card mong + split panel trai/phai`, doi manager scope filter sang native select gon hon, va giu logic cap phat hien co qua form `/admin/bot/assign`.
+- [2026-03-31 23:02] Verify local bang `python -m compileall backend/app`, `backend\\venv\\Scripts\\python.exe` + `TestClient`, va restart local server `127.0.0.1:8000` de user xem duoc ngay giao dien moi.
+- [2026-03-31 23:13] Rewrite lai `backend/app/templates/admin/bot_assignment.html` theo shape gan sat mockup workspace: top stat chips, bot pool ben trai, rail thao tac, va target pane ben phai.
+- [2026-03-31 23:13] Mo rong context trong `backend/app/store.py` cho man nay de co full worker rows, target options, count `available/assigned/offline`, va target default value ma khong doi contract submit `/admin/bot/assign`.
+- [2026-03-31 23:13] Verify local bang `python -m compileall backend/app` va `TestClient` sau login `/login`: `/admin/bot/assignment` render `200` voi day du marker `Danh sách BOT`, `Gán cho người nhận`, `assignment-target-select`.
+- [2026-03-31 23:23] Tighten lai spacing dau trang cua `Cấp phát BOT` de nhịp shell gan hon cac tab admin khac, giam khoang cach giua header va workspace chinh.
+- [2026-03-31 23:23] Dat manager mac dinh cho man cap phat khi local state chi co 1 manager, giup pane `Gán cho người nhận` khong con trong ro rang ngay luc mo man.
+- [2026-03-31 23:23] Restart local `uvicorn` tren `127.0.0.1:8000` va verify `/api/health` = `{"status":"ok"}`; kiem tra lai HTML render van co `demo-user`, `62.72.46.42` va option manager/user trong route `/admin/bot/assignment`.
+- [2026-03-31 23:41] Keo block dau trang cua `Cấp phát BOT` len nhe bang offset am de khoang cach tu top bar den panel dau tien khop hon voi cac tab admin khac nhu `Danh sách BOT`.
+- [2026-03-31 23:41] Verify lai bang `python -m compileall backend/app` sau khi chinh spacing; khong doi logic hay data contract cua man cap phat.
+- [2026-03-31 23:43] Tang them offset dau section `Cấp phát BOT` tu `-mt-2` len `-mt-4` de dong bo khoang cach top bar -> panel dau tien theo feedback visual cua user.
+- [2026-03-31 23:43] Verify lai bang `python -m compileall backend/app`; task nay chi la tinh chinh spacing, khong anh huong route hay du lieu render.
+- [2026-03-31 23:49] Bo han hero/panel mo dau cua man `Cấp phát BOT`, chuyen 3 stat badges vao header panel `Danh sách BOT` va dat chung hang voi cum view toggle theo mockup user dua.
+- [2026-03-31 23:49] Nho hoa card BOT, tang do day panel trai/phai, va canh lai workspace split de kich co phan tu sat hon `C:\Users\PC\Downloads\bot_assignment_ui.html`.
+- [2026-03-31 23:49] Verify local bang `python -m compileall backend/app` va `TestClient`: `/admin/bot/assignment` tra `200`, hero copy cu da bien mat, va HTML con day du `3 Trống`, `1 Đã cấp`, `0 Offline`.
+- [2026-03-31 23:51] Khoa lai nhịp grid BOT theo breakpoint de case `50 BOT` tren man rong hien thi mat do giong mockup hon, thay vi de `auto-fill` no card khong on dinh.
+- [2026-03-31 23:51] Tinh chinh them split width va card sizing (`min-height`, `padding`) trong `bot_assignment.html` de panel trai/phai va moi card BOT sat kich co anh mau hon.
+- [2026-03-31 23:51] Verify local bang `python -m compileall backend/app` va `TestClient`: `/admin/bot/assignment` van render `200` sau khi khoa grid va resize card.
+- [2026-03-31 23:53] Keo section `Cấp phát BOT` len lai bang `-mt-4` sau khi bo hero, de panel dau tien sat top bar hon va khop nhịp voi cac tab admin khac.
+- [2026-03-31 23:53] Verify lai bang `python -m compileall backend/app`; task nay chi tinh chinh top spacing cua workspace, khong doi grid/card hay JS.
+- [2026-04-01 00:16] Tinh chinh lai grid `Cấp phát BOT` de uu tien 5 card tren desktop: giam gap, thu card nhe them, va doi breakpoint 5 cot sang moc phu hop hon voi viewport user.
+- [2026-04-01 00:16] Thu gon chieu cao toi thieu cua stage list ben phai va them `padding-bottom` cho section de khoang tho duoi hai panel can doi hon voi khoang cach phia tren.
+- [2026-04-01 00:16] Verify lai bang `python -m compileall backend/app` va `backend\\venv\\Scripts\\python.exe` + `TestClient`: `/admin/bot/assignment` render `200`, marker `Danh sách BOT / Gán cho người nhận / Lưu cấp phát` van day du.
+- [2026-04-01 00:21] Dao chieu tinh chinh spacing theo feedback moi: bo `padding-bottom` vua them, tang lai `min-height` panel phai, va keo workspace xuong sat day hon de mep duoi hai panel gan voi top gap nhin can doi hon.
+- [2026-04-01 00:21] Them 1 BOT preview chi rieng cho man `Cấp phát BOT` khi local chua du 5 BOT that, giup user xem nhịp 5 card ma khong anh huong logic cap phat hay thong ke that.
+- [2026-04-01 00:21] Verify lai bang `python -m compileall backend/app` va `backend\\venv\\Scripts\\python.exe` + `TestClient`: `/admin/bot/assignment` render `200`, co day du marker `168.119.229.109` va `VPS-005`.
+- [2026-04-01 00:24] Cap nhat badge tong BOT tren man `Cấp phát BOT` de tinh ca card preview, tranh user thay title van la `4` du card thu 5 da duoc render.
+- [2026-04-01 00:24] Dung sach cac process `uvicorn` cu va start lai local server tren `127.0.0.1:8000` bang process rieng de browser khong con hit nham ban cu.
+- [2026-04-01 00:24] Verify qua HTTP login that vao local app: `/admin/bot/assignment` tra `200`, co `168.119.229.109`, `VPS-005`, va badge `5`.
+- [2026-04-01 00:27] Bo nut `Mở tab Cấp phát BOT` khoi header man `Danh sách BOT` va tra panel dau trang ve layout gon chi con title + manager picker.
+- [2026-04-01 00:27] Rut gon lai copy mo ta tren panel `Danh sách BOT` de khong con nhac CTA/tab cap phat trong khu vuc nay.
+- [2026-04-01 00:27] Verify lai bang `python -m compileall backend/app` va `backend\\venv\\Scripts\\python.exe` + `TestClient`: `/admin/ManagerBOT/index` render `200` va khong con chuoi `Mở tab Cấp phát BOT`.
+- [2026-04-01 00:41] Nang cap picker `Gán cho người nhận` sang searchable select dung chung pattern `admin-select` cua app, de scale duoc khi danh sach manager/user dai.
+- [2026-04-01 00:41] Sua bug marker trung `data-target-*` giua `<option>` va block hien thi, lam JS truoc do update nham node va co luc van bao `Chưa chọn người nhận` du da chon target.
+- [2026-04-01 00:41] Verify lai bang `python -m compileall backend/app`, `TestClient`, va HTTP login local: `/admin/bot/assignment` tra `200`, co `data-admin-select-search=\"true\"` va marker hien thi moi.
+- [2026-04-01 00:46] Bo cum mui ten trung gian khoi workspace `Cấp phát BOT` va doi split desktop thanh 2 panel truc tiep de giam thao tac thua.
+- [2026-04-01 00:46] Doi luong chon BOT sang auto-add: tick BOT la dua thang vao danh sach gan, `select all` va `Ctrl+A` cung di theo cung hanh vi moi.
+- [2026-04-01 00:46] Verify lai bang `python -m compileall backend/app`, `TestClient`, va HTTP login local: `/admin/bot/assignment` tra `200`, co copy moi `BOT đã thêm` va hint `thêm thẳng vào danh sách cấp phát`.

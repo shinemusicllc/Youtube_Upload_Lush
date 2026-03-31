@@ -2225,6 +2225,7 @@ class AppStore:
         return [
             {"key": "users", "label": "Người dùng", "href": "/admin/user/index", "icon": "users"},
             {"key": "workers", "label": "Danh sách BOT", "href": "/admin/ManagerBOT/index", "icon": "server"},
+            {"key": "bot_assignment", "label": "Cấp phát BOT", "href": "/admin/bot/assignment", "icon": "arrow-right-left"},
             {"key": "channels", "label": "Danh sách Kênh", "href": "/admin/channel/index", "icon": "link"},
             {"key": "renders", "label": "Danh sách Render", "href": "/admin/render/index", "icon": "video"},
         ]
@@ -3279,17 +3280,43 @@ class AppStore:
         for row in self._build_bot_rows(manager_ids):
             options.append(
                 {
+                    "index": row["index"],
                     "id": row["id"],
                     "name": row["name"],
                     "manager_id": row["manager_id"],
                     "manager_name": row["manager_name"],
+                    "group": row["group"],
                     "assigned_user_id": row["assigned_user_id"],
                     "assigned_user_name": row["assigned_user_name"],
+                    "status_key": row["status_key"],
                     "status_label": row["status_label"],
                     "total_channels": row["total_channels"],
+                    "is_preview": False,
                 }
             )
         return options
+
+    def _bot_assignment_preview_worker(self, worker_rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+        if len(worker_rows) >= 5:
+            return None
+        manager_name = str(worker_rows[0].get("manager_name") or "manager-alpha") if worker_rows else "manager-alpha"
+        manager_id = str(worker_rows[0].get("manager_id") or "manager-1") if worker_rows else "manager-1"
+        group_name = str(worker_rows[0].get("group") or manager_name) if worker_rows else manager_name
+        preview_index = len(worker_rows) + 1
+        return {
+            "index": preview_index,
+            "id": f"preview-worker-{preview_index:02d}",
+            "name": "168.119.229.109",
+            "manager_id": manager_id,
+            "manager_name": manager_name,
+            "group": group_name,
+            "assigned_user_id": "",
+            "assigned_user_name": "",
+            "status_key": "online",
+            "status_label": "Online",
+            "total_channels": 0,
+            "is_preview": True,
+        }
 
     def _available_bot_assignment_workers(self, manager_ids: list[str] | None = None) -> list[dict[str, Any]]:
         options: list[dict[str, Any]] = []
@@ -3508,6 +3535,7 @@ class AppStore:
                     "group": worker.group or worker.manager_name,
                     "assigned_user_id": assigned_user.id if assigned_user else "",
                     "assigned_user_name": assigned_user.username if assigned_user else "BOT trống",
+                    "status_key": worker.status,
                     "status_label": status_label,
                     "status_class": status_class,
                     "created_at": self._format_full_datetime(worker.last_seen_at),
@@ -3542,11 +3570,62 @@ class AppStore:
             notice=notice,
             notice_level=notice_level,
         )
+        focus_user: dict[str, Any] | None = None
+        if focus_user_id:
+            user = self._find_user(focus_user_id)
+            resolved_manager_id = user.id if user.role == "manager" else (self._resolved_user_manager_id(user) or "")
+            assigned_worker = self._assigned_worker_for_user(user.id) if user.role == "user" else None
+            focus_user = {
+                "id": user.id,
+                "username": user.username,
+                "display_name": user.display_name,
+                "role": user.role,
+                "manager_id": resolved_manager_id,
+                "manager_name": user.manager_name or (user.username if user.role == "manager" else "-"),
+                "assigned_worker_id": assigned_worker.id if assigned_worker else "",
+                "assigned_worker_name": self._resolve_worker_display_name(assigned_worker.id) if assigned_worker else "",
+                "total_channels": self._user_channel_count(user),
+            }
+        context.update(
+            {
+                "template": "admin/worker_index.html",
+                "workers": worker_rows,
+                "focus_user": focus_user,
+                "selected_manager_labels": [
+                    item["username"] for item in context.get("manager_options", []) if item.get("selected")
+                ],
+            }
+        )
+        if viewer_role == "manager" and viewer_id:
+            context["manager_options"] = [item for item in context["manager_options"] if item["id"] == viewer_id]
+        return context
+
+    def get_admin_bot_assignment_context(
+        self,
+        *,
+        manager_ids: list[str] | None = None,
+        viewer_role: str = "admin",
+        viewer_id: str | None = None,
+        focus_user_id: str | None = None,
+        notice: str | None = None,
+        notice_level: str = "success",
+    ) -> dict[str, Any]:
+        worker_rows = self._build_bot_rows(manager_ids)
+        context = self._admin_shell_context(
+            page_title="Cấp phát BOT",
+            active_page="bot_assignment",
+            manager_ids=manager_ids,
+            notice=notice,
+            notice_level=notice_level,
+        )
+
         assignment_manager_id = ""
         if viewer_role == "manager" and viewer_id:
             assignment_manager_id = viewer_id
         elif len(context.get("selected_manager_ids") or []) == 1:
             assignment_manager_id = str(context["selected_manager_ids"][0])
+        elif len(context.get("manager_options") or []) == 1:
+            assignment_manager_id = str(context["manager_options"][0]["id"])
 
         focus_user: dict[str, Any] | None = None
         assignment_user_id = ""
@@ -3570,17 +3649,82 @@ class AppStore:
             if user.role == "user":
                 assignment_user_id = user.id
 
+        manager_bot_counts: dict[str, int] = {}
+        for row in worker_rows:
+            manager_id = str(row.get("manager_id") or "")
+            if manager_id:
+                manager_bot_counts[manager_id] = manager_bot_counts.get(manager_id, 0) + 1
+
+        assignment_target_options: list[dict[str, Any]] = []
+        for manager in context.get("manager_options", []):
+            manager_id = str(manager.get("id") or "")
+            if not manager_id:
+                continue
+            display_name = str(manager.get("display_name") or manager.get("username") or manager_id)
+            assignment_target_options.append(
+                {
+                    "type": "manager",
+                    "value": f"manager:{manager_id}",
+                    "id": manager_id,
+                    "name": display_name,
+                    "role_label": "Manager",
+                    "manager_id": manager_id,
+                    "user_id": "",
+                    "current_bot_count": manager_bot_counts.get(manager_id, 0),
+                    "avatar_initials": self._initials(display_name),
+                    "avatar_class": self._avatar_palette(display_name),
+                    "meta_text": f"Đang quản lý: {manager_bot_counts.get(manager_id, 0)} BOT",
+                }
+            )
+
+        user_target_options = self._bot_user_options(viewer_role=viewer_role, viewer_id=viewer_id)
+        for user in user_target_options:
+            display_name = str(user.get("display_name") or user.get("username") or user.get("id") or "")
+            current_bot_count = 1 if user.get("assigned_worker_id") else 0
+            assignment_target_options.append(
+                {
+                    "type": "user",
+                    "value": f"user:{user['id']}",
+                    "id": user["id"],
+                    "name": display_name,
+                    "role_label": "User",
+                    "manager_id": str(user.get("manager_id") or ""),
+                    "user_id": user["id"],
+                    "current_bot_count": current_bot_count,
+                    "avatar_initials": self._initials(display_name),
+                    "avatar_class": self._avatar_palette(display_name),
+                    "meta_text": f"Đang quản lý: {current_bot_count} BOT",
+                    "assigned_worker_name": str(user.get("assigned_worker_name") or ""),
+                }
+            )
+
+        assignment_target_value = ""
+        if assignment_user_id:
+            assignment_target_value = f"user:{assignment_user_id}"
+        elif assignment_manager_id:
+            assignment_target_value = f"manager:{assignment_manager_id}"
+
+        assignment_worker_rows = self._bot_assignment_worker_options(manager_ids)
+        assignment_preview_worker = self._bot_assignment_preview_worker(assignment_worker_rows)
+
         context.update(
             {
-                "template": "admin/worker_index.html",
-                "workers": worker_rows,
-                "bot_user_options": self._bot_user_options(viewer_role=viewer_role, viewer_id=viewer_id),
+                "template": "admin/bot_assignment.html",
+                "bot_user_options": user_target_options,
+                "assignment_worker_rows": assignment_worker_rows,
+                "assignment_preview_worker": assignment_preview_worker,
                 "available_assignment_workers": self._available_bot_assignment_workers(manager_ids),
                 "focus_user": focus_user,
                 "assignment_manager_id": assignment_manager_id,
                 "assignment_user_id": assignment_user_id,
+                "assignment_target_options": assignment_target_options,
+                "assignment_target_value": assignment_target_value,
+                "total_worker_count": len(worker_rows) + (1 if assignment_preview_worker else 0),
                 "available_worker_count": len([row for row in worker_rows if not row["assigned_user_id"]]),
                 "assigned_worker_count": len([row for row in worker_rows if row["assigned_user_id"]]),
+                "offline_worker_count": len(
+                    [row for row in worker_rows if str(row.get("status_key") or "") not in {"online", "busy"}]
+                ),
                 "selected_manager_labels": [
                     item["username"] for item in context.get("manager_options", []) if item.get("selected")
                 ],
