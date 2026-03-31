@@ -129,6 +129,34 @@ def _redirect_with_notice(path: str, message: str, level: str = "success", **que
     return RedirectResponse(url=f"{path}?{urlencode(payload)}", status_code=303)
 
 
+def _resolve_bot_scope_manager_ids(selected_manager_ids: list[str], focus_user_id: str | None = None) -> list[str]:
+    if selected_manager_ids:
+        return selected_manager_ids
+    if not focus_user_id:
+        return selected_manager_ids
+    focus_user = store._find_user(focus_user_id)
+    if focus_user.role == "manager":
+        return [focus_user.id]
+    resolved_manager_id = store._resolved_user_manager_id(focus_user)
+    return [resolved_manager_id] if resolved_manager_id else selected_manager_ids
+
+
+def _redirect_bot_index_with_scope(
+    message: str,
+    level: str = "success",
+    *,
+    manager_ids: list[str] | None = None,
+    user_id: str | None = None,
+):
+    query: list[tuple[str, str]] = [("notice", message), ("notice_level", level)]
+    for manager_id in manager_ids or []:
+        if manager_id:
+            query.append(("manager_ids", manager_id))
+    if user_id:
+        query.append(("userId", user_id))
+    return RedirectResponse(url=f"/admin/ManagerBOT/index?{urlencode(query, doseq=True)}", status_code=303)
+
+
 def _sanitize_next_url(value: str | None, *, default_path: str) -> str:
     candidate = str(value or "").strip()
     if not candidate.startswith("/") or candidate.startswith("//"):
@@ -445,34 +473,11 @@ async def google_oauth_callback(
     state: str | None = None,
     error: str | None = None,
 ):
-    current_user = get_app_session_user(request)
-    if not current_user:
-        return _redirect_with_notice("/login", "Vui long dang nhap lai de tiep tuc Google OAuth.", "error", next="/app")
-    store.assert_app_session_user(current_user.id, current_user.role)
-    expected_state = str(request.session.pop(GOOGLE_OAUTH_STATE_SESSION_KEY, "") or "")
-    if error:
-        return _redirect_with_notice("/app", f"Google OAuth b\u1ecb t\u1eeb ch\u1ed1i: {error}", "error")
-
-    if not code or not state:
-        return _redirect_with_notice("/app", "Google OAuth callback thi\u1ebfu code ho\u1eb7c state.", "error")
-    if not expected_state or state != expected_state:
-        return _redirect_with_notice("/app", "State OAuth kh\u00f4ng h\u1ee3p l\u1ec7 ho\u1eb7c \u0111\u00e3 h\u1ebft h\u1ea1n.", "error")
-
-    try:
-        result = store.complete_google_oauth(
-            user_id=current_user.id,
-            code=code,
-            base_url=str(request.base_url).rstrip("/"),
-        )
-    except ValueError as exc:
-        return _redirect_with_notice("/app", str(exc), "error")
-    except Exception:
-        return _redirect_with_notice("/app", "OAuth callback g\u1eb7p l\u1ed7i n\u1ed9i b\u1ed9. Ki\u1ec3m tra l\u1ea1i v\u00e0 th\u1eed k\u1ebft n\u1ed1i l\u1ea1i k\u00eanh.", "error")
-
+    request.session.pop(GOOGLE_OAUTH_STATE_SESSION_KEY, None)
     return _redirect_with_notice(
         "/app",
-        f"\u0110\u00e3 k\u1ebft n\u1ed1i k\u00eanh {result['channel_name']} ({result['youtube_channel_id']}).",
-        "success",
+        "Luong OAuth da duoc tat tren nhanh hien tai. Hay dung '+ Them Kenh' de dang nhap bang Ubuntu Browser.",
+        "error",
     )
 
 
@@ -527,9 +532,12 @@ async def admin_user_index(
     notice: str | None = None,
     notice_level: str = "success",
 ):
+    current_admin = require_admin_access(request)
     selected_manager_ids = _resolve_manager_ids(request, manager_ids)
     dashboard = store.get_admin_user_index_context(
         manager_ids=selected_manager_ids,
+        viewer_role=current_admin.role,
+        viewer_id=current_admin.id,
         notice=notice,
         notice_level=notice_level,
     )
@@ -826,18 +834,76 @@ async def admin_user_update_bot(request: Request):
 async def admin_bot_index(
     request: Request,
     manager_ids: list[str] = Query(default=[]),
+    userId: str | None = None,
     notice: str | None = None,
     notice_level: str = "success",
 ):
+    current_admin = require_admin_access(request)
+    if userId:
+        _enforce_user_scope(current_admin, userId)
     selected_manager_ids = _resolve_manager_ids(request, manager_ids)
+    selected_manager_ids = _resolve_bot_scope_manager_ids(selected_manager_ids, userId)
+    if current_admin.role == "manager" and not selected_manager_ids:
+        selected_manager_ids = [current_admin.id]
     return _render(
         request,
         store.get_admin_bot_index_context(
             manager_ids=selected_manager_ids,
+            viewer_role=current_admin.role,
+            viewer_id=current_admin.id,
+            focus_user_id=userId,
             notice=notice,
             notice_level=notice_level,
         ),
     )
+
+
+@router.post("/admin/bot/assign")
+async def admin_bot_assign(request: Request):
+    current_admin = require_admin_access(request)
+    form = await request.form()
+    worker_ids = [str(value).strip() for value in form.getlist("worker_ids") if str(value).strip()]
+    fallback_worker_id = str(form.get("worker_id") or form.get("Id") or "").strip()
+    if fallback_worker_id and fallback_worker_id not in worker_ids:
+        worker_ids.append(fallback_worker_id)
+    user_id = str(form.get("user_id") or form.get("UserId") or "").strip() or None
+    manager_id = _force_manager_binding(
+        current_admin,
+        str(form.get("manager_id") or form.get("UserIdManager") or "").strip() or None,
+    )
+    return_user_id = str(form.get("return_user_id") or "").strip() or None
+    return_manager_ids = [str(value).strip() for value in form.getlist("return_manager_ids") if str(value).strip()]
+
+    if user_id:
+        _enforce_user_scope(current_admin, user_id)
+
+    try:
+        assigned_count = store.assign_available_bots(
+            worker_ids,
+            manager_id,
+            assigned_user_id=user_id,
+            updated_by=current_admin.username,
+        )
+        scoped_manager_ids = return_manager_ids or _resolve_bot_scope_manager_ids([], return_user_id or user_id)
+        success_message = (
+            "Đã cấp BOT cho user."
+            if user_id
+            else f"Đã chuyển {assigned_count} BOT trống về kho manager."
+        )
+        return _redirect_bot_index_with_scope(
+            success_message,
+            "success",
+            manager_ids=scoped_manager_ids,
+            user_id=return_user_id,
+        )
+    except (KeyError, ValueError) as exc:
+        scoped_manager_ids = return_manager_ids or _resolve_bot_scope_manager_ids([], return_user_id or user_id)
+        return _redirect_bot_index_with_scope(
+            str(exc),
+            "error",
+            manager_ids=scoped_manager_ids,
+            user_id=return_user_id,
+        )
 
 
 @router.post("/admin/bot/update")
@@ -846,14 +912,26 @@ async def admin_bot_update(request: Request):
     form = await request.form()
     worker_id = str(form.get("Id") or form.get("worker_id") or "").strip()
     name = str(form.get("Name") or form.get("name") or "").strip()
-    group = str(form.get("Group") or form.get("group") or "").strip()
     manager_id = _force_manager_binding(current_admin, str(form.get("UserIdManager") or form.get("manager_id") or "").strip() or None)
+    user_id = str(form.get("UserId") or form.get("user_id") or "").strip() or None
+    return_user_id = str(form.get("return_user_id") or "").strip() or None
+    return_manager_ids = [str(value).strip() for value in form.getlist("return_manager_ids") if str(value).strip()]
 
     try:
-        store.update_bot(worker_id, name, group, manager_id, updated_by=current_admin.username)
-        return _redirect_with_notice("/admin/ManagerBOT/index", "Đã cập nhật BOT.", "success")
+        store.update_bot(worker_id, name, manager_id, assigned_user_id=user_id, updated_by=current_admin.username)
+        return _redirect_bot_index_with_scope(
+            "Đã cập nhật BOT.",
+            "success",
+            manager_ids=return_manager_ids,
+            user_id=return_user_id,
+        )
     except (KeyError, ValueError) as exc:
-        return _redirect_with_notice("/admin/ManagerBOT/index", str(exc), "error")
+        return _redirect_bot_index_with_scope(
+            str(exc),
+            "error",
+            manager_ids=return_manager_ids,
+            user_id=return_user_id,
+        )
 
 
 @router.post("/admin/managerbot/delete")
@@ -861,11 +939,23 @@ async def admin_bot_delete(request: Request):
     require_admin_access(request)
     form = await request.form()
     worker_id = str(form.get("Id") or form.get("worker_id") or "").strip()
+    return_user_id = str(form.get("return_user_id") or "").strip() or None
+    return_manager_ids = [str(value).strip() for value in form.getlist("return_manager_ids") if str(value).strip()]
     try:
         store.delete_bot(worker_id)
-        return _redirect_with_notice("/admin/ManagerBOT/index", "Đã xóa BOT.", "success")
+        return _redirect_bot_index_with_scope(
+            "Đã xóa BOT.",
+            "success",
+            manager_ids=return_manager_ids,
+            user_id=return_user_id,
+        )
     except (KeyError, ValueError) as exc:
-        return _redirect_with_notice("/admin/ManagerBOT/index", str(exc), "error")
+        return _redirect_bot_index_with_scope(
+            str(exc),
+            "error",
+            manager_ids=return_manager_ids,
+            user_id=return_user_id,
+        )
 
 
 @router.post("/admin/bot/updatethread")
@@ -874,10 +964,13 @@ async def admin_bot_update_thread(request: Request):
     require_admin_access(request)
     form = await request.form()
     worker_id = str(form.get("Id") or form.get("worker_id") or "").strip()
-    thread = int(str(form.get("Thread") or form.get("thread") or "0"))
     try:
-        store.update_bot_thread(worker_id, thread)
-        return _redirect_with_notice("/admin/ManagerBOT/index", "Đã cập nhật số luồng tối đa của BOT.", "success")
+        store.update_bot_thread(worker_id, 1)
+        return _redirect_with_notice(
+            "/admin/ManagerBOT/index",
+            "Luồng BOT đang được khóa cố định 1 job active / VPS để giữ hệ thống ổn định.",
+            "success",
+        )
     except (KeyError, ValueError) as exc:
         return _redirect_with_notice("/admin/ManagerBOT/index", str(exc), "error")
 

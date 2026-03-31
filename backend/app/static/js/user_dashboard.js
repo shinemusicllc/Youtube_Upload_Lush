@@ -11,10 +11,18 @@
   const renderPageSize = Math.max(1, Number(renderTable?.dataset.pageSize || 10) || 10);
   const renderPaginationState = { page: 1, pageSize: renderPageSize };
   const dashboardScrollRestoreKey = "ytlush:user-dashboard:scroll";
+  let dashboardSeed = {};
   let renderJobsState = [];
   let liveRefreshHandle = null;
   let liveRefreshInFlight = false;
+  let liveRefreshSequence = 0;
+  let liveRefreshAppliedSequence = 0;
   let lastLivePayloadSignature = "";
+  const LIVE_REFRESH_INTERVAL_IDLE_MS = 5000;
+  const LIVE_REFRESH_INTERVAL_ACTIVE_MS = 1200;
+  const LIVE_REFRESH_INTERVAL_HIDDEN_MS = 2500;
+  let activeBrowserSession = null;
+  let browserSessionPollHandle = null;
   const renderCopy = {
     openYoutube: "\u004d\u1edf YouTube",
     edit: "S\u1eeda",
@@ -213,11 +221,69 @@
     if (!(scheduleInput instanceof HTMLInputElement)) return;
 
     const hasInputValue = () => scheduleInput.value.trim().length > 0;
+    const isNowKeyword = () => scheduleInput.value.trim().toLowerCase() === "now";
+    let isManualEditing = false;
+    let suppressFocusSeedUntil = 0;
 
     const setPickerToClientNow = (instance) => {
       const now = new Date();
       instance.setDate(now, true);
       instance.jumpToDate(now);
+    };
+
+    const parseTypedScheduleValue = (rawValue) => {
+      const cleaned = String(rawValue || "").trim();
+      if (!cleaned) return null;
+      if (cleaned.toLowerCase() === "now") {
+        return new Date();
+      }
+
+      const parsedByFlatpickr = window.flatpickr.parseDate(cleaned, "d/m/Y H:i");
+      if (parsedByFlatpickr instanceof Date && !Number.isNaN(parsedByFlatpickr.getTime())) {
+        return parsedByFlatpickr;
+      }
+
+      const match = cleaned.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{1,2})$/);
+      if (!match) {
+        return null;
+      }
+
+      const [, day, month, year, hour, minute] = match;
+      const parsed = new Date(
+        Number(year),
+        Number(month) - 1,
+        Number(day),
+        Number(hour),
+        Number(minute),
+        0,
+        0,
+      );
+      if (
+        parsed.getFullYear() !== Number(year)
+        || parsed.getMonth() !== Number(month) - 1
+        || parsed.getDate() !== Number(day)
+        || parsed.getHours() !== Number(hour)
+        || parsed.getMinutes() !== Number(minute)
+      ) {
+        return null;
+      }
+      return parsed;
+    };
+
+    const parsePickerTimeElements = () => {
+      const baseDate = picker.selectedDates[0] instanceof Date
+        ? new Date(picker.selectedDates[0].getTime())
+        : new Date();
+      const hourValue = picker.hourElement ? Number(picker.hourElement.value) : NaN;
+      const minuteValue = picker.minuteElement ? Number(picker.minuteElement.value) : NaN;
+      if (!Number.isInteger(hourValue) || !Number.isInteger(minuteValue)) {
+        return null;
+      }
+      if (hourValue < 0 || hourValue > 23 || minuteValue < 0 || minuteValue > 59) {
+        return null;
+      }
+      baseDate.setHours(hourValue, minuteValue, 0, 0);
+      return baseDate;
     };
 
     const ensurePickerSeedValue = (instance) => {
@@ -232,6 +298,11 @@
       minuteIncrement: 5,
       dateFormat: "d/m/Y H:i",
       locale: window.flatpickr.l10ns.vn || window.flatpickr.l10ns.default,
+      onValueUpdate: [
+        () => {
+          isManualEditing = false;
+        },
+      ],
       onOpen: [
         (_selectedDates, _dateStr, instance) => {
           ensurePickerSeedValue(instance);
@@ -239,29 +310,71 @@
       ],
     });
 
-    const syncScheduleInputToClientNow = () => {
-      ensurePickerSeedValue(picker);
+    const seedScheduleInputToClientNow = () => {
+      if (Date.now() < suppressFocusSeedUntil) {
+        return;
+      }
+      isManualEditing = false;
+      setPickerToClientNow(picker);
     };
 
-    scheduleInput.addEventListener("focus", syncScheduleInputToClientNow);
-    scheduleInput.addEventListener("click", syncScheduleInputToClientNow);
+    scheduleInput.addEventListener("focus", seedScheduleInputToClientNow);
+    scheduleInput.addEventListener("input", () => {
+      isManualEditing = true;
+    });
 
     scheduleInput.addEventListener("keydown", (event) => {
       if (event.key !== "Enter" || !picker.isOpen) return;
       event.preventDefault();
-      const typedDate = hasInputValue()
-        ? window.flatpickr.parseDate(scheduleInput.value.trim(), picker.config.dateFormat)
-        : null;
+      const typedDate = parseTypedScheduleValue(scheduleInput.value);
       if (typedDate instanceof Date && !Number.isNaN(typedDate.getTime())) {
         picker.setDate(typedDate, true);
-      } else if (picker.selectedDates.length) {
+        isManualEditing = false;
+        suppressFocusSeedUntil = Date.now() + 400;
+        picker.close();
+        scheduleInput.blur();
+        return;
+      }
+      if (hasInputValue() && isManualEditing) {
+        return;
+      }
+      if (picker.selectedDates.length) {
         picker.setDate(picker.selectedDates[0], true);
       } else {
         setPickerToClientNow(picker);
       }
+      isManualEditing = false;
+      suppressFocusSeedUntil = Date.now() + 400;
       picker.close();
       scheduleInput.blur();
     });
+
+    const handlePickerEnter = (event) => {
+      if (event.key !== "Enter" || !picker.isOpen) return;
+      event.preventDefault();
+      const pickerDate = parsePickerTimeElements();
+      if (pickerDate instanceof Date && !Number.isNaN(pickerDate.getTime())) {
+        picker.setDate(pickerDate, true);
+        isManualEditing = false;
+      }
+      suppressFocusSeedUntil = Date.now() + 400;
+      picker.close();
+      scheduleInput.blur();
+    };
+
+    if (picker.hourElement) {
+      picker.hourElement.addEventListener("input", () => {
+        isManualEditing = true;
+      });
+      picker.hourElement.addEventListener("keydown", handlePickerEnter);
+    }
+
+    if (picker.minuteElement) {
+      picker.minuteElement.addEventListener("input", () => {
+        isManualEditing = true;
+      });
+      picker.minuteElement.addEventListener("keydown", handlePickerEnter);
+    }
   };
 
   const initFileInputs = () => {
@@ -339,7 +452,7 @@
       ` : ""}
       <button type="button" class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 rounded-lg hover:bg-emerald-100 hover:text-emerald-900 hover:shadow-sm transition-all" title="Sửa"><i data-lucide="edit-2" class="w-3 h-3"></i> Sửa</button>
       ${job.can_cancel ? `
-        <button type="button" data-job-action="cancel" data-job-id="${escapeHtml(job.id)}" class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 hover:text-amber-800 hover:shadow-sm transition-all" title="Huỷ"><i data-lucide="x-circle" class="w-3 h-3"></i> Huỷ</button>
+        <button type="button" data-job-action="cancel" data-job-id="${escapeHtml(job.id)}" class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 hover:text-amber-800 hover:shadow-sm transition-all" title="Hủy"><i data-lucide="x-circle" class="w-3 h-3"></i> Hủy</button>
       ` : ""}
       <button type="button" data-job-action="delete" data-job-id="${escapeHtml(job.id)}" class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 hover:text-rose-800 hover:shadow-sm transition-all" title="Xóa"><i data-lucide="trash" class="w-3 h-3"></i> Xóa</button>
     </div>
@@ -416,12 +529,13 @@
           ${renderJobPreviewMarkup(job)}
           <div class="min-w-0 flex-1 max-w-[328px] pb-0.5">
             <p class="text-[11px] font-bold uppercase tracking-[0.18em] ${job.kind === "Upload" ? "text-violet-500" : "text-brand-500"}">${escapeHtml(job.kind || "Upload")}</p>
-            <p class="font-semibold ${job.kind === "Upload" ? "text-violet-700" : "text-brand-700"} text-[15px] leading-[1.4] render-job-title" title="${escapeHtml(job.title)}">${escapeHtml(job.title)}</p>
-            <p class="mt-1 text-[11px] text-slate-600 font-mono truncate" title="${escapeHtml(`${job.meta || ""} ${job.job_id || ""}`.trim())}">${escapeHtml(job.meta || "")} <span class="${job.kind === "Upload" ? "text-violet-500" : "text-brand-500"}">${escapeHtml(job.job_id || "")}</span></p>
-            ${job.description ? `<p class="mt-1 text-[11px] text-slate-500 truncate" title="${escapeHtml(job.description)}">${escapeHtml(job.description)}</p>` : ""}
+              <p class="font-semibold ${job.kind === "Upload" ? "text-violet-700" : "text-brand-700"} text-[15px] leading-[1.4] render-job-title" title="${escapeHtml(job.title)}">${escapeHtml(job.title)}</p>
+              <p class="mt-1 text-[11px] text-slate-600 font-mono truncate" title="${escapeHtml(`${job.meta || ""} ${job.job_id || ""}`.trim())}">${escapeHtml(job.meta || "")} <span class="${job.kind === "Upload" ? "text-violet-500" : "text-brand-500"}">${escapeHtml(job.job_id || "")}</span></p>
+              ${job.description ? `<p class="mt-1 text-[11px] text-slate-500 truncate" title="${escapeHtml(job.description)}">${escapeHtml(job.description)}</p>` : ""}
+              ${job.status_key === "error" && job.error_message ? `<p class="mt-1 text-[11px] font-medium text-rose-600 truncate" title="${escapeHtml(job.error_message)}">${escapeHtml(job.error_message)}</p>` : ""}
+            </div>
           </div>
-        </div>
-      </td>
+        </td>
       <td class="px-6 py-4">
         <div class="flex items-center gap-3">
           ${renderChannelAvatarMarkup(job)}
@@ -709,6 +823,9 @@
     }
 
     renderJobsState = Array.isArray(payload.render_jobs) ? payload.render_jobs : [];
+    if (payload.browser_session !== undefined) {
+      activeBrowserSession = payload.browser_session || null;
+    }
     renderRenderTable();
   };
 
@@ -722,6 +839,14 @@
         ? payload.render_tabs.map((item) => [item.label, item.count, item.active])
         : [],
       render_summary: payload.render_summary || "",
+      browser_session: payload.browser_session
+        ? [
+            payload.browser_session.session_id,
+            payload.browser_session.status,
+            payload.browser_session.detected_channel_id,
+            payload.browser_session.channel_record_id,
+          ]
+        : null,
       render_jobs: Array.isArray(payload.render_jobs)
         ? payload.render_jobs.map((job) => [
             job.id,
@@ -733,7 +858,9 @@
             job.scheduled_waiting,
             job.scheduled_wait_at,
             job.status,
+            job.status_key,
             job.status_class,
+            job.error_message,
             job.progress_mode,
             job.download_progress,
             job.render_progress,
@@ -761,38 +888,101 @@
     return JSON.stringify(compact);
   };
 
+  const hasActiveDashboardWork = (payload) => {
+    const jobs = Array.isArray(payload?.render_jobs) ? payload.render_jobs : renderJobsState;
+    const hasRunningJob = jobs.some((job) => {
+      const downloadProgress = Number(job.download_progress) || 0;
+      const renderProgress = Number(job.render_progress) || 0;
+      const uploadProgress = Number(job.upload_progress) || 0;
+      return (
+        job.can_cancel
+        || (downloadProgress > 0 && downloadProgress < 100)
+        || (renderProgress > 0 && renderProgress < 100)
+        || (uploadProgress > 0 && uploadProgress < 100)
+      );
+    });
+    const browserStatus = payload?.browser_session?.status || activeBrowserSession?.status || "";
+    const hasPendingBrowserSession = ["launching", "awaiting_confirmation", "confirmed"].includes(browserStatus);
+    return hasRunningJob || hasPendingBrowserSession;
+  };
+
+  const getLiveRefreshInterval = (payload) => {
+    if (document.hidden) {
+      return LIVE_REFRESH_INTERVAL_HIDDEN_MS;
+    }
+    return hasActiveDashboardWork(payload) ? LIVE_REFRESH_INTERVAL_ACTIVE_MS : LIVE_REFRESH_INTERVAL_IDLE_MS;
+  };
+
+  const clearLiveRefreshTimer = () => {
+    if (!liveRefreshHandle) return;
+    window.clearTimeout(liveRefreshHandle);
+    liveRefreshHandle = null;
+  };
+
+  const scheduleNextLiveRefresh = (payload = null) => {
+    clearLiveRefreshTimer();
+    liveRefreshHandle = window.setTimeout(() => {
+      void pollLiveDashboard();
+    }, getLiveRefreshInterval(payload));
+  };
+
+  const fetchDashboardLivePayload = async () => {
+    const response = await fetch(`/api/user/dashboard/live?ts=${Date.now()}`, {
+      headers: { Accept: "application/json", "Cache-Control": "no-cache, no-store, max-age=0", Pragma: "no-cache" },
+      cache: "no-store",
+    });
+    return response;
+  };
+
+  const applyLiveDashboardPayload = (payload, requestSequence) => {
+    if (requestSequence < liveRefreshAppliedSequence) {
+      return false;
+    }
+    const nextSignature = buildLivePayloadSignature(payload);
+    liveRefreshAppliedSequence = requestSequence;
+    if (nextSignature && nextSignature === lastLivePayloadSignature) {
+      return false;
+    }
+    lastLivePayloadSignature = nextSignature;
+    updateRenderDashboard(payload);
+    return true;
+  };
+
   const pollLiveDashboard = async () => {
-    if (liveRefreshInFlight) return;
+    if (liveRefreshInFlight) {
+      scheduleNextLiveRefresh();
+      return;
+    }
     liveRefreshInFlight = true;
+    const requestSequence = ++liveRefreshSequence;
     try {
-      const response = await fetch("/api/user/dashboard/live", {
-        headers: { Accept: "application/json", "Cache-Control": "no-cache" },
-      });
-      if (!response.ok) return;
-      const payload = await response.json();
-      const nextSignature = buildLivePayloadSignature(payload);
-      if (nextSignature && nextSignature === lastLivePayloadSignature) {
+      const response = await fetchDashboardLivePayload();
+      if (!response.ok) {
+        scheduleNextLiveRefresh();
         return;
       }
-      lastLivePayloadSignature = nextSignature;
-      updateRenderDashboard(payload);
+      const payload = await response.json();
+      applyLiveDashboardPayload(payload, requestSequence);
+      scheduleNextLiveRefresh(payload);
     } catch (_error) {
       // Keep current UI state if polling fails transiently.
+      scheduleNextLiveRefresh();
     } finally {
       liveRefreshInFlight = false;
     }
   };
 
   const refreshDashboardLiveNow = async () => {
-    const response = await fetch("/api/user/dashboard/live", {
-      headers: { Accept: "application/json", "Cache-Control": "no-cache" },
-    });
+    clearLiveRefreshTimer();
+    const requestSequence = ++liveRefreshSequence;
+    const response = await fetchDashboardLivePayload();
     if (!response.ok) {
+      scheduleNextLiveRefresh();
       throw new Error(renderCopy.reloadError);
     }
     const payload = await response.json();
-    lastLivePayloadSignature = buildLivePayloadSignature(payload);
-    updateRenderDashboard(payload);
+    applyLiveDashboardPayload(payload, requestSequence);
+    scheduleNextLiveRefresh(payload);
     return payload;
   };
 
@@ -1345,6 +1535,296 @@
     });
   };
 
+  const initChannelConnectButton = () => {
+    const button = document.getElementById("connectYouTubeButton");
+    if (!button) return;
+
+    if (!dashboardSeed.browser_worker) {
+      button.addEventListener("click", () => {
+        window.alert(dashboardSeed.channel_connect_blocked_message || "Ban chua duoc cap VPS de them kenh.");
+      });
+      return;
+    }
+
+    const modal = document.getElementById("browserSessionModal");
+    const closeModalButton = document.getElementById("closeBrowserSessionModal");
+    const closeSessionButton = document.getElementById("closeBrowserSessionButton");
+    const openSessionButton = document.getElementById("openBrowserSessionButton");
+    const confirmSessionButton = document.getElementById("confirmBrowserSessionButton");
+    const statusNode = document.getElementById("browserSessionStatus");
+    const workerNode = document.getElementById("browserSessionWorker");
+    const expiryNode = document.getElementById("browserSessionExpiry");
+    const currentUrlNode = document.getElementById("browserSessionCurrentUrl");
+    const detectedChannelNode = document.getElementById("browserSessionDetectedChannel");
+    const errorNode = document.getElementById("browserSessionError");
+    const launchPanel = document.getElementById("browserSessionLaunchPanel");
+    const launchSpinner = document.getElementById("browserSessionLaunchSpinner");
+    const launchTitle = document.getElementById("browserSessionLaunchTitle");
+    const launchDescription = document.getElementById("browserSessionLaunchDescription");
+    if (!modal || !closeModalButton || !closeSessionButton || !openSessionButton || !confirmSessionButton) return;
+
+    const stopBrowserSessionPolling = () => {
+      if (browserSessionPollHandle) {
+        window.clearInterval(browserSessionPollHandle);
+        browserSessionPollHandle = null;
+      }
+    };
+
+    let browserSessionAutoConfirmInFlight = false;
+
+    const setButtonLabel = () => {
+      button.textContent = "+ Thêm Kênh";
+    };
+
+    const formatExpiry = (value) => {
+      if (!value) return "-";
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) return value;
+      return parsed.toLocaleString("vi-VN");
+    };
+
+    const isBrowserSessionReady = (session) => !!(session?.novnc_url && ["awaiting_confirmation", "confirmed"].includes(session.status));
+    const canAutoConfirmBrowserSession = (session) =>
+      !!(session?.session_id && session?.detected_channel_id && ["awaiting_confirmation", "confirmed"].includes(session.status));
+
+    const formatBrowserSessionStatus = (status) => {
+      const mapping = {
+        launching: "Đang khởi tạo",
+        awaiting_confirmation: "Chờ đăng nhập",
+        confirmed: "Đã nhận diện",
+        failed: "Khởi tạo lỗi",
+        closed: "Đã đóng",
+      };
+      return mapping[status] || status || "Chưa khởi tạo";
+    };
+
+    const setLaunchState = (mode, session) => {
+      if (!launchPanel || !launchSpinner || !launchTitle || !launchDescription) return;
+      launchPanel.classList.remove("border-brand-200", "bg-brand-50/70", "border-emerald-200", "bg-emerald-50/80", "border-rose-200", "bg-rose-50/80");
+
+      if (mode === "ready") {
+        launchPanel.classList.add("border-emerald-200", "bg-emerald-50/80");
+        launchSpinner.classList.add("hidden");
+        launchTitle.textContent = "Bấm Đăng nhập Google";
+        launchDescription.innerHTML = "Đăng nhập Google đường dẫn sẽ tự động chuyển đến trang <strong>YouTube Studio</strong>. Hãy chọn đúng kênh cần thêm.";
+        return;
+      }
+
+      if (mode === "failed") {
+        launchPanel.classList.add("border-rose-200", "bg-rose-50/80");
+        launchSpinner.classList.add("hidden");
+        launchTitle.textContent = "Khởi tạo phiên đăng nhập thất bại";
+        launchDescription.textContent = session?.last_error || "Worker chưa khởi tạo được browser session. Đóng phiên này và thử lại.";
+        return;
+      }
+
+      launchPanel.classList.add("border-brand-200", "bg-brand-50/70");
+      launchSpinner.classList.remove("hidden");
+      launchTitle.textContent = "Đang khởi tạo phiên đăng nhập. Vui lòng kiên nhẫn...";
+      launchDescription.innerHTML = "Đăng nhập Google đường dẫn sẽ tự động chuyển đến trang <strong>YouTube Studio</strong>. Hãy chọn đúng kênh cần thêm.";
+    };
+
+    const renderBrowserSessionState = (session) => {
+      activeBrowserSession = session || null;
+      setButtonLabel();
+      if (workerNode) {
+        workerNode.textContent = session?.target_worker_name || dashboardSeed.browser_worker?.name || "-";
+      }
+      if (statusNode) statusNode.textContent = formatBrowserSessionStatus(session?.status);
+      if (expiryNode) expiryNode.textContent = formatExpiry(session?.expires_at);
+      if (currentUrlNode) currentUrlNode.textContent = session?.current_url || "Chưa có thông tin phiên.";
+      if (detectedChannelNode) {
+        detectedChannelNode.textContent = session?.detected_channel_id
+          ? `Đã nhận diện kênh: ${session.detected_channel_name || session.detected_channel_id} (${session.detected_channel_id})`
+          : "Chưa nhận diện được kênh. Sau khi vào đúng YouTube Studio, app sẽ tự xác nhận.";
+      }
+      if (errorNode) {
+        if (session?.last_error) {
+          errorNode.textContent = session.last_error;
+          errorNode.classList.remove("hidden");
+        } else {
+          errorNode.textContent = "";
+          errorNode.classList.add("hidden");
+        }
+      }
+      const ready = isBrowserSessionReady(session);
+      if (!session) {
+        setLaunchState("launching", null);
+      } else if (ready) {
+        setLaunchState("ready", session);
+      } else if (session.status === "failed") {
+        setLaunchState("failed", session);
+      } else {
+        setLaunchState("launching", session);
+      }
+      openSessionButton.disabled = !ready;
+      confirmSessionButton.disabled = browserSessionAutoConfirmInFlight || !session || !["awaiting_confirmation", "confirmed"].includes(session.status);
+      closeSessionButton.disabled = !session;
+    };
+
+    const openModal = () => {
+      modal.classList.remove("hidden");
+    };
+
+    const closeModal = () => {
+      modal.classList.add("hidden");
+      stopBrowserSessionPolling();
+    };
+
+    const deleteBrowserSession = async (sessionId, { silent = false } = {}) => {
+      if (!sessionId) return;
+      const response = await fetch(`/api/user/browser-sessions/${sessionId}`, {
+        method: "DELETE",
+      });
+      const payload = await response.json();
+      if (!response.ok && !silent) {
+        throw new Error(payload.detail || "Không thể đóng browser session.");
+      }
+    };
+
+    const confirmBrowserSession = async ({ auto = false } = {}) => {
+      if (!activeBrowserSession?.session_id || browserSessionAutoConfirmInFlight) return;
+      browserSessionAutoConfirmInFlight = true;
+      confirmSessionButton.disabled = true;
+      try {
+        const response = await fetch(`/api/user/browser-sessions/${activeBrowserSession.session_id}/confirm`, {
+          method: "POST",
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.detail || "Không thể xác nhận channel.");
+        }
+        renderBrowserSessionState(payload.session);
+        await deleteBrowserSession(payload.session?.session_id || activeBrowserSession?.session_id, { silent: true });
+        closeModal();
+        if (!auto) {
+          window.alert(`Đã kết nối kênh ${payload.channel.channel_name} (${payload.channel.channel_id}).`);
+        }
+        persistDashboardScrollPosition();
+        window.location.reload();
+      } catch (error) {
+        if (auto) {
+          if (errorNode) {
+            errorNode.textContent = error.message || "Không thể tự xác nhận channel.";
+            errorNode.classList.remove("hidden");
+          }
+        } else {
+          window.alert(error.message || "Không thể xác nhận channel.");
+        }
+      } finally {
+        browserSessionAutoConfirmInFlight = false;
+        confirmSessionButton.disabled = false;
+      }
+    };
+
+    const refreshBrowserSession = async (silent = false) => {
+      if (!activeBrowserSession?.session_id) return null;
+      try {
+        const response = await fetch(`/api/user/browser-sessions/${activeBrowserSession.session_id}`);
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.detail || "Không thể tải browser session.");
+        }
+        renderBrowserSessionState(payload);
+        if (!browserSessionAutoConfirmInFlight && !modal.classList.contains("hidden") && canAutoConfirmBrowserSession(payload)) {
+          void confirmBrowserSession({ auto: true });
+        }
+        return payload;
+      } catch (error) {
+        if (!silent) {
+          window.alert(error.message || "Không thể tải browser session.");
+        }
+        return null;
+      }
+    };
+
+    const startBrowserSessionPolling = () => {
+      stopBrowserSessionPolling();
+      browserSessionPollHandle = window.setInterval(() => {
+        refreshBrowserSession(true);
+      }, 4000);
+    };
+
+    const ensureBrowserSession = async () => {
+      const response = await fetch("/api/user/browser-sessions", { method: "POST" });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.detail || "Không thể tạo browser session.");
+      }
+      renderBrowserSessionState(payload);
+      return payload;
+    };
+
+    button.addEventListener("click", async () => {
+      openModal();
+      renderBrowserSessionState(null);
+      button.disabled = true;
+      try {
+        await ensureBrowserSession();
+        startBrowserSessionPolling();
+      } catch (error) {
+        setLaunchState("failed", { last_error: error.message || "Không thể khởi tạo browser session." });
+        window.alert(error.message || "Không thể khởi tạo browser session.");
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    const requestCloseBrowserSession = async () => {
+      if (!activeBrowserSession?.session_id) {
+        closeModal();
+        return;
+      }
+      const confirmed = window.confirm("Đóng phiên đăng nhập này?");
+      if (!confirmed) return;
+      closeSessionButton.disabled = true;
+      closeModalButton.disabled = true;
+      try {
+        await deleteBrowserSession(activeBrowserSession.session_id);
+        renderBrowserSessionState(null);
+        closeModal();
+      } catch (error) {
+        window.alert(error.message || "Không thể đóng browser session.");
+      } finally {
+        closeSessionButton.disabled = false;
+        closeModalButton.disabled = false;
+      }
+    };
+
+    closeModalButton.addEventListener("click", () => {
+      requestCloseBrowserSession();
+    });
+    modal.addEventListener("click", (event) => {
+      if (event.target === modal || event.target === modal.firstElementChild) {
+        requestCloseBrowserSession();
+      }
+    });
+
+    openSessionButton.addEventListener("click", async () => {
+      const session = activeBrowserSession?.session_id ? await refreshBrowserSession(true) : null;
+      const next = session || activeBrowserSession;
+      if (!next?.novnc_url || !["awaiting_confirmation", "confirmed"].includes(next.status)) {
+        window.alert("VPS chưa báo sẵn sàng noVNC. Chờ vài giây rồi thử lại.");
+        return;
+      }
+      window.open(next.novnc_url, "_blank", "noopener");
+    });
+
+    confirmSessionButton.addEventListener("click", async () => {
+      await confirmBrowserSession({ auto: false });
+    });
+
+    closeSessionButton.addEventListener("click", async () => {
+      await requestCloseBrowserSession();
+    });
+
+    if (dashboardSeed.browser_session) {
+      renderBrowserSessionState(dashboardSeed.browser_session);
+    } else {
+      setButtonLabel();
+    }
+  };
+
   const initJobActions = () => {
     document.querySelectorAll("[data-job-action]").forEach((button) => {
       button.addEventListener("click", async () => {
@@ -1352,7 +1832,7 @@
         const jobId = button.dataset.jobId;
         if (!jobId || !action) return;
 
-        const confirmed = action === "delete" ? window.confirm("Xóa job này?") : window.confirm("Huỷ job này?");
+        const confirmed = action === "delete" ? window.confirm("Xóa job này?") : window.confirm("Hủy job này?");
         if (!confirmed) return;
 
         button.disabled = true;
@@ -1397,12 +1877,12 @@
         });
         const payload = await response.json();
         if (!response.ok) {
-          throw new Error(payload.detail || "Khong the xoa danh sach dang hien thi.");
+          throw new Error(payload.detail || "Không thể xóa danh sách đang hiển thị.");
         }
         await refreshDashboardLiveNow();
         restoreScrollPosition(scrollY);
       } catch (error) {
-        window.alert(error.message || "Khong the xoa danh sach dang hien thi.");
+        window.alert(error.message || "Không thể xóa danh sách đang hiển thị.");
         renderRenderTable();
       }
     });
@@ -1415,7 +1895,7 @@
         const channelTitle = button.dataset.channelTitle || "kênh này";
         if (!channelId) return;
 
-        const confirmed = window.confirm(`Xóa ${channelTitle}? Toàn bộ job gắn với kênh này cũng sẽ bị xóa.`);
+        const confirmed = window.confirm(`Xóa ${channelTitle}? Toàn bộ job và Chromium profile gắn với kênh này cũng sẽ bị xóa.`);
         if (!confirmed) return;
 
         button.disabled = true;
@@ -1506,7 +1986,8 @@
 
   if (dashboardSeedNode?.textContent) {
     try {
-      const dashboardSeed = JSON.parse(dashboardSeedNode.textContent);
+      dashboardSeed = JSON.parse(dashboardSeedNode.textContent);
+      activeBrowserSession = dashboardSeed.browser_session || null;
       renderJobsState = Array.isArray(dashboardSeed.render_jobs) ? dashboardSeed.render_jobs : [];
       lastLivePayloadSignature = buildLivePayloadSignature(dashboardSeed);
     } catch (_error) {
@@ -1523,12 +2004,25 @@
   initFlatpickr();
   initFileInputs();
   initForm();
-  initOAuthButton();
+  initChannelConnectButton();
   initBulkDeleteVisibleJobs();
   initChannelActions();
   initSearch();
   renderRenderTable();
   initTransientNotice();
-  pollLiveDashboard();
-  liveRefreshHandle = window.setInterval(pollLiveDashboard, 5000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      scheduleNextLiveRefresh();
+      return;
+    }
+    void refreshDashboardLiveNow().catch(() => {
+      scheduleNextLiveRefresh();
+    });
+  });
+  window.addEventListener("focus", () => {
+    void refreshDashboardLiveNow().catch(() => {
+      scheduleNextLiveRefresh();
+    });
+  });
+  void pollLiveDashboard();
 })();

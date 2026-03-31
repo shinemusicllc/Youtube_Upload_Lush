@@ -14,5 +14,5 @@
 - FFmpeg/render pipeline ve sau phai tach file/module rieng, khong nhot het vao `main.py`.
 
 ## Safety rules
-- Khong de worker phu thuoc session browser local.
+- Browser session cho user phai chay tren chinh worker/VPS duoc gan, khong chay tren control plane roi copy profile sang worker khac.
 - Khong mount storage tu host app sang worker.

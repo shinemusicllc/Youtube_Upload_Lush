@@ -12,11 +12,14 @@
                 </div>
                 <div>
                     <h2 class="section-title">Danh sách BOT</h2>
-                    <p class="section-note">Quản lý cụm BOT theo manager, theo dõi tài nguyên hiện tại và thao tác nhanh trên từng VPS.</p>
+                    <p class="section-note">Quản lý BOT theo manager, cấp phát nhanh cho user và theo dõi BOT nào còn trống ngay trên một màn.</p>
                 </div>
             </div>
 
             <form method="get" action="/admin/ManagerBOT/index" class="grid gap-3 lg:min-w-[520px]" data-manager-auto-submit="true">
+                {% if dashboard.focus_user %}
+                <input type="hidden" name="userId" value="{{ dashboard.focus_user.id }}">
+                {% endif %}
                 {% include "admin/_manager_picker.html" %}
             </form>
         </div>
@@ -24,10 +27,214 @@
 
     {% include "admin/_summary_strip.html" %}
 
+    <div class="panel p-5">
+        <form
+            method="post"
+            action="/admin/bot/assign"
+            class="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]"
+            data-bot-assignment-form
+            data-default-manager-id="{{ dashboard.assignment_manager_id }}"
+            data-default-user-id="{{ dashboard.assignment_user_id }}"
+        >
+            {% for manager_id in dashboard.selected_manager_ids %}
+            <input type="hidden" name="return_manager_ids" value="{{ manager_id }}">
+            {% endfor %}
+            {% if dashboard.focus_user %}
+            <input type="hidden" name="return_user_id" value="{{ dashboard.focus_user.id }}">
+            {% endif %}
+
+            <div class="space-y-5">
+                <div class="space-y-1">
+                    <h3 class="section-title">Cấp phát BOT</h3>
+                    <p class="section-note">Chọn manager để nhận BOT trống, hoặc chọn thêm user nếu muốn đổi BOT trực tiếp cho user đó. Khi đã chọn user, hệ thống chỉ giữ 1 BOT cho user.</p>
+                </div>
+
+                {% if dashboard.focus_user %}
+                <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <p class="text-[12px] font-semibold text-slate-900">{{ dashboard.focus_user.username }}</p>
+                    <div class="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-600">
+                        <span>Vai trò: {{ dashboard.focus_user.role }}</span>
+                        <span>Manager: {{ dashboard.focus_user.manager_name }}</span>
+                        <span>Kênh: {{ dashboard.focus_user.total_channels }}</span>
+                    </div>
+                    <p class="mt-2 text-[11px] text-slate-500">
+                        {% if dashboard.focus_user.assigned_worker_name %}
+                        BOT hiện tại: {{ dashboard.focus_user.assigned_worker_name }}
+                        {% else %}
+                        User này chưa được cấp BOT.
+                        {% endif %}
+                    </p>
+                </div>
+                {% endif %}
+
+                <div class="space-y-4">
+                    <label class="block">
+                        <span class="mb-2 block text-[12px] font-semibold text-slate-700">Manager nhận BOT</span>
+                        {% if dashboard.current_user.role == 'manager' %}
+                        <select class="toolbar-select bg-slate-50 text-slate-600" id="assignment-manager-id" disabled>
+                            <option value="{{ dashboard.assignment_manager_id }}">{{ dashboard.current_user.username }}</option>
+                        </select>
+                        <input type="hidden" name="manager_id" value="{{ dashboard.assignment_manager_id }}">
+                        {% else %}
+                        <select class="toolbar-select" id="assignment-manager-id" name="manager_id" required>
+                            <option value="">-- Chọn manager --</option>
+                            {% for manager in dashboard.manager_options %}
+                            <option value="{{ manager.id }}" {% if dashboard.assignment_manager_id == manager.id %}selected{% endif %}>{{ manager.username }}</option>
+                            {% endfor %}
+                        </select>
+                        {% endif %}
+                    </label>
+
+                    <label class="block">
+                        <span class="mb-2 block text-[12px] font-semibold text-slate-700">User nhận BOT</span>
+                        <select class="toolbar-select" id="assignment-user-id" name="user_id">
+                            <option value="">-- Để BOT trống trong kho manager --</option>
+                            {% for user in dashboard.bot_user_options %}
+                            <option
+                                value="{{ user.id }}"
+                                data-manager-id="{{ user.manager_id }}"
+                                {% if dashboard.assignment_user_id == user.id %}selected{% endif %}
+                            >
+                                {{ user.username }}{% if user.assigned_worker_name %} • đang giữ {{ user.assigned_worker_name }}{% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                </div>
+
+                <div class="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                    <p class="text-[12px] font-semibold text-slate-900">Chế độ cấp phát</p>
+                    <p class="mt-1 text-[11px] leading-5 text-slate-600" data-assignment-mode-note>
+                        Có thể chọn nhiều BOT trống để chuyển về kho manager.
+                    </p>
+                </div>
+
+                <div class="flex items-center justify-between border-t border-slate-200 pt-4">
+                    <p class="text-[11px] text-slate-500">
+                        Đã chọn <span class="font-semibold text-slate-800" data-selected-bot-count>0</span> BOT.
+                    </p>
+                    <button type="submit" class="action-btn action-btn-emerald px-4 py-2 text-[13px]" data-assignment-submit disabled>
+                        <i data-lucide="plus" class="h-4 w-4"></i>
+                        Lưu cấp phát
+                    </button>
+                </div>
+            </div>
+
+            <div class="overflow-hidden rounded-2xl border border-slate-200">
+                <div class="border-b border-slate-200 px-5 py-4">
+                    <div class="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+                        <div>
+                            <h3 class="section-title">BOT còn trống</h3>
+                            <p class="section-note">Kho BOT trống để cấp nhanh. Mỗi BOT đều hiện manager đang giữ kho hiện tại để bạn biết BOT nào còn trống và đang nằm ở nhóm nào.</p>
+                        </div>
+                        <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-right">
+                            <p class="table-mono text-[11px] text-slate-500">BOT trống / đã chọn</p>
+                            <p class="mt-1 text-[14px] font-semibold text-slate-900">
+                                <span data-visible-bot-count>{{ dashboard.available_worker_count }}</span>
+                                <span class="text-slate-300">/</span>
+                                <span data-selected-bot-count-mirror>0</span>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="border-b border-slate-200 px-5 py-4">
+                    <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div class="admin-table-search-shell max-w-[360px]">
+                            <i data-lucide="search" class="h-4 w-4 text-slate-400"></i>
+                            <input
+                                type="search"
+                                class="admin-table-search-input"
+                                placeholder="Tìm BOT trống theo tên, manager hoặc nhóm..."
+                                data-available-bot-search
+                            >
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <button type="button" class="action-btn action-btn-slate text-[12px]" data-select-all-visible>
+                                <i data-lucide="check-check" class="h-3.5 w-3.5"></i>
+                                Chọn đang hiện
+                            </button>
+                            <button type="button" class="action-btn action-btn-slate text-[12px]" data-clear-bot-selection>
+                                <i data-lucide="rotate-ccw" class="h-3.5 w-3.5"></i>
+                                Bỏ chọn
+                            </button>
+                            {% if dashboard.focus_user or dashboard.selected_manager_ids %}
+                            <a href="/admin/ManagerBOT/index" class="action-btn action-btn-slate text-[12px]">
+                                <i data-lucide="filter-x" class="h-3.5 w-3.5"></i>
+                                Xóa scope nhanh
+                            </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="border-b border-slate-200 bg-slate-50/70 px-5 py-3" data-selected-bot-shell hidden>
+                    <div class="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+                        <div>
+                            <p class="text-[12px] font-semibold text-slate-900">BOT đã chọn</p>
+                            <p class="mt-1 text-[11px] text-slate-500">Danh sách này giữ lại để bạn không bị mất dấu khi kho BOT trống quá dài.</p>
+                        </div>
+                        <div class="flex flex-wrap gap-2" data-selected-bot-tags></div>
+                    </div>
+                </div>
+
+                <div class="max-h-[460px] overflow-y-auto p-5">
+                    {% if dashboard.available_assignment_workers %}
+                    <div class="grid gap-3 xl:grid-cols-2" data-available-bot-grid>
+                        {% for worker in dashboard.available_assignment_workers %}
+                        <label
+                            class="group block"
+                            data-assignment-worker-card
+                            data-search-text="{{ (worker.name ~ ' ' ~ worker.manager_name ~ ' ' ~ worker.group ~ ' ' ~ worker.status_label) | lower }}"
+                        >
+                            <input
+                                type="checkbox"
+                                name="worker_ids"
+                                value="{{ worker.id }}"
+                                class="peer sr-only"
+                                data-assignment-worker-checkbox
+                                data-bot-name="{{ worker.name }}"
+                                data-manager-name="{{ worker.manager_name }}"
+                            >
+                            <span class="flex h-full cursor-pointer flex-col gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 transition peer-checked:border-brand-500 peer-checked:bg-brand-50/40 group-hover:border-slate-300 group-hover:bg-slate-50">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <p class="truncate text-[13px] font-semibold text-slate-900">{{ worker.name }}</p>
+                                        <p class="mt-1 text-[11px] text-slate-500">Kho hiện tại: {{ worker.manager_name }}</p>
+                                    </div>
+                                    <span class="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white text-brand-600 opacity-0 transition peer-checked:border-brand-500 peer-checked:bg-brand-500 peer-checked:text-white peer-checked:opacity-100">
+                                        <i data-lucide="check" class="h-3.5 w-3.5"></i>
+                                    </span>
+                                </div>
+                                <div class="flex flex-wrap gap-2 text-[11px] text-slate-500">
+                                    <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-1 font-medium text-slate-700">{{ worker.manager_name }}</span>
+                                    <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-1">{{ worker.total_channels }} kênh</span>
+                                    <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-1">Tải {{ worker.load_percent }}%</span>
+                                    <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-1">{{ worker.thread_text }}</span>
+                                </div>
+                            </span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                    <div class="hidden rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center" data-available-bot-empty="filtered">
+                        <p class="text-[13px] font-semibold text-slate-700">Không có BOT nào khớp bộ lọc hiện tại.</p>
+                        <p class="mt-1 text-[11px] text-slate-500">Thử đổi từ khóa tìm kiếm hoặc bỏ bớt BOT đã chọn.</p>
+                    </div>
+                    {% else %}
+                    <div class="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center">
+                        <p class="text-[13px] font-semibold text-slate-700">Kho BOT trống hiện đang rỗng.</p>
+                        <p class="mt-1 text-[11px] text-slate-500">Khi user trả BOT về kho manager hoặc thêm BOT mới, danh sách này sẽ xuất hiện tại đây.</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </form>
+    </div>
+
     <div class="panel overflow-hidden">
         <div class="border-b border-slate-200/80 px-5 py-4">
             <h3 class="section-title">Cụm BOT VPS</h3>
-            <p class="section-note">Danh sách BOT theo manager, theo dõi tải hiện tại, dung lượng, băng thông thực và số user/kênh đang gắn.</p>
+            <p class="section-note">Danh sách BOT theo manager, user đang giữ BOT, số kênh trên mỗi VPS và trạng thái tài nguyên live. Production đang khóa cố định 1 job active / VPS.</p>
         </div>
 
         <div class="table-shell">
@@ -36,7 +243,7 @@
                     <tr>
                         <th class="w-14">STT</th>
                         <th>BOT</th>
-                        <th>Manager</th>
+                        <th>User</th>
                         <th>Trạng thái</th>
                         <th>Tải</th>
                         <th>Disk</th>
@@ -47,17 +254,17 @@
                 </thead>
                 <tbody data-worker-live-body data-live-endpoint="/api/admin/bots">
                     {% for worker in dashboard.workers %}
-                    <tr data-worker-row-id="{{ worker.id }}" data-search-text="{{ worker.name }} {{ worker.group }} {{ worker.manager_name }}">
+                    <tr data-worker-row-id="{{ worker.id }}" data-search-text="{{ worker.name }} {{ worker.manager_name }} {{ worker.assigned_user_name }}">
                         <td class="table-mono text-slate-500">{{ worker.index }}</td>
                         <td>
                             <div>
                                 <p class="text-[13px] font-semibold text-slate-900">{{ worker.name }}</p>
-                                <p class="table-meta">Nhóm {{ worker.group }}</p>
+                                <p class="table-meta">Manager {{ worker.manager_name }}</p>
                             </div>
                         </td>
                         <td>
-                            <p class="text-[12px] font-medium text-slate-800">{{ worker.manager_name }}</p>
-                            <p class="table-meta">{{ worker.total_users }} user • {{ worker.total_channels }} kênh</p>
+                            <p class="text-[12px] font-medium text-slate-800">{{ worker.assigned_user_name }}</p>
+                            <p class="table-meta">{{ worker.total_channels }} kênh trên VPS này</p>
                         </td>
                         <td><span class="{{ worker.status_class }}">{{ worker.status_label }}</span></td>
                         <td>
@@ -85,23 +292,12 @@
                                 </a>
                                 <button
                                     type="button"
-                                    class="action-btn action-btn-amber"
-                                    data-dialog-open="thread-bot-dialog"
-                                    data-worker-id="{{ worker.id }}"
-                                    data-worker-name="{{ worker.name }}"
-                                    data-thread="{{ worker.threads }}"
-                                >
-                                    <i data-lucide="waypoints" class="h-3.5 w-3.5"></i>
-                                    Luồng
-                                </button>
-                                <button
-                                    type="button"
                                     class="action-btn action-btn-emerald"
                                     data-dialog-open="edit-bot-dialog"
                                     data-worker-id="{{ worker.id }}"
                                     data-worker-name="{{ worker.raw_name }}"
-                                    data-group="{{ worker.group }}"
                                     data-manager-id="{{ worker.manager_id }}"
+                                    data-user-id="{{ worker.assigned_user_id }}"
                                 >
                                     <i data-lucide="pencil" class="h-3.5 w-3.5"></i>
                                     Sửa
@@ -132,9 +328,16 @@
 <dialog id="edit-bot-dialog" class="admin-dialog">
     <div class="panel">
         <form method="post" action="/admin/bot/update">
+            {% for manager_id in dashboard.selected_manager_ids %}
+            <input type="hidden" name="return_manager_ids" value="{{ manager_id }}">
+            {% endfor %}
+            {% if dashboard.focus_user %}
+            <input type="hidden" name="return_user_id" value="{{ dashboard.focus_user.id }}">
+            {% endif %}
+
             <div class="border-b border-slate-200 px-5 py-4">
                 <h3 class="section-title">Cập nhật BOT</h3>
-                <p class="section-note">Cập nhật tên BOT, group và manager phụ trách.</p>
+                <p class="section-note">Sửa tên BOT hoặc đổi manager, đổi user ngay tại danh sách BOT để tránh phải đi qua từng trang user.</p>
             </div>
             <div class="space-y-4 px-5 py-5">
                 <input type="hidden" name="Id" id="edit-bot-id">
@@ -143,15 +346,39 @@
                     <input class="toolbar-input" id="edit-bot-name" name="Name" required>
                 </div>
                 <div>
-                    <label class="field-label" for="edit-bot-group">Group</label>
-                    <input class="toolbar-input" id="edit-bot-group" name="Group" required>
-                </div>
-                <div>
-                    <label class="field-label" for="edit-bot-manager-id">Manager</label>
-                    <select class="toolbar-select" id="edit-bot-manager-id" name="UserIdManager">
+                    <label class="field-label" for="edit-bot-manager-id">Chọn manager</label>
+                    <select
+                        class="toolbar-select"
+                        id="edit-bot-manager-id"
+                        name="UserIdManager"
+                        data-admin-select-search="true"
+                        data-admin-select-search-placeholder="Gõ để tìm manager..."
+                        required
+                    >
                         <option value="">-- Chọn manager --</option>
                         {% for manager in dashboard.manager_options %}
                         <option value="{{ manager.id }}">{{ manager.username }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="field-label" for="edit-bot-user-id">Chọn user</label>
+                    <select
+                        class="toolbar-select"
+                        id="edit-bot-user-id"
+                        name="UserId"
+                        data-admin-select-search="true"
+                        data-admin-select-search-placeholder="Gõ để tìm user..."
+                    >
+                        <option value="">-- Để BOT trống trong kho manager --</option>
+                        {% for user in dashboard.bot_user_options %}
+                        <option
+                            value="{{ user.id }}"
+                            data-manager-id="{{ user.manager_id }}"
+                            data-search-text="{{ user.username }} {{ user.display_name }} {{ user.manager_name }}"
+                        >
+                            {{ user.username }}
+                        </option>
                         {% endfor %}
                     </select>
                 </div>
@@ -167,9 +394,16 @@
 <dialog id="delete-bot-dialog" class="admin-dialog">
     <div class="panel">
         <form method="post" action="/admin/managerbot/delete">
+            {% for manager_id in dashboard.selected_manager_ids %}
+            <input type="hidden" name="return_manager_ids" value="{{ manager_id }}">
+            {% endfor %}
+            {% if dashboard.focus_user %}
+            <input type="hidden" name="return_user_id" value="{{ dashboard.focus_user.id }}">
+            {% endif %}
+
             <div class="border-b border-slate-200 px-5 py-4">
                 <h3 class="section-title">Xóa BOT</h3>
-                <p class="section-note">Thao tác này sẽ gỡ toàn bộ kênh, user mapping và job đang gắn với BOT này trong seed local.</p>
+                <p class="section-note">Thao tác này sẽ gỡ kênh, user mapping và job đang bám trên BOT này trong state hiện tại.</p>
             </div>
             <div class="space-y-3 px-5 py-5">
                 <input type="hidden" name="Id" id="delete-bot-id">
@@ -182,32 +416,6 @@
         </form>
     </div>
 </dialog>
-
-<dialog id="thread-bot-dialog" class="admin-dialog">
-    <div class="panel">
-        <form method="post" action="/admin/bot/updateThread">
-            <div class="border-b border-slate-200 px-5 py-4">
-                <h3 class="section-title">Cập nhật số luồng BOT</h3>
-                <p class="section-note">Điều chỉnh số job tối đa BOT được phép xử lý song song. Cột Luồng hiển thị theo dạng đang chạy / tối đa.</p>
-            </div>
-            <div class="space-y-4 px-5 py-5">
-                <input type="hidden" name="Id" id="thread-bot-id">
-                <div>
-                    <label class="field-label" for="thread-bot-name">BOT</label>
-                    <input class="toolbar-input bg-slate-50" id="thread-bot-name" readonly>
-                </div>
-                <div>
-                    <label class="field-label" for="thread-bot-value">Số luồng tối đa</label>
-                    <input class="toolbar-input" id="thread-bot-value" name="Thread" type="number" min="1" required>
-                </div>
-            </div>
-            <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
-                <button type="button" class="action-btn action-btn-slate" data-dialog-close>Đóng</button>
-                <button type="submit" class="action-btn action-btn-amber">Cập nhật luồng</button>
-            </div>
-        </form>
-    </div>
-</dialog>
 {% endblock %}
 
 {% block page_scripts %}
@@ -215,6 +423,27 @@
   document.addEventListener('DOMContentLoaded', function () {
     const table = document.querySelector('table[data-admin-list-table="worker-index"]');
     const tbody = table ? table.querySelector('[data-worker-live-body]') : null;
+    const editManagerSelect = document.getElementById('edit-bot-manager-id');
+    const editUserSelect = document.getElementById('edit-bot-user-id');
+    const assignmentForm = document.querySelector('[data-bot-assignment-form]');
+    const assignmentManagerSelect = document.getElementById('assignment-manager-id');
+    const assignmentUserSelect = document.getElementById('assignment-user-id');
+    const assignmentSubmit = document.querySelector('[data-assignment-submit]');
+    const assignmentModeNote = document.querySelector('[data-assignment-mode-note]');
+    const availableBotSearch = document.querySelector('[data-available-bot-search]');
+    const availableBotCards = Array.from(document.querySelectorAll('[data-assignment-worker-card]'));
+    const availableBotCheckboxes = Array.from(document.querySelectorAll('[data-assignment-worker-checkbox]'));
+    const availableBotEmptyFiltered = document.querySelector('[data-available-bot-empty="filtered"]');
+    const selectedBotShell = document.querySelector('[data-selected-bot-shell]');
+    const selectedBotTags = document.querySelector('[data-selected-bot-tags]');
+    const selectedCountNodes = Array.from(document.querySelectorAll('[data-selected-bot-count], [data-selected-bot-count-mirror]'));
+    const visibleBotCountNode = document.querySelector('[data-visible-bot-count]');
+    const selectAllVisibleButton = document.querySelector('[data-select-all-visible]');
+    const clearSelectionButton = document.querySelector('[data-clear-bot-selection]');
+
+    if (editUserSelect && editUserSelect.options && editUserSelect.options[0]) {
+      editUserSelect.options[0].textContent = '-- Để BOT trống trong kho manager --';
+    }
     if (!table || !tbody) {
       return;
     }
@@ -244,7 +473,7 @@
     function buildManagerQuery(url) {
       const currentParams = new URLSearchParams(window.location.search);
       currentParams.forEach(function (value, key) {
-        if (key === 'manager_ids') {
+        if (key === 'manager_ids' || key === 'userId') {
           url.searchParams.append(key, value);
         }
       });
@@ -256,11 +485,176 @@
         worker.raw_name,
         worker.group,
         worker.manager_name,
+        worker.assigned_user_name,
         worker.bandwidth_text,
         worker.disk_text,
         worker.status_label,
         worker.thread_text
       ].filter(Boolean).join(' ');
+    }
+
+    function filterUserOptions(selectElement, managerId, preserveSelection) {
+      if (!selectElement) {
+        return;
+      }
+      const currentValue = preserveSelection ? selectElement.value : '';
+      let visibleCount = 0;
+
+      Array.from(selectElement.options).forEach(function (option, index) {
+        if (index === 0) {
+          option.hidden = false;
+          option.disabled = false;
+          return;
+        }
+        const optionManagerId = option.dataset.managerId || '';
+        const visible = Boolean(managerId) && optionManagerId === managerId;
+        option.hidden = !visible;
+        option.disabled = !visible;
+        if (visible) {
+          visibleCount += 1;
+        }
+      });
+
+      selectElement.disabled = !managerId || visibleCount === 0;
+      if (!managerId) {
+        selectElement.value = '';
+      } else {
+        const selectedOption = Array.from(selectElement.options).find(function (option) {
+          return option.value === currentValue && !option.disabled;
+        });
+        selectElement.value = selectedOption ? currentValue : '';
+      }
+    }
+
+    function resolveManagerIdFromUser(selectElement, userId) {
+      if (!selectElement || !userId) {
+        return '';
+      }
+      const matchedOption = Array.from(selectElement.options).find(function (option) {
+        return option.value === userId;
+      });
+      return matchedOption ? (matchedOption.dataset.managerId || '') : '';
+    }
+
+    function syncEditBotUserOptions(preserveSelection) {
+      if (!editManagerSelect || !editUserSelect) {
+        return;
+      }
+      filterUserOptions(editUserSelect, editManagerSelect.value || '', preserveSelection);
+    }
+
+    function getSelectedBotCheckboxes() {
+      return availableBotCheckboxes.filter(function (checkbox) {
+        return checkbox.checked;
+      });
+    }
+
+    function renderSelectedBotSummary() {
+      const selectedBots = getSelectedBotCheckboxes();
+      selectedCountNodes.forEach(function (node) {
+        node.textContent = String(selectedBots.length);
+      });
+
+      if (!selectedBotShell || !selectedBotTags) {
+        return selectedBots.length;
+      }
+
+      if (!selectedBots.length) {
+        selectedBotShell.hidden = true;
+        selectedBotTags.innerHTML = '';
+        return 0;
+      }
+
+      selectedBotShell.hidden = false;
+      selectedBotTags.innerHTML = selectedBots.map(function (checkbox) {
+        const botName = escapeHtml(checkbox.dataset.botName || checkbox.value || '');
+        const managerName = escapeHtml(checkbox.dataset.managerName || '');
+        const workerId = escapeHtml(checkbox.value || '');
+        return [
+          '<button type="button" class="inline-flex items-center gap-2 rounded-lg border border-brand-100 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700" data-remove-selected-bot="', workerId, '">',
+          '  <span>', botName, '</span>',
+          managerName ? '  <span class="text-slate-400">•</span><span class="text-slate-500">' + managerName + '</span>' : '',
+          '  <i data-lucide="x" class="h-3.5 w-3.5 text-slate-400"></i>',
+          '</button>'
+        ].join('');
+      }).join('');
+
+      if (window.lucide && typeof window.lucide.createIcons === 'function') {
+        window.lucide.createIcons({ attrs: { 'stroke-width': 1.75 } });
+      }
+      return selectedBots.length;
+    }
+
+    function syncBotPoolState() {
+      const searchTerm = String(availableBotSearch ? availableBotSearch.value : '').trim().toLowerCase();
+      const selectedUserId = assignmentUserSelect ? assignmentUserSelect.value || '' : '';
+      const hasDirectUserTarget = Boolean(selectedUserId);
+      let visibleCount = 0;
+
+      if (hasDirectUserTarget) {
+        let firstChecked = null;
+        availableBotCheckboxes.forEach(function (checkbox) {
+          if (!checkbox.checked) {
+            return;
+          }
+          if (!firstChecked) {
+            firstChecked = checkbox;
+            return;
+          }
+          checkbox.checked = false;
+        });
+      }
+
+      availableBotCards.forEach(function (card) {
+        const haystack = String(card.dataset.searchText || '').toLowerCase();
+        const matchesSearch = !searchTerm || haystack.includes(searchTerm);
+        card.hidden = !matchesSearch;
+        if (matchesSearch) {
+          visibleCount += 1;
+        }
+      });
+
+      if (visibleBotCountNode) {
+        visibleBotCountNode.textContent = String(visibleCount);
+      }
+      if (availableBotEmptyFiltered) {
+        availableBotEmptyFiltered.classList.toggle('hidden', visibleCount > 0);
+      }
+      if (selectAllVisibleButton) {
+        selectAllVisibleButton.disabled = visibleCount === 0;
+        selectAllVisibleButton.innerHTML = hasDirectUserTarget
+          ? '<i data-lucide="arrow-right" class="h-3.5 w-3.5"></i> Chọn 1 BOT'
+          : '<i data-lucide="check-check" class="h-3.5 w-3.5"></i> Chọn đang hiện';
+      }
+      if (clearSelectionButton) {
+        clearSelectionButton.disabled = getSelectedBotCheckboxes().length === 0;
+      }
+      if (assignmentModeNote) {
+        assignmentModeNote.textContent = hasDirectUserTarget
+          ? 'Đang cấp trực tiếp cho user. Hệ thống chỉ giữ 1 BOT, BOT cũ của user sẽ được trả về kho manager sau khi lưu.'
+          : 'Có thể chọn nhiều BOT trống để chuyển về kho manager.';
+      }
+
+      const selectedCount = renderSelectedBotSummary();
+      const managerId = assignmentManagerSelect ? assignmentManagerSelect.value || '' : '';
+      if (assignmentSubmit) {
+        assignmentSubmit.disabled = !managerId || selectedCount === 0;
+      }
+
+      if (window.lucide && typeof window.lucide.createIcons === 'function') {
+        window.lucide.createIcons({ attrs: { 'stroke-width': 1.75 } });
+      }
+    }
+
+    function syncAssignmentOptions(preserveSelection) {
+      if (!assignmentForm || !assignmentManagerSelect) {
+        return;
+      }
+      const managerId = assignmentManagerSelect.value || '';
+      if (assignmentUserSelect) {
+        filterUserOptions(assignmentUserSelect, managerId, preserveSelection);
+      }
+      syncBotPoolState();
     }
 
     function buildWorkerRowMarkup(worker) {
@@ -270,15 +664,15 @@
       const rawWorkerName = escapeHtml(worker.raw_name || worker.name);
       const workerIdParam = encodeURIComponent(String(worker.id || ''));
       const workerNameParam = encodeURIComponent(String(worker.raw_name || worker.name || ''));
-      const workerGroup = escapeHtml(worker.group);
       const managerName = escapeHtml(worker.manager_name);
       const managerId = escapeHtml(worker.manager_id || '');
+      const assignedUserId = escapeHtml(worker.assigned_user_id || '');
+      const assignedUserName = escapeHtml(worker.assigned_user_name || 'BOT trống');
       const statusLabel = escapeHtml(worker.status_label);
       const statusClass = escapeHtml(worker.status_class);
-      const threadText = escapeHtml(worker.thread_text || '0/1');
+      const threadText = escapeHtml(worker.thread_text || '1/1');
       const bandwidthText = escapeHtml(worker.bandwidth_text);
       const diskText = escapeHtml(worker.disk_text);
-      const totalUsers = escapeHtml(worker.total_users);
       const totalChannels = escapeHtml(worker.total_channels);
       const searchText = escapeHtml(buildWorkerSearchText(worker));
 
@@ -288,12 +682,12 @@
         '  <td>',
         '    <div>',
         '      <p class="text-[13px] font-semibold text-slate-900">', workerName, '</p>',
-        '      <p class="table-meta">Nh&#243;m ', workerGroup, '</p>',
+        '      <p class="table-meta">Manager ', managerName, '</p>',
         '    </div>',
         '  </td>',
         '  <td>',
-        '    <p class="text-[12px] font-medium text-slate-800">', managerName, '</p>',
-        '    <p class="table-meta">', totalUsers, ' user &#8226; ', totalChannels, ' k&#234;nh</p>',
+        '    <p class="text-[12px] font-medium text-slate-800">', assignedUserName, '</p>',
+        '    <p class="table-meta">', totalChannels, ' k&#234;nh tr&#234;n VPS n&#224;y</p>',
         '  </td>',
         '  <td><span class="', statusClass, '">', statusLabel, '</span></td>',
         '  <td>',
@@ -319,11 +713,7 @@
         '        <i data-lucide="users" class="h-3.5 w-3.5"></i>',
         '        DS user',
         '      </a>',
-        '      <button type="button" class="action-btn action-btn-amber" data-dialog-open="thread-bot-dialog" data-worker-id="', workerId, '" data-worker-name="', workerName, '" data-thread="', escapeHtml(worker.threads), '">',
-        '        <i data-lucide="waypoints" class="h-3.5 w-3.5"></i>',
-        '        Lu&#7891;ng',
-        '      </button>',
-        '      <button type="button" class="action-btn action-btn-emerald" data-dialog-open="edit-bot-dialog" data-worker-id="', workerId, '" data-worker-name="', rawWorkerName, '" data-group="', workerGroup, '" data-manager-id="', managerId, '">',
+        '      <button type="button" class="action-btn action-btn-emerald" data-dialog-open="edit-bot-dialog" data-worker-id="', workerId, '" data-worker-name="', rawWorkerName, '" data-manager-id="', managerId, '" data-user-id="', assignedUserId, '">',
         '        <i data-lucide="pencil" class="h-3.5 w-3.5"></i>',
         '        S&#7917;a',
         '      </button>',
@@ -348,33 +738,148 @@
       if (button.matches('[data-dialog-open="edit-bot-dialog"]')) {
         document.getElementById('edit-bot-id').value = button.dataset.workerId || '';
         document.getElementById('edit-bot-name').value = button.dataset.workerName || '';
-        document.getElementById('edit-bot-group').value = button.dataset.group || '';
-        const managerSelect = document.getElementById('edit-bot-manager-id');
-        managerSelect.value = button.dataset.managerId || '';
-        managerSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        const inferredManagerId = button.dataset.managerId || resolveManagerIdFromUser(editUserSelect, button.dataset.userId || '');
+        if (editManagerSelect) {
+          editManagerSelect.value = inferredManagerId;
+          editManagerSelect.dispatchEvent(new Event('change', { bubbles: true }));
+          syncEditBotUserOptions(false);
+        }
+        if (editUserSelect) {
+          editUserSelect.value = button.dataset.userId || '';
+          editUserSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        }
         return;
       }
 
       if (button.matches('[data-dialog-open="delete-bot-dialog"]')) {
         document.getElementById('delete-bot-id').value = button.dataset.workerId || '';
         document.getElementById('delete-bot-name').textContent = button.dataset.workerName || '';
-        return;
-      }
-
-      if (button.matches('[data-dialog-open="thread-bot-dialog"]')) {
-        document.getElementById('thread-bot-id').value = button.dataset.workerId || '';
-        document.getElementById('thread-bot-name').value = button.dataset.workerName || '';
-        document.getElementById('thread-bot-value').value = button.dataset.thread || '1';
       }
     }
 
     document.addEventListener('click', function (event) {
-      const button = event.target.closest('[data-dialog-open]');
-      if (!button) {
+      const dialogButton = event.target.closest('[data-dialog-open]');
+      if (dialogButton) {
+        fillDialogFields(dialogButton);
         return;
       }
-      fillDialogFields(button);
+
+      const removeSelectedButton = event.target.closest('[data-remove-selected-bot]');
+      if (removeSelectedButton) {
+        const workerId = removeSelectedButton.dataset.removeSelectedBot || '';
+        const checkbox = availableBotCheckboxes.find(function (item) {
+          return item.value === workerId;
+        });
+        if (checkbox) {
+          checkbox.checked = false;
+          syncBotPoolState();
+        }
+      }
     });
+
+    if (editManagerSelect) {
+      editManagerSelect.addEventListener('change', function () {
+        syncEditBotUserOptions(true);
+      });
+    }
+    if (editUserSelect) {
+      editUserSelect.addEventListener('change', function () {
+        if (!editManagerSelect) {
+          return;
+        }
+        const nextManagerId = resolveManagerIdFromUser(editUserSelect, editUserSelect.value);
+        if (nextManagerId && editManagerSelect.value !== nextManagerId) {
+          editManagerSelect.value = nextManagerId;
+          syncEditBotUserOptions(true);
+        }
+      });
+    }
+
+    if (assignmentManagerSelect) {
+      assignmentManagerSelect.addEventListener('change', function () {
+        syncAssignmentOptions(false);
+      });
+    }
+    if (assignmentUserSelect) {
+      assignmentUserSelect.addEventListener('change', function () {
+        if (assignmentManagerSelect) {
+          const nextManagerId = resolveManagerIdFromUser(assignmentUserSelect, assignmentUserSelect.value);
+          if (nextManagerId && assignmentManagerSelect.value !== nextManagerId && !assignmentManagerSelect.disabled) {
+            assignmentManagerSelect.value = nextManagerId;
+          }
+        }
+        syncAssignmentOptions(false);
+      });
+    }
+
+    if (availableBotSearch) {
+      availableBotSearch.addEventListener('input', function () {
+        syncBotPoolState();
+      });
+    }
+
+    availableBotCheckboxes.forEach(function (checkbox) {
+      checkbox.addEventListener('change', function () {
+        const hasDirectUserTarget = Boolean(assignmentUserSelect && assignmentUserSelect.value);
+        if (hasDirectUserTarget && checkbox.checked) {
+          availableBotCheckboxes.forEach(function (candidate) {
+            if (candidate !== checkbox) {
+              candidate.checked = false;
+            }
+          });
+        }
+        syncBotPoolState();
+      });
+    });
+
+    if (selectAllVisibleButton) {
+      selectAllVisibleButton.addEventListener('click', function () {
+        const visibleCheckboxes = availableBotCards
+          .filter(function (card) { return !card.hidden; })
+          .map(function (card) { return card.querySelector('[data-assignment-worker-checkbox]'); })
+          .filter(Boolean);
+        const hasDirectUserTarget = Boolean(assignmentUserSelect && assignmentUserSelect.value);
+        if (hasDirectUserTarget) {
+          availableBotCheckboxes.forEach(function (checkbox) {
+            checkbox.checked = false;
+          });
+          if (visibleCheckboxes[0]) {
+            visibleCheckboxes[0].checked = true;
+          }
+        } else {
+          visibleCheckboxes.forEach(function (checkbox) {
+            checkbox.checked = true;
+          });
+        }
+        syncBotPoolState();
+      });
+    }
+
+    if (clearSelectionButton) {
+      clearSelectionButton.addEventListener('click', function () {
+        availableBotCheckboxes.forEach(function (checkbox) {
+          checkbox.checked = false;
+        });
+        syncBotPoolState();
+      });
+    }
+
+    syncEditBotUserOptions(true);
+    if (assignmentManagerSelect) {
+      const defaultManagerId = assignmentForm ? assignmentForm.dataset.defaultManagerId || '' : '';
+      if (defaultManagerId && !assignmentManagerSelect.disabled) {
+        assignmentManagerSelect.value = defaultManagerId;
+      }
+      if (assignmentUserSelect) {
+        const defaultUserId = assignmentForm ? assignmentForm.dataset.defaultUserId || '' : '';
+        if (defaultUserId) {
+          assignmentUserSelect.value = defaultUserId;
+        }
+      }
+      syncAssignmentOptions(true);
+    } else {
+      syncBotPoolState();
+    }
 
     async function fetchLiveWorkers() {
       if (!table || !tbody) {
@@ -413,6 +918,9 @@
       lastPayloadSignature = signature;
       tbody.innerHTML = items.map(buildWorkerRowMarkup).join('');
       table.dispatchEvent(new CustomEvent('admin-table:refresh-rows'));
+      if (window.lucide && typeof window.lucide.createIcons === 'function') {
+        window.lucide.createIcons({ attrs: { 'stroke-width': 1.75 } });
+      }
     }
 
     function scheduleLivePoll() {

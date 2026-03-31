@@ -83,9 +83,12 @@
                                     <i data-lucide="link-2" class="h-3.5 w-3.5"></i>
                                     Kênh
                                 </a>
-                                <a href="/admin/user/managerbot?userId={{ user.id }}" class="action-btn action-btn-primary">
+                                <a
+                                    href="{% if user.role == 'manager' %}/admin/ManagerBOT/index?manager_ids={{ user.id }}{% elif user.role == 'user' %}/admin/ManagerBOT/index?userId={{ user.id }}{% else %}/admin/ManagerBOT/index{% endif %}"
+                                    class="action-btn action-btn-primary"
+                                >
                                     <i data-lucide="server" class="h-3.5 w-3.5"></i>
-                                    BOT
+                                    {% if user.role == 'manager' %}Gán BOT{% else %}BOT{% endif %}
                                 </a>
                                 <button
                                     type="button"

@@ -16,7 +16,7 @@ Du an dang duoc rebuild lai theo huong `FastAPI + Python backend` va UI HTML/CSS
 - Worker: `Python worker + FFmpeg`
 - Data target: `Postgres + Redis`
 - Deploy target: `git-first checkout` tren `1 control VPS + nhieu worker VPS`, runtime (`.env`, `.venv`, `backend/data`, `worker-data`, `.backup`) tach rieng khoi repo.
-- OAuth: Google / YouTube OAuth cho connect channel.
+- Channel onboarding: ho tro 2 huong `Google OAuth` va `browser session + noVNC` tren Ubuntu; huong moi uu tien cho user workspace la mo Chromium remote tren chinh `worker/VPS` duoc gan cho user, user tu dang nhap Studio, control plane xac nhan kenh qua worker sync.
 
 ## Product Flows
 - Admin: quan ly manager, user, worker VPS/BOT, channel, render job.
@@ -28,7 +28,7 @@ Du an dang duoc rebuild lai theo huong `FastAPI + Python backend` va UI HTML/CSS
 
 ## Current Backend State
 - `backend/app/templates/user_dashboard.html` la template user duy nhat dang duoc render boi FastAPI.
-- `backend/app/static/js/user_dashboard.js` xu ly channel select, submit job, OAuth start, cancel/delete job tren HTML shell.
+- `backend/app/static/js/user_dashboard.js` xu ly channel select, submit job, flow connect kenh (`browser session + noVNC` neu bat env, fallback `OAuth` neu tat), va cancel/delete job tren HTML shell.
 - Admin da duoc doi tu trang bootstrap tam sang shell Elevated SaaS Jinja voi cac route:
   - `/admin/user/index`
   - `/admin/ManagerBOT/index`
@@ -37,6 +37,11 @@ Du an dang duoc rebuild lai theo huong `FastAPI + Python backend` va UI HTML/CSS
 - `/admin` redirect ve `/admin/user/index`.
 - `/`, `/app`, `/admin`, `/api/health` da tra duoc response local.
 - OAuth Google da co flow that: start URL, validate `state`, callback, `code -> token`, lay `userinfo + channels.list(mine=true)` va cap nhat kenh vao SQLite bootstrap.
+- Browser session onboarding da duoc doi tu `control plane launch local` sang `worker-owned session`: control plane tao session request theo `worker_id` duoc gan cho user, worker agent poll/sync session, UI mo noVNC URL cua chinh worker, va backend confirm kenh bang URL Chromium do worker bao ve.
+- Rule hien tai cho workspace user: `1 user -> 1 assigned worker/VPS` tai mot thoi diem. Kenh moi, browser session, render job va upload deu phai bam theo VPS do; neu manager doi VPS thi user can reconnect kenh tren VPS moi thay vi copy browser profile giua cac may.
+- Tren host Ubuntu `82.197.71.6`, browser runtime da duoc verify tao/close session that; ban fix `--no-sandbox --disable-setuid-sandbox` duoc giu lai cho moi worker VPS neu worker service chay bang `root`.
+- Browser session moi giu `novnc_url` kem `#password=...` de user vao thang browser ma khong phai go tay VNC password, nhung moi lan `+ Them Kenh` se mo 1 Chromium/profile rieng de luu tung tai khoan/channel tach biet tren cung VPS.
+- Sau khi user confirm kenh, browser session tam se duoc dong lai; channel record giu metadata `browser_profile` rieng de render/upload va de worker co the xoa dung profile khi channel bi xoa hoac reconnect sang profile moi.
 - Local upload da duoc nang cap len huong `resumable chunk upload`: backend co upload session API, frontend upload chunk truoc roi moi tao job, va fallback direct upload da doi sang stream-to-disk.
 - Da co worker control scaffold toi thieu: `POST /api/workers/register`, `POST /api/workers/heartbeat`, `POST /api/workers/claim`, `POST /api/workers/jobs/{job_id}/progress|complete|fail`, `workers/agent/main.py`, va bo infra `Dockerfile / docker-compose / Caddyfile / systemd`.
 - Host thu nghiem dang chay tai `http://82.197.71.6:8000`; 2 worker da heartbeat thanh cong ve control plane. `simulate job processing` hien dang tat mac dinh tren worker env.
@@ -49,3 +54,7 @@ Du an dang duoc rebuild lai theo huong `FastAPI + Python backend` va UI HTML/CSS
   - API/admin contract theo module
   - persistence local bang `backend/app/data/app_state.db`
 - Data target van la `Postgres + Redis`, nhung hien tai local bootstrap dang dung SQLite snapshot de giu state qua restart.
+- Update 2026-03-30 17:10: Worker upload da ho tro 2 che do `OAuth API upload` va `browser-based upload` cho kenh `browser_profile`. Luong browser se mo `Google Chrome stable` tren chinh worker, vao `YouTube Studio upload`, gan file output render, dien `title/description`, roi hoan tat upload bang browser session cua profile kenh.
+- Update 2026-03-30 17:10: Sau khi upload thanh cong, worker se xoa `final output` trong `worker-data/outputs` va don `job_dir/downloads` de khong giu lai asset da tai ve de render. Uploaded asset goc tren control plane hien van duoc giu cho toi khi co cleanup policy rieng.
+- Update 2026-03-30 17:42: Nhanh hien tai da tat luong ket noi/upload qua `OAuth` o web/API. User workspace chi con luong `browser_profile`: them kenh bang Ubuntu Browser/noVNC va upload bang browser session tren chinh worker.
+- Update 2026-03-30 17:42: Browser channel metadata duoc self-heal khi build bootstrap/dashboard. Neu channel `browser_profile` con ten generic hoac thieu avatar, backend se tu fetch metadata public tu YouTube, cap nhat state, va dong bo lai job/UI.

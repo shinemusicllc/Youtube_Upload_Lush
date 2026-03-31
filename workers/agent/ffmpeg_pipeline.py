@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import math
 import re
 import shutil
 import subprocess
@@ -39,11 +38,11 @@ def _safe_name(value: str) -> str:
 def parse_duration_string(value: str) -> float:
     parts = [segment.strip() for segment in value.split(":")]
     if len(parts) != 3:
-        raise ValueError("time_render_string phải theo dạng HH:MM:SS.")
+        raise ValueError("time_render_string phai theo dang HH:MM:SS.")
     hours, minutes, seconds = parts
     total_seconds = int(hours) * 3600 + int(minutes) * 60 + int(seconds)
     if total_seconds <= 0:
-        raise ValueError("time_render_string phải lớn hơn 0.")
+        raise ValueError("time_render_string phai lon hon 0.")
     return float(total_seconds)
 
 
@@ -75,7 +74,7 @@ def probe_media(ffprobe_bin: str, path: Path) -> MediaInfo:
     audio_stream = next((stream for stream in streams if stream.get("codec_type") == "audio"), None)
     duration = float(format_info.get("duration") or 0.0)
     if duration <= 0:
-        raise ValueError(f"Không đọc được duration của file {path.name}.")
+        raise ValueError(f"Khong doc duoc duration cua file {path.name}.")
 
     return MediaInfo(
         path=path,
@@ -107,6 +106,18 @@ def _run_ffmpeg(
         errors="replace",
     )
     output_lines: list[str] = []
+
+    def _stop_process() -> None:
+        if process.poll() is not None:
+            return
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+            return
+        except subprocess.TimeoutExpired:
+            process.kill()
+        process.wait(timeout=5)
+
     try:
         assert process.stdout is not None
         for raw_line in process.stdout:
@@ -120,9 +131,18 @@ def _run_ffmpeg(
                     current_seconds = int(line.split("=", 1)[1]) / 1_000_000
                 except ValueError:
                     continue
-                on_progress(max(0.0, min(1.0, current_seconds / total_duration_seconds)))
-    finally:
+                try:
+                    on_progress(max(0.0, min(1.0, current_seconds / total_duration_seconds)))
+                except Exception:
+                    _stop_process()
+                    raise
         return_code = process.wait()
+    except Exception:
+        _stop_process()
+        raise
+    finally:
+        if process.stdout is not None:
+            process.stdout.close()
     if return_code != 0:
         tail = "\n".join(output_lines[-40:])
         raise RuntimeError(f"FFmpeg failed ({return_code}).\n{tail}")
@@ -186,16 +206,16 @@ def _build_sequence(
     if intro_name:
         intro_duration = duration_lookup[intro_name]
         if target_seconds <= intro_duration:
-            raise ValueError("Intro dài hơn hoặc bằng thời lượng output.")
+            raise ValueError("Intro dai hon hoac bang thoi luong output.")
         sequence.append(intro_name)
         accumulated += intro_duration
 
     if accumulated + reserved_outro >= target_seconds:
-        raise ValueError("Intro/Outro dài hơn hoặc bằng thời lượng output.")
+        raise ValueError("Intro/Outro dai hon hoac bang thoi luong output.")
 
     loop_duration = duration_lookup[loop_name]
     if loop_duration <= 0:
-        raise ValueError("Loop asset có duration không hợp lệ.")
+        raise ValueError("Loop asset co duration khong hop le.")
 
     partial_index = 0
     while accumulated + reserved_outro < target_seconds:
@@ -233,7 +253,7 @@ def render_job_assets(
     video_sources = {slot: path for slot, path in asset_paths.items() if slot in {"intro", "video_loop", "outro"} and path}
     audio_sources = {slot: path for slot, path in asset_paths.items() if slot == "audio_loop" and path}
     if "video_loop" not in video_sources:
-        raise ValueError("Job không có video_loop.")
+        raise ValueError("Job khong co video_loop.")
 
     probed: dict[str, MediaInfo] = {
         slot: probe_media(config.ffprobe_bin, path)
@@ -244,14 +264,14 @@ def render_job_assets(
     for slot, media in probed.items():
         if slot in {"intro", "video_loop", "outro"} and slot in video_sources:
             if not media.has_video:
-                raise ValueError(f"Asset {slot} không có video stream.")
+                raise ValueError(f"Asset {slot} khong co video stream.")
             if media.frame_rate is not None and media.frame_rate != round(media.frame_rate):
-                raise ValueError(f"Asset {slot} có FPS không phải số nguyên ({media.frame_rate}).")
+                raise ValueError(f"Asset {slot} co FPS khong phai so nguyen ({media.frame_rate}).")
 
     if "audio_loop" not in audio_sources:
         for slot, media in probed.items():
             if slot in video_sources and not media.has_audio:
-                raise ValueError(f"Asset video {slot} không có audio stream khi thiếu audio_loop.")
+                raise ValueError(f"Asset video {slot} khong co audio stream khi thieu audio_loop.")
 
     video_dimensions = {
         (media.width, media.height)
@@ -259,26 +279,45 @@ def render_job_assets(
         if slot in video_sources
     }
     if len(video_dimensions) > 1:
-        raise ValueError("Các video không cùng kích thước khung hình.")
+        raise ValueError("Cac video khong cung kich thuoc khung hinh.")
 
     if progress_callback:
-        progress_callback(3, "Đang chuẩn bị fast-path render")
+        progress_callback(5, "Dang phan tich input render")
 
     video_ts_names: dict[str, str] = {}
+    audio_mp3_names: dict[str, str] = {}
+    preparation_steps = len(video_sources) + len(audio_sources)
+    completed_preparation_steps = 0
+
+    def _emit_preparation_progress(message: str) -> None:
+        if not progress_callback:
+            return
+        if preparation_steps <= 0:
+            progress_callback(25, message)
+            return
+        ratio = completed_preparation_steps / preparation_steps
+        progress_callback(8 + int(ratio * 17), message)
+
     for slot, source_path in video_sources.items():
         target_name = f"{slot}.ts"
         _prepare_video_ts(config, source_path, render_dir / target_name)
         video_ts_names[slot] = target_name
+        completed_preparation_steps += 1
+        _emit_preparation_progress(f"Da chuan hoa video {slot}")
 
-    audio_mp3_names: dict[str, str] = {}
     if "audio_loop" in audio_sources:
         for slot, source_path in audio_sources.items():
             target_name = f"{slot}.mp3"
             _prepare_audio_mp3(config, source_path, render_dir / target_name)
             audio_mp3_names[slot] = target_name
+            completed_preparation_steps += 1
+            _emit_preparation_progress(f"Da chuan hoa audio {slot}")
 
     video_durations = {name: probe_media(config.ffprobe_bin, render_dir / name).duration_seconds for name in video_ts_names.values()}
     audio_durations = {name: probe_media(config.ffprobe_bin, render_dir / name).duration_seconds for name in audio_mp3_names.values()}
+
+    if progress_callback:
+        progress_callback(26, "Dang tinh toan sequence render")
 
     video_sequence = _build_sequence(
         intro_name=video_ts_names.get("intro"),
@@ -324,7 +363,7 @@ def render_job_assets(
     output_path = render_dir / output_name
 
     if progress_callback:
-        progress_callback(35, "Đang concat output")
+        progress_callback(30, "Dang ghep output")
 
     if audios_txt:
         ffmpeg_args = [
@@ -368,7 +407,7 @@ def render_job_assets(
     def _on_concat_progress(ratio: float) -> None:
         if not progress_callback:
             return
-        progress_callback(35 + int(ratio * 60), "Đang render output")
+        progress_callback(30 + int(ratio * 68), "Dang render output")
 
     _run_ffmpeg(
         config.ffmpeg_bin,
@@ -379,6 +418,6 @@ def render_job_assets(
     )
 
     if progress_callback:
-        progress_callback(98, "Đã render xong file output")
+        progress_callback(99, "Da render xong file output")
 
     return RenderResult(output_path=output_path)

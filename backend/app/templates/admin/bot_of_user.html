@@ -10,16 +10,16 @@
                 <i data-lucide="server" class="h-4.5 w-4.5 text-brand-600"></i>
             </div>
             <div>
-                <h2 class="section-title">Danh sách BOT của {{ dashboard.target_user.username }}</h2>
-                <p class="section-note">Giữ flow xem nhanh các BOT đang gắn với user và nhảy tiếp sang danh sách kênh hoặc user của BOT.</p>
+                <h2 class="section-title">Danh sach VPS cua {{ dashboard.target_user.username }}</h2>
+                <p class="section-note">Xem nhanh VPS duy nhat dang duoc cap cho user va danh sach kenh dang chay tren VPS do.</p>
             </div>
         </div>
     </div>
 
     <div class="panel overflow-hidden">
         <div class="border-b border-slate-200/80 px-5 py-4">
-            <h3 class="section-title">BOT đang được gán</h3>
-            <p class="section-note">Danh sách BOT của user này trong seed local hiện tại.</p>
+            <h3 class="section-title">VPS dang duoc cap</h3>
+            <p class="section-note">Danh sach VPS hien tai cua user nay. Luong production dang co dinh 1 job active / VPS.</p>
         </div>
 
         <div class="table-shell">
@@ -27,7 +27,7 @@
                 <thead>
                     <tr>
                         <th class="w-14">STT</th>
-                        <th>BOT</th>
+                        <th>VPS</th>
                         <th>Group</th>
                         <th>Trạng thái</th>
                         <th>Tạo lúc</th>
@@ -51,7 +51,7 @@
                         <td class="table-mono text-slate-700">{{ worker.created_at }}</td>
                         <td><span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-700">{{ worker.total_channels }}</span></td>
                         <td><span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-700">{{ worker.total_users }}</span></td>
-                        <td><span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-700">{{ worker.threads }}</span></td>
+                        <td><span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-700">1/1</span></td>
                         <td class="table-mono text-slate-700">{{ worker.disk_text }}</td>
                         <td class="table-mono text-slate-700">{{ worker.bandwidth_text }}</td>
                         <td>

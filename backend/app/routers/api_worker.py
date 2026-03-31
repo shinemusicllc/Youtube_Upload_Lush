@@ -4,6 +4,8 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from ..schemas import (
+    WorkerBrowserProfileCleanupAckPayload,
+    WorkerBrowserSessionSyncPayload,
     WorkerAuthPayload,
     WorkerHeartbeatPayload,
     WorkerJobCompletePayload,
@@ -41,6 +43,48 @@ async def claim_worker_job(payload: WorkerAuthPayload):
         return {"ok": True, "worker": worker.model_dump(mode="json"), "job": job.model_dump(mode="json") if job else None}
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Worker chưa được đăng ký.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.post("/workers/browser-sessions/poll")
+async def poll_worker_browser_sessions(payload: WorkerAuthPayload):
+    try:
+        sessions = store.get_worker_browser_sessions(payload.worker_id, payload.shared_secret)
+        cleanup_profiles = store.get_worker_browser_profile_cleanup_tasks(payload.worker_id, payload.shared_secret)
+        return {
+            "ok": True,
+            "sessions": [session.model_dump(mode="json") for session in sessions],
+            "cleanup_profiles": cleanup_profiles,
+        }
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Worker chÆ°a Ä‘Æ°á»£c Ä‘Äƒng kÃ½.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.post("/workers/browser-sessions/{session_id}/sync")
+async def sync_worker_browser_session(session_id: str, payload: WorkerBrowserSessionSyncPayload):
+    try:
+        session = store.sync_worker_browser_session(session_id, payload)
+        return {"ok": True, "session": session.model_dump(mode="json")}
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="KhÃ´ng tÃ¬m tháº¥y browser session.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/workers/browser-profiles/cleanup-ack")
+async def ack_worker_browser_profile_cleanup(payload: WorkerBrowserProfileCleanupAckPayload):
+    try:
+        cleared = store.ack_worker_browser_profile_cleanup_tasks(
+            payload.worker_id,
+            payload.shared_secret,
+            payload.profile_keys,
+        )
+        return {"ok": True, "cleared_profile_keys": cleared}
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Worker chua duoc dang ky.") from exc
     except ValueError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
 

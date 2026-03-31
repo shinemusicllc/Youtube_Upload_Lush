@@ -10,64 +10,52 @@
                 </div>
                 <div>
                     <h2 class="section-title">BOT của {{ dashboard.user_record.username }}</h2>
-                    <p class="section-note">Thêm BOT, chỉnh số luồng, hoặc gỡ BOT đã gán cho user theo đúng workflow cũ.</p>
+                    <p class="section-note">Trang này chỉ giữ thông tin BOT hiện tại. Mọi thao tác cấp, đổi hoặc thu hồi BOT được gom về tab Danh sách BOT để quản lý tập trung.</p>
                 </div>
             </div>
             {% include "admin/_user_tabs.html" %}
         </div>
     </div>
 
-    <div class="grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
+    <div class="grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
         <div class="panel p-6">
-            <form method="post" action="/admin/user/addbot" class="space-y-5">
-                <input type="hidden" name="user_id" value="{{ dashboard.user_record.id }}">
-
-                {% if dashboard.error %}
-                <div class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] font-medium text-rose-700">{{ dashboard.error }}</div>
-                {% endif %}
-
-                <div class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+            <div class="space-y-4">
+                <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                     <p class="text-[12px] font-semibold text-slate-900">{{ dashboard.user_record.username }}</p>
-                    <p class="mt-1 text-[11px] text-slate-500">Manager: {{ dashboard.user_record.manager_name or 'Không gán' }}</p>
+                    <div class="mt-1 space-y-1 text-[11px] text-slate-600">
+                        <p>Manager: {{ dashboard.user_record.manager_name or 'Chưa gán' }}</p>
+                        <p>Telegram: {{ dashboard.user_record.link_telegram or 'Chưa có' }}</p>
+                    </div>
                 </div>
 
-                <label class="block">
-                    <span class="mb-2 block text-[12px] font-semibold text-slate-700">Chọn BOT</span>
-                    <select class="toolbar-select" name="worker_id" required>
-                        <option value="">-- Chọn BOT --</option>
-                        {% for worker in dashboard.worker_candidates %}
-                        <option value="{{ worker.id }}">{{ worker.name }}</option>
-                        {% endfor %}
-                    </select>
-                </label>
-
-                <div class="grid gap-5 md:grid-cols-2">
-                    <label class="block">
-                        <span class="mb-2 block text-[12px] font-semibold text-slate-700">Loại BOT</span>
-                        <select class="toolbar-select" name="bot_type" required>
-                            <option value="1080p">1080p</option>
-                            <option value="4k">4K</option>
-                        </select>
-                    </label>
-                    <label class="block">
-                        <span class="mb-2 block text-[12px] font-semibold text-slate-700">Số luồng</span>
-                        <input class="toolbar-input" type="number" min="1" name="number_of_threads" value="1" required>
-                    </label>
+                <div class="rounded-xl border border-slate-200 px-4 py-3">
+                    <p class="text-[12px] font-semibold text-slate-900">BOT hiện tại</p>
+                    <p class="mt-2 text-[13px] text-slate-700">
+                        {% if dashboard.assigned_worker %}
+                        {{ dashboard.assigned_worker.name }}
+                        {% else %}
+                        Chưa được cấp BOT.
+                        {% endif %}
+                    </p>
+                    <p class="mt-1 text-[11px] text-slate-500">Nếu cần đổi BOT, dùng nút bên dưới để sang màn quản lý tập trung.</p>
                 </div>
 
-                <div class="flex items-center justify-end border-t border-slate-200 pt-4">
-                    <button type="submit" class="action-btn action-btn-emerald px-4 py-2 text-[13px]">
-                        <i data-lucide="plus" class="h-4 w-4"></i>
-                        Thêm BOT
-                    </button>
+                <div class="flex flex-wrap gap-3 border-t border-slate-200 pt-4">
+                    <a href="/admin/ManagerBOT/index?userId={{ dashboard.user_record.id }}" class="action-btn action-btn-emerald px-4 py-2 text-[13px]">
+                        <i data-lucide="server" class="h-4 w-4"></i>
+                        Mở Danh sách BOT
+                    </a>
+                    <a href="/admin/user/index" class="action-btn action-btn-slate px-4 py-2 text-[13px]">
+                        Quay lại user
+                    </a>
                 </div>
-            </form>
+            </div>
         </div>
 
         <div class="panel overflow-hidden">
             <div class="border-b border-slate-200/80 px-5 py-4">
-                <h3 class="section-title">Danh sách BOT đã gán</h3>
-                <p class="section-note">Mỗi dòng tương ứng một mapping user → BOT → loại → số luồng.</p>
+                <h3 class="section-title">BOT đang gắn</h3>
+                <p class="section-note">Danh sách bên dưới chỉ còn vai trò thông tin. Không còn panel cấp hoặc đổi BOT ngay trong trang user.</p>
             </div>
 
             <div class="table-shell">
@@ -82,7 +70,6 @@
                             <th>Disk</th>
                             <th>Băng thông</th>
                             <th>Luồng</th>
-                            <th class="text-right">Tác vụ</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -101,27 +88,7 @@
                             <td class="table-mono text-slate-600">{{ row.disk_text }}</td>
                             <td class="table-mono text-slate-600">{{ row.bandwidth_text }}</td>
                             <td>
-                                <form method="post" action="/admin/user/updatebotuser" class="flex items-center justify-end gap-2">
-                                    <input type="hidden" name="user_id" value="{{ dashboard.user_record.id }}">
-                                    <input type="hidden" name="assignment_id" value="{{ row.id }}">
-                                    <input class="toolbar-input !min-h-[36px] w-20 px-3 py-2 text-center" type="number" min="1" name="number_of_threads" value="{{ row.number_of_threads }}">
-                                    <button type="submit" class="action-btn action-btn-amber">
-                                        <i data-lucide="save" class="h-3.5 w-3.5"></i>
-                                        Lưu
-                                    </button>
-                                </form>
-                            </td>
-                            <td>
-                                <div class="flex items-center justify-end gap-2">
-                                    <form method="post" action="/admin/user/deletebot" data-bulk-delete-form onsubmit="return confirm('Gỡ BOT này khỏi user?');">
-                                        <input type="hidden" name="user_id" value="{{ dashboard.user_record.id }}">
-                                        <input type="hidden" name="assignment_id" value="{{ row.id }}">
-                                        <button type="submit" class="action-btn action-btn-rose">
-                                            <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
-                                            Gỡ
-                                        </button>
-                                    </form>
-                                </div>
+                                <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-700">1/1</span>
                             </td>
                         </tr>
                         {% endfor %}

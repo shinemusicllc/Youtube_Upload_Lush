@@ -41,8 +41,14 @@ class AdminUserBotUpdatePayload(BaseModel):
 
 class AdminBotUpdatePayload(BaseModel):
     name: str
-    group: str
     manager_id: str | None = None
+    user_id: str | None = None
+
+
+class AdminBotAssignPayload(BaseModel):
+    worker_ids: list[str]
+    manager_id: str | None = None
+    user_id: str | None = None
 
 
 class AdminBotThreadPayload(BaseModel):
@@ -220,9 +226,28 @@ async def toggle_admin_role(request: Request, user_id: str):
 
 
 @router.get("/admin/bots")
-async def get_admin_bots(request: Request, manager_ids: list[str] | None = None):
+async def get_admin_bots(request: Request, manager_ids: list[str] | None = None, userId: str | None = None):
+    if userId:
+        _enforce_user_scope(request, userId)
     selected_manager_ids = _manager_ids_from_request(request, manager_ids)
-    return {"items": store.get_admin_bot_index_context(manager_ids=selected_manager_ids).get("workers", [])}
+    if not selected_manager_ids and userId:
+        focus_user = store._find_user(userId)
+        if focus_user.role == "manager":
+            selected_manager_ids = [focus_user.id]
+        else:
+            resolved_manager_id = store._resolved_user_manager_id(focus_user)
+            if resolved_manager_id:
+                selected_manager_ids = [resolved_manager_id]
+    current_user = require_admin_access(request)
+    if current_user.role == "manager" and not selected_manager_ids:
+        selected_manager_ids = [current_user.id]
+    return {
+        "items": store.get_admin_bot_index_context(
+            manager_ids=selected_manager_ids,
+            viewer_role=current_user.role,
+            viewer_id=current_user.id,
+        ).get("workers", [])
+    }
 
 
 @router.get("/admin/workers")
@@ -234,15 +259,35 @@ async def get_admin_workers_legacy(request: Request, manager_ids: list[str] | No
 async def update_admin_bot(request: Request, bot_id: str, payload: AdminBotUpdatePayload):
     current_user = require_admin_access(request)
     manager_id = current_user.id if current_user.role == "manager" else payload.manager_id
-    store.update_bot(bot_id, payload.name, payload.group, manager_id, updated_by=current_user.username)
+    store.update_bot(bot_id, payload.name, manager_id, assigned_user_id=payload.user_id, updated_by=current_user.username)
     return {"ok": True}
+
+
+@router.post("/admin/bots/assign")
+async def assign_admin_bots(request: Request, payload: AdminBotAssignPayload):
+    current_user = require_admin_access(request)
+    manager_id = current_user.id if current_user.role == "manager" else payload.manager_id
+    if payload.user_id:
+        _enforce_user_scope(request, payload.user_id)
+    assigned_count = store.assign_available_bots(
+        payload.worker_ids,
+        manager_id=manager_id,
+        assigned_user_id=payload.user_id,
+        updated_by=current_user.username,
+    )
+    return {"ok": True, "assigned_count": assigned_count}
 
 
 @router.post("/admin/bots/{bot_id}/threads")
 async def update_admin_bot_threads(request: Request, bot_id: str, payload: AdminBotThreadPayload):
     require_admin_access(request)
-    store.update_bot_thread(bot_id, payload.thread)
-    return {"ok": True}
+    store.update_bot_thread(bot_id, 1)
+    return {
+        "ok": True,
+        "thread": 1,
+        "locked": True,
+        "message": "Luồng BOT đang được khóa cố định 1 job active / VPS.",
+    }
 
 
 @router.delete("/admin/bots/{bot_id}")

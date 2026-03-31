@@ -12,6 +12,8 @@ ChannelStatus = Literal["connected", "pending_reconnect", "disconnected"]
 JobStatus = Literal["pending", "queueing", "downloading", "rendering", "uploading", "completed", "cancelled", "error"]
 SourceMode = Literal["drive", "local"]
 UploadSessionStatus = Literal["active", "completed", "expired", "cancelled"]
+ChannelConnectionMode = Literal["oauth", "browser_profile"]
+BrowserSessionStatus = Literal["launching", "awaiting_confirmation", "confirmed", "closed", "expired", "failed"]
 
 
 class UserSummary(BaseModel):
@@ -41,6 +43,12 @@ class WorkerRecord(BaseModel):
     disk_total_gb: float
     threads: int
     last_seen_at: datetime | None = None
+    public_base_url: str | None = None
+    browser_session_enabled: bool = False
+    browser_display_base: int | None = None
+    browser_vnc_port_base: int | None = None
+    browser_web_port_base: int | None = None
+    browser_debug_port_base: int | None = None
 
 
 class ChannelRecord(BaseModel):
@@ -58,6 +66,10 @@ class ChannelRecord(BaseModel):
     oauth_refresh_token: str | None = None
     oauth_scope: str | None = None
     oauth_token_type: str | None = None
+    connection_mode: ChannelConnectionMode = "oauth"
+    browser_profile_key: str | None = None
+    browser_profile_path: str | None = None
+    browser_connected_at: datetime | None = None
 
 
 class UserBotAssignment(BaseModel):
@@ -160,6 +172,63 @@ class OAuthStartResponse(BaseModel):
     message: str
 
 
+class BrowserSessionRecord(BaseModel):
+    session_id: str
+    owner_user_id: str
+    owner_username: str
+    target_worker_id: str = ""
+    target_worker_name: str = ""
+    target_worker_public_base_url: str | None = None
+    profile_key: str
+    display_number: int
+    vnc_port: int
+    web_port: int
+    debug_port: int
+    access_password: str
+    status: BrowserSessionStatus = "launching"
+    created_at: datetime
+    expires_at: datetime
+    launched_at: datetime | None = None
+    confirmed_at: datetime | None = None
+    novnc_url: str | None = None
+    profile_path: str | None = None
+    session_path: str | None = None
+    password_file: str | None = None
+    current_url: str | None = None
+    current_title: str | None = None
+    detected_channel_id: str | None = None
+    detected_channel_name: str | None = None
+    channel_record_id: str | None = None
+    last_error: str | None = None
+    xvfb_pid: int | None = None
+    openbox_pid: int | None = None
+    chromium_pid: int | None = None
+    x11vnc_pid: int | None = None
+    websockify_pid: int | None = None
+
+
+class BrowserSessionResponse(BaseModel):
+    session_id: str
+    status: BrowserSessionStatus
+    target_worker_id: str
+    target_worker_name: str
+    target_worker_public_base_url: str | None = None
+    novnc_url: str | None = None
+    access_password: str
+    expires_at: datetime
+    current_url: str | None = None
+    current_title: str | None = None
+    detected_channel_id: str | None = None
+    detected_channel_name: str | None = None
+    channel_record_id: str | None = None
+    last_error: str | None = None
+
+
+class BrowserSessionConfirmResponse(BaseModel):
+    session: BrowserSessionResponse
+    channel: dict[str, str | None]
+
+
 class AdminSummary(BaseModel):
     total_managers: int
     total_users: int
@@ -226,6 +295,12 @@ class WorkerRegisterPayload(BaseModel):
     capacity: int = 1
     threads: int = 1
     disk_total_gb: float = 0
+    public_base_url: str | None = None
+    browser_session_enabled: bool = False
+    browser_display_base: int | None = None
+    browser_vnc_port_base: int | None = None
+    browser_web_port_base: int | None = None
+    browser_debug_port_base: int | None = None
 
 
 class WorkerHeartbeatPayload(BaseModel):
@@ -238,6 +313,12 @@ class WorkerHeartbeatPayload(BaseModel):
     threads: int = 1
     status: WorkerStatus = "online"
     active_job_ids: list[str] | None = None
+    public_base_url: str | None = None
+    browser_session_enabled: bool | None = None
+    browser_display_base: int | None = None
+    browser_vnc_port_base: int | None = None
+    browser_web_port_base: int | None = None
+    browser_debug_port_base: int | None = None
 
 
 class WorkerControlResponse(BaseModel):
@@ -248,6 +329,12 @@ class WorkerControlResponse(BaseModel):
 class WorkerAuthPayload(BaseModel):
     worker_id: str
     shared_secret: str
+
+
+class WorkerBrowserProfileCleanupAckPayload(BaseModel):
+    worker_id: str
+    shared_secret: str
+    profile_keys: list[str] = Field(default_factory=list)
 
 
 class WorkerClaimResponse(BaseModel):
@@ -277,6 +364,26 @@ class WorkerJobFailPayload(BaseModel):
     message: str
 
 
+class WorkerBrowserSessionSyncPayload(BaseModel):
+    worker_id: str
+    shared_secret: str
+    status: BrowserSessionStatus
+    novnc_url: str | None = None
+    current_url: str | None = None
+    current_title: str | None = None
+    detected_channel_id: str | None = None
+    detected_channel_name: str | None = None
+    last_error: str | None = None
+    profile_path: str | None = None
+    session_path: str | None = None
+    password_file: str | None = None
+    xvfb_pid: int | None = None
+    openbox_pid: int | None = None
+    chromium_pid: int | None = None
+    x11vnc_pid: int | None = None
+    websockify_pid: int | None = None
+
+
 class WorkerYouTubeUploadTarget(BaseModel):
     job_id: str
     channel_id: str
@@ -284,7 +391,10 @@ class WorkerYouTubeUploadTarget(BaseModel):
     title: str
     description: str | None = None
     privacy_status: Literal["private", "public", "unlisted"] = "private"
-    client_id: str
-    client_secret: str
-    refresh_token: str
+    connection_mode: ChannelConnectionMode = "oauth"
+    browser_profile_key: str | None = None
+    browser_profile_path: str | None = None
+    client_id: str | None = None
+    client_secret: str | None = None
+    refresh_token: str | None = None
     token_uri: str = "https://oauth2.googleapis.com/token"

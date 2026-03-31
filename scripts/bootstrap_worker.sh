@@ -41,6 +41,7 @@ WORKER_ID=worker-01
 WORKER_NAME=worker-01
 WORKER_MANAGER=system
 WORKER_GROUP=workers
+WORKER_SINGLE_JOB_ONLY=true
 WORKER_CAPACITY=1
 WORKER_THREADS=1
 WORKER_HEARTBEAT_SECONDS=15
@@ -50,8 +51,29 @@ WORKER_EXECUTE_JOBS=false
 WORKER_SIMULATE_STEP_SECONDS=2.5
 WORKER_UPLOAD_TO_YOUTUBE=false
 YOUTUBE_UPLOAD_CHUNK_BYTES=8388608
+BROWSER_SESSION_ENABLED=0
+BROWSER_SESSION_PUBLIC_BASE_URL=http://worker-public-ip
+BROWSER_SESSION_DISPLAY_BASE=90
+BROWSER_SESSION_VNC_PORT_BASE=15900
+BROWSER_SESSION_WEB_PORT_BASE=16080
+BROWSER_SESSION_DEBUG_PORT_BASE=19220
+BROWSER_SESSION_BIND_HOST=0.0.0.0
+BROWSER_SESSION_START_URL=https://studio.youtube.com
+BROWSER_SESSION_NOVNC_WEB_DIR=/usr/share/novnc
+BROWSER_SESSION_CHROMIUM_BIN=chromium-browser
 EOF
   echo "Da tao /etc/youtube-upload-worker.env, vui long cap nhat gia tri truoc khi start service."
+fi
+
+set -a
+. /etc/youtube-upload-worker.env
+set +a
+
+if [ "${BROWSER_SESSION_ENABLED:-0}" = "1" ]; then
+  apt-get install -y xvfb openbox x11vnc websockify novnc chromium-browser || true
+  if ! command -v chromium-browser >/dev/null 2>&1 && ! command -v chromium >/dev/null 2>&1; then
+    snap install chromium || true
+  fi
 fi
 
 systemctl daemon-reload

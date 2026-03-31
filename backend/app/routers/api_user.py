@@ -4,12 +4,11 @@ import re
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
-from uuid import uuid4
 
 from fastapi import APIRouter, Body, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 
-from ..auth import GOOGLE_OAUTH_STATE_SESSION_KEY, require_app_access
+from ..auth import require_app_access
 from ..schemas import JobCreatePayload, UploadSessionCreateRequest
 from ..store import store
 
@@ -30,6 +29,8 @@ def _parse_schedule_time(value: str | None) -> datetime | None:
         return None
 
     cleaned = value.strip()
+    if cleaned.lower() == "now":
+        return datetime.now()
     for fmt in ("%d/%m/%Y %H:%M", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S"):
         try:
             return datetime.strptime(cleaned, fmt)
@@ -110,10 +111,46 @@ async def get_user_job_preview_thumbnail(request: Request, job_id: str):
 @router.post("/user/oauth/connect/start")
 async def start_user_oauth(request: Request):
     _current_app_user_id(request)
-    base_url = str(request.base_url).rstrip("/")
-    state = uuid4().hex
-    request.session[GOOGLE_OAUTH_STATE_SESSION_KEY] = state
-    return store.start_oauth(base_url, state=state)
+    raise HTTPException(
+        status_code=410,
+        detail="Luong OAuth da duoc tat. Hay dung '+ Them Kenh' de dang nhap bang Ubuntu Browser.",
+    )
+
+
+@router.post("/user/browser-sessions")
+async def create_user_browser_session(request: Request):
+    try:
+        return store.create_browser_session(_current_app_user_id(request))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/user/browser-sessions/{session_id}")
+async def get_user_browser_session(request: Request, session_id: str):
+    try:
+        return store.get_browser_session(_current_app_user_id(request), session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Khong tim thay browser session.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/user/browser-sessions/{session_id}/confirm")
+async def confirm_user_browser_session(request: Request, session_id: str):
+    try:
+        return store.confirm_browser_session(_current_app_user_id(request), session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Khong tim thay browser session.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.delete("/user/browser-sessions/{session_id}")
+async def close_user_browser_session(request: Request, session_id: str):
+    try:
+        return store.close_browser_session(_current_app_user_id(request), session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Khong tim thay browser session.") from exc
 
 
 @router.post("/user/uploads/sessions")

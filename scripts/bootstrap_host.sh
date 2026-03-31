@@ -30,6 +30,20 @@ if [ ! -f "$RUNTIME_DIR/.env" ]; then
   echo "Da tao $RUNTIME_DIR/.env, vui long cap nhat secret truoc khi start."
 fi
 
+set +u
+. "$RUNTIME_DIR/.env"
+set -u
+
+if [ "${BROWSER_SESSION_ENABLED:-0}" = "1" ]; then
+  apt-get update
+  apt-get install -y xvfb openbox x11vnc websockify novnc chromium-browser || true
+  if ! command -v chromium-browser >/dev/null 2>&1 && ! command -v chromium >/dev/null 2>&1 && ! command -v google-chrome >/dev/null 2>&1; then
+    if command -v snap >/dev/null 2>&1; then
+      snap install chromium
+    fi
+  fi
+fi
+
 if [ "$DEPLOY_MODE" = "docker" ]; then
   if ! command -v docker >/dev/null 2>&1; then
     apt-get update

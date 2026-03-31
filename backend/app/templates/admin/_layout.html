@@ -173,12 +173,8 @@
 
       .admin-select-menu {
         display: none;
-        position: absolute;
-        top: calc(100% + 8px);
-        left: 0;
-        right: 0;
-        z-index: 40;
-        overflow: hidden;
+        position: fixed;
+        z-index: 120;
         border: 1px solid rgb(226 232 240);
         border-radius: 10px;
         background: #ffffff;
@@ -186,6 +182,40 @@
       }
 
       .admin-select-shell[data-open="true"] .admin-select-menu {
+        display: block;
+      }
+
+      .admin-select-search-shell {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border-bottom: 1px solid rgb(241 245 249);
+        padding: 10px 12px;
+      }
+
+      .admin-select-search-input {
+        width: 100%;
+        border: 0;
+        background: transparent;
+        font-size: 13px;
+        color: rgb(15 23 42);
+        outline: none;
+      }
+
+      .admin-select-list {
+        max-height: 240px;
+        overflow-y: auto;
+      }
+
+      .admin-select-empty {
+        display: none;
+        padding: 12px 14px;
+        border-top: 1px solid rgb(241 245 249);
+        font-size: 12px;
+        color: rgb(100 116 139);
+      }
+
+      .admin-select-empty[data-visible="true"] {
         display: block;
       }
 
@@ -1194,19 +1224,99 @@
 
           const menu = document.createElement('div');
           menu.className = 'admin-select-menu';
+          const floatingHost = select.closest('dialog') || document.body;
+          const searchEnabled = select.dataset.adminSelectSearch === 'true';
+          const searchPlaceholder = select.dataset.adminSelectSearchPlaceholder || 'Gõ để tìm...';
+          let searchInput = null;
+          let emptyNode = null;
+          let optionsList = null;
+
+          if (searchEnabled) {
+            const searchShell = document.createElement('div');
+            searchShell.className = 'admin-select-search-shell';
+            searchShell.innerHTML =
+              '<i data-lucide="search" class="h-4 w-4 text-slate-400"></i>' +
+              '<input type="text" class="admin-select-search-input" autocomplete="off">';
+            searchInput = searchShell.querySelector('input');
+            searchInput.placeholder = searchPlaceholder;
+            optionsList = document.createElement('div');
+            optionsList.className = 'admin-select-list';
+            emptyNode = document.createElement('div');
+            emptyNode.className = 'admin-select-empty';
+            emptyNode.textContent = 'Không tìm thấy kết quả phù hợp.';
+            menu.appendChild(searchShell);
+            menu.appendChild(optionsList);
+            menu.appendChild(emptyNode);
+          } else {
+            optionsList = menu;
+          }
 
           shell.appendChild(button);
-          shell.appendChild(menu);
+          floatingHost.appendChild(menu);
 
           const valueNode = button.querySelector('.admin-select-value');
 
-          function setOpen(open) {
-            shell.dataset.open = !button.disabled && open ? 'true' : 'false';
+          function updateMenuPosition() {
+            if (shell.dataset.open !== 'true') {
+              return;
+            }
+
+            const buttonRect = button.getBoundingClientRect();
+            const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+            const spaceBelow = viewportHeight - buttonRect.bottom - 12;
+            const spaceAbove = buttonRect.top - 12;
+            const preferredMaxHeight = searchEnabled ? 300 : 260;
+            const openUpwards = spaceBelow < 220 && spaceAbove > spaceBelow;
+            const maxHeight = Math.max(140, Math.min(preferredMaxHeight, openUpwards ? spaceAbove : spaceBelow));
+
+            menu.style.width = buttonRect.width + 'px';
+            menu.style.left = Math.max(12, buttonRect.left) + 'px';
+            menu.style.maxHeight = maxHeight + 'px';
+
+            if (optionsList) {
+              const searchHeight = searchInput ? 49 : 0;
+              const emptyHeight = emptyNode && emptyNode.dataset.visible === 'true' ? 40 : 0;
+              optionsList.style.maxHeight = Math.max(92, maxHeight - searchHeight - emptyHeight) + 'px';
+            }
+
+            if (openUpwards) {
+              menu.style.top = 'auto';
+              menu.style.bottom = Math.max(12, viewportHeight - buttonRect.top + 8) + 'px';
+            } else {
+              menu.style.bottom = 'auto';
+              menu.style.top = Math.max(12, buttonRect.bottom + 8) + 'px';
+            }
           }
 
-          function buildOptions() {
-            menu.innerHTML = '';
+          function setOpen(open) {
+            const nextOpen = !button.disabled && open;
+            shell.dataset.open = nextOpen ? 'true' : 'false';
+            menu.style.display = nextOpen ? 'block' : 'none';
+            if (nextOpen) {
+              updateMenuPosition();
+            }
+            if (shell.dataset.open === 'true' && searchInput) {
+              window.requestAnimationFrame(function () {
+                searchInput.focus();
+                searchInput.select();
+              });
+            }
+          }
+
+          function buildOptions(filterText) {
+            const normalizedFilter = String(filterText || '').trim().toLowerCase();
+            optionsList.innerHTML = '';
+            let visibleCount = 0;
+
             Array.from(select.options).forEach(function (option) {
+              if (option.hidden) {
+                return;
+              }
+              const optionText = (option.textContent || '').trim();
+              const haystack = String(option.dataset.searchText || optionText).toLowerCase();
+              if (normalizedFilter && !haystack.includes(normalizedFilter)) {
+                return;
+              }
               const item = document.createElement('button');
               item.type = 'button';
               item.className = 'admin-select-option';
@@ -1233,8 +1343,17 @@
                 setOpen(false);
                 button.focus();
               });
-              menu.appendChild(item);
+              optionsList.appendChild(item);
+              visibleCount += 1;
             });
+
+            if (emptyNode) {
+              emptyNode.dataset.visible = visibleCount === 0 ? 'true' : 'false';
+            }
+
+            if (shell.dataset.open === 'true') {
+              updateMenuPosition();
+            }
           }
 
           function syncButton() {
@@ -1242,7 +1361,7 @@
             valueNode.textContent = selectedOption ? (selectedOption.textContent || '').trim() : '';
             valueNode.classList.toggle('is-placeholder', !select.value);
             button.disabled = select.disabled;
-            buildOptions();
+            buildOptions(searchInput ? searchInput.value : '');
           }
 
           button.addEventListener('click', function () {
@@ -1254,7 +1373,7 @@
           });
 
           document.addEventListener('click', function (event) {
-            if (!shell.contains(event.target)) {
+            if (!shell.contains(event.target) && !menu.contains(event.target)) {
               setOpen(false);
             }
           });
@@ -1264,6 +1383,15 @@
               setOpen(false);
             }
           });
+
+          if (searchInput) {
+            searchInput.addEventListener('input', function () {
+              buildOptions(searchInput.value);
+            });
+          }
+
+          window.addEventListener('resize', updateMenuPosition);
+          window.addEventListener('scroll', updateMenuPosition, true);
 
           syncButton();
         });

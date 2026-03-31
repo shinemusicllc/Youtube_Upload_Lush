@@ -1,7 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import hashlib
 import hmac
+import html
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone, tzinfo
 import json
@@ -12,18 +13,22 @@ import secrets
 from pathlib import Path
 import shutil
 import sqlite3
+from threading import RLock
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import parse_qs, quote, urlencode, urlparse
 from urllib.request import Request, urlopen
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
+from .browser_runtime import BrowserRuntimeManager
 from .schemas import (
     AdminDashboardResponse,
     AdminSummary,
+    BrowserSessionRecord,
+    BrowserSessionResponse,
     ChannelRecord,
     JobAsset,
     JobCreatePayload,
@@ -37,6 +42,7 @@ from .schemas import (
     UserBootstrapResponse,
     UserJobsResponse,
     UserSummary,
+    WorkerBrowserSessionSyncPayload,
     WorkerControlResponse,
     WorkerHeartbeatPayload,
     WorkerRegisterPayload,
@@ -105,6 +111,10 @@ class AppStore:
         self.preview_dir.mkdir(parents=True, exist_ok=True)
         self.state_db_path = self.data_dir / "app_state.db"
         self.upload_sessions: list[UploadSessionRecord] = []
+        self.browser_runtime = BrowserRuntimeManager(self.data_dir)
+        self.browser_sessions: list[BrowserSessionRecord] = []
+        self.browser_profile_cleanup_tasks: list[dict[str, Any]] = []
+        self._worker_state_lock = RLock()
 
         self.users = [
             UserSummary(id="admin-1", username="admin", display_name="Admin", role="admin"),
@@ -171,8 +181,8 @@ class AppStore:
             ),
         ]
         self.user_worker_links: list[dict[str, Any]] = [
-            {"id": 1, "user_id": "user-1", "worker_id": "worker-01", "threads": 2, "note": "BOT chính"},
-            {"id": 2, "user_id": "user-1", "worker_id": "worker-02", "threads": 1, "note": "BOT phụ"},
+            {"id": 1, "user_id": "user-1", "worker_id": "worker-01", "threads": 2, "note": "BOT chÃ­nh"},
+            {"id": 2, "user_id": "user-1", "worker_id": "worker-02", "threads": 1, "note": "BOT phá»¥"},
         ]
 
         self.channels = [
@@ -290,10 +300,17 @@ class AppStore:
         self._ensure_auth_tables()
         self._load_or_seed_state()
         normalized_worker_names = self._normalize_known_worker_names()
+        normalized_user_worker_assignments = self._normalize_user_worker_assignments()
         migrated_credentials = self._migrate_legacy_user_meta_passwords()
         self._bootstrap_auth_tables_from_memory_if_empty()
         self._load_auth_state_from_tables()
-        if migrated_credentials or normalized_worker_names:
+        normalized_visible_relationships = self._normalize_visible_admin_relationships()
+        if (
+            migrated_credentials
+            or normalized_worker_names
+            or normalized_user_worker_assignments
+            or normalized_visible_relationships
+        ):
             self._save_state()
 
     def get_session_secret(self) -> str:
@@ -301,6 +318,27 @@ class AppStore:
 
     def get_worker_shared_secret(self) -> str:
         return os.getenv("WORKER_SHARED_SECRET", "dev-worker-shared-secret")
+
+    @staticmethod
+    def _max_active_jobs_per_worker() -> int:
+        raw_value = str(os.getenv("WORKER_MAX_ACTIVE_JOBS_PER_VPS", "1")).strip()
+        try:
+            limit = int(raw_value)
+        except (TypeError, ValueError):
+            limit = 1
+        return max(1, limit)
+
+    @staticmethod
+    def _fixed_assignment_threads() -> int:
+        return 1
+
+    def _normalize_requested_worker_threads(self, requested_threads: int | None) -> int:
+        requested = max(1, int(requested_threads or 1))
+        return min(requested, self._max_active_jobs_per_worker())
+
+    def _effective_worker_thread_limit(self, worker: WorkerRecord) -> int:
+        configured = max(1, int(worker.threads or worker.capacity or 1))
+        return min(configured, self._max_active_jobs_per_worker())
 
     def get_upload_capabilities(self) -> UploadCapabilities:
         max_local_upload_bytes = int(os.getenv("MAX_LOCAL_UPLOAD_BYTES", "8589934592"))
@@ -384,7 +422,7 @@ class AppStore:
     def _hash_password(cls, password: str) -> str:
         normalized = password.strip()
         if not normalized:
-            raise ValueError("Password không được để trống.")
+            raise ValueError("Password khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.")
         salt = secrets.token_hex(16)
         iterations = cls._password_iterations()
         digest = hashlib.pbkdf2_hmac(
@@ -448,7 +486,7 @@ class AppStore:
                 meta = self._user_meta_record(user.id)
                 password_hash = str(meta.get("password_hash") or "").strip()
                 if not password_hash:
-                    raise ValueError(f"User {user.username} chưa có password_hash.")
+                    raise ValueError(f"User {user.username} chÆ°a cÃ³ password_hash.")
                 connection.execute(
                     """
                     INSERT INTO auth_users (
@@ -590,6 +628,8 @@ class AppStore:
             "channel_user_links": deepcopy(self.channel_user_links),
             "jobs": [job.model_dump(mode="json") for job in self.jobs],
             "upload_sessions": [session.model_dump(mode="json") for session in self.upload_sessions],
+            "browser_sessions": [session.model_dump(mode="json") for session in self.browser_sessions],
+            "browser_profile_cleanup_tasks": deepcopy(self.browser_profile_cleanup_tasks),
             "render_delete_meta": self._serialize_value(self.render_delete_meta),
         }
 
@@ -608,6 +648,8 @@ class AppStore:
         self.channel_user_links = list(payload.get("channel_user_links") or [])
         self.jobs = [RenderJobRecord.model_validate(item) for item in payload.get("jobs", [])]
         self.upload_sessions = [UploadSessionRecord.model_validate(item) for item in payload.get("upload_sessions", [])]
+        self.browser_sessions = [BrowserSessionRecord.model_validate(item) for item in payload.get("browser_sessions", [])]
+        self.browser_profile_cleanup_tasks = list(payload.get("browser_profile_cleanup_tasks") or [])
 
         render_meta = payload.get("render_delete_meta") or {}
         self.render_delete_meta = {
@@ -640,6 +682,186 @@ class AppStore:
             return
         self._save_state()
 
+    def _normalize_user_worker_assignments(self) -> bool:
+        changed = False
+        normalized_links: list[dict[str, Any]] = []
+        seen_user_ids: set[str] = set()
+        seen_worker_ids: set[str] = set()
+        primary_worker_by_user: dict[str, str] = {}
+
+        def sort_key(mapping: dict[str, Any]) -> tuple[int, str, str]:
+            try:
+                mapping_id = int(mapping.get("id") or 0)
+            except (TypeError, ValueError):
+                mapping_id = 0
+            return (mapping_id, str(mapping.get("user_id") or ""), str(mapping.get("worker_id") or ""))
+
+        for raw_mapping in sorted(self.user_worker_links, key=sort_key):
+            user_id = str(raw_mapping.get("user_id") or "").strip()
+            worker_id = str(raw_mapping.get("worker_id") or "").strip()
+            if not user_id or not worker_id:
+                changed = True
+                continue
+            if user_id in seen_user_ids or worker_id in seen_worker_ids:
+                changed = True
+                continue
+
+            mapping = dict(raw_mapping)
+            mapping["threads"] = self._fixed_assignment_threads()
+            mapping["note"] = str(mapping.get("note") or "").strip() or "VPS duoc cap"
+            normalized_links.append(mapping)
+            seen_user_ids.add(user_id)
+            seen_worker_ids.add(worker_id)
+            primary_worker_by_user[user_id] = worker_id
+            if mapping != raw_mapping:
+                changed = True
+
+        if normalized_links != self.user_worker_links:
+            self.user_worker_links = normalized_links
+            changed = True
+
+        if not primary_worker_by_user:
+            return changed
+
+        for channel in self.channels:
+            linked_user_ids = [str(link.get("user_id") or "") for link in self.channel_user_links if link.get("channel_id") == channel.id]
+            if len(linked_user_ids) != 1:
+                continue
+            primary_worker_id = primary_worker_by_user.get(linked_user_ids[0])
+            if not primary_worker_id or channel.worker_id == primary_worker_id:
+                continue
+            worker = next((item for item in self.workers if item.id == primary_worker_id), None)
+            if worker is None:
+                continue
+            channel.worker_id = worker.id
+            channel.worker_name = worker.id
+            channel.manager_name = worker.manager_name
+            changed = True
+
+        for job in self.jobs:
+            channel = next((item for item in self.channels if item.id == job.channel_id), None)
+            if channel is None:
+                continue
+            if job.worker_name != channel.worker_id:
+                job.worker_name = channel.worker_id
+                changed = True
+
+        if not changed:
+            return False
+
+        now = self._now(trim=False)
+        for session in self.browser_sessions:
+            primary_worker_id = primary_worker_by_user.get(session.owner_user_id)
+            if not primary_worker_id:
+                continue
+            if session.target_worker_id == primary_worker_id:
+                continue
+            if session.status in {"launching", "awaiting_confirmation", "confirmed"}:
+                session.status = "closed"
+                session.last_error = "Session da dong do user duoc cap VPS khac."
+            session.expires_at = now
+        return True
+
+    def _normalize_visible_admin_relationships(self) -> bool:
+        changed = False
+        valid_user_ids = {user.id for user in self.users if user.role == "user"}
+        valid_worker_ids = {worker.id for worker in self.workers}
+        valid_channel_ids = {channel.id for channel in self.channels}
+
+        normalized_worker_links: list[dict[str, Any]] = []
+        seen_worker_link_pairs: set[tuple[str, str]] = set()
+        for raw_link in self.user_worker_links:
+            user_id = str(raw_link.get("user_id") or "").strip()
+            worker_id = str(raw_link.get("worker_id") or "").strip()
+            if user_id not in valid_user_ids or worker_id not in valid_worker_ids:
+                changed = True
+                continue
+            pair = (user_id, worker_id)
+            if pair in seen_worker_link_pairs:
+                changed = True
+                continue
+            normalized_worker_links.append(raw_link)
+            seen_worker_link_pairs.add(pair)
+        if normalized_worker_links != self.user_worker_links:
+            self.user_worker_links = normalized_worker_links
+            changed = True
+
+        normalized_channel_links: list[dict[str, Any]] = []
+        seen_channel_link_pairs: set[tuple[str, str]] = set()
+        for raw_link in self.channel_user_links:
+            channel_id = str(raw_link.get("channel_id") or "").strip()
+            user_id = str(raw_link.get("user_id") or "").strip()
+            if channel_id not in valid_channel_ids or user_id not in valid_user_ids:
+                changed = True
+                continue
+            pair = (channel_id, user_id)
+            if pair in seen_channel_link_pairs:
+                changed = True
+                continue
+            normalized_channel_links.append(raw_link)
+            seen_channel_link_pairs.add(pair)
+        if normalized_channel_links != self.channel_user_links:
+            self.channel_user_links = normalized_channel_links
+            changed = True
+
+        worker_by_id = {worker.id: worker for worker in self.workers}
+        channel_by_id = {channel.id: channel for channel in self.channels}
+
+        for worker in self.workers:
+            assigned_user = self._assigned_user_for_worker(worker.id)
+            if assigned_user is None:
+                continue
+            manager_id = self._resolved_user_manager_id(assigned_user)
+            manager_name = assigned_user.manager_name or ""
+            if manager_id and worker.manager_id != manager_id:
+                worker.manager_id = manager_id
+                changed = True
+            if manager_name and worker.manager_name != manager_name:
+                worker.manager_name = manager_name
+                changed = True
+            if manager_name and worker.group != manager_name:
+                worker.group = manager_name
+                changed = True
+
+        for channel in self.channels:
+            linked_user_ids = [
+                str(link.get("user_id") or "").strip()
+                for link in self.channel_user_links
+                if str(link.get("channel_id") or "").strip() == channel.id
+            ]
+            if len(linked_user_ids) != 1:
+                continue
+            try:
+                linked_user = self._find_user(linked_user_ids[0])
+            except KeyError:
+                continue
+            assigned_worker = self._assigned_worker_for_user(linked_user)
+            if assigned_worker and channel.worker_id != assigned_worker.id:
+                channel.worker_id = assigned_worker.id
+                channel.worker_name = assigned_worker.id
+                changed = True
+            elif assigned_worker and channel.worker_name != assigned_worker.id:
+                channel.worker_name = assigned_worker.id
+                changed = True
+            resolved_manager_name = linked_user.manager_name or (assigned_worker.manager_name if assigned_worker else "")
+            if resolved_manager_name and channel.manager_name != resolved_manager_name:
+                channel.manager_name = resolved_manager_name
+                changed = True
+
+        for job in self.jobs:
+            channel = channel_by_id.get(job.channel_id)
+            if channel is None:
+                continue
+            if job.worker_name != channel.worker_id:
+                job.worker_name = channel.worker_id
+                changed = True
+            resolved_manager_name = self._resolve_channel_manager_name(channel)
+            if resolved_manager_name and job.manager_name != resolved_manager_name:
+                job.manager_name = resolved_manager_name
+                changed = True
+
+        return changed
+
     def _build_session_payload(self, user: UserSummary) -> dict[str, Any]:
         return {
             "id": user.id,
@@ -669,16 +891,16 @@ class AppStore:
         normalized_username = username.strip().lower()
         normalized_password = password.strip()
         if not normalized_username or not normalized_password:
-            raise ValueError("Tên đăng nhập và mật khẩu là bắt buộc.")
+            raise ValueError("TÃªn Ä‘Äƒng nháº­p vÃ  máº­t kháº©u lÃ  báº¯t buá»™c.")
 
         user = self._find_user_by_username(normalized_username)
         if not user:
-            raise ValueError("Thông tin đăng nhập không hợp lệ.")
+            raise ValueError("ThÃ´ng tin Ä‘Äƒng nháº­p khÃ´ng há»£p lá»‡.")
         if user.role not in {"admin", "manager"}:
-            raise ValueError("Tài khoản này không được phép vào trang quản trị.")
+            raise ValueError("TÃ i khoáº£n nÃ y khÃ´ng Ä‘Æ°á»£c phÃ©p vÃ o trang quáº£n trá»‹.")
 
         if not self._verify_user_password(user.id, normalized_password):
-            raise ValueError("Thông tin đăng nhập không hợp lệ.")
+            raise ValueError("ThÃ´ng tin Ä‘Äƒng nháº­p khÃ´ng há»£p lá»‡.")
 
         return self._build_session_payload(user)
 
@@ -686,15 +908,15 @@ class AppStore:
         normalized_username = username.strip().lower()
         normalized_password = password.strip()
         if not normalized_username or not normalized_password:
-            raise ValueError("Tên đăng nhập và mật khẩu là bắt buộc.")
+            raise ValueError("TÃªn Ä‘Äƒng nháº­p vÃ  máº­t kháº©u lÃ  báº¯t buá»™c.")
 
         user = self._find_user_by_username(normalized_username)
         if not user:
-            raise ValueError("Thông tin đăng nhập không hợp lệ.")
+            raise ValueError("ThÃ´ng tin Ä‘Äƒng nháº­p khÃ´ng há»£p lá»‡.")
         if user.role != "user":
-            raise ValueError("Tài khoản này không được phép vào workspace user.")
+            raise ValueError("TÃ i khoáº£n nÃ y khÃ´ng Ä‘Æ°á»£c phÃ©p vÃ o workspace user.")
         if not self._verify_user_password(user.id, normalized_password):
-            raise ValueError("Thông tin đăng nhập không hợp lệ.")
+            raise ValueError("ThÃ´ng tin Ä‘Äƒng nháº­p khÃ´ng há»£p lá»‡.")
 
         return self._build_session_payload(user)
 
@@ -702,19 +924,19 @@ class AppStore:
         normalized_username = username.strip().lower()
         normalized_password = password.strip()
         if not normalized_username or not normalized_password:
-            raise ValueError("Tên đăng nhập và mật khẩu là bắt buộc.")
+            raise ValueError("TÃªn Ä‘Äƒng nháº­p vÃ  máº­t kháº©u lÃ  báº¯t buá»™c.")
 
         user = self._find_user_by_username(normalized_username)
         if not user:
-            raise ValueError("Thông tin đăng nhập không hợp lệ.")
+            raise ValueError("ThÃ´ng tin Ä‘Äƒng nháº­p khÃ´ng há»£p lá»‡.")
         if not self._verify_user_password(user.id, normalized_password):
-            raise ValueError("Thông tin đăng nhập không hợp lệ.")
+            raise ValueError("ThÃ´ng tin Ä‘Äƒng nháº­p khÃ´ng há»£p lá»‡.")
         return self._build_session_payload(user)
 
     def assert_admin_session_user(self, user_id: str, role: str) -> None:
         user = self._find_user(user_id)
         if user.role not in {"admin", "manager"}:
-            raise ValueError("Tài khoản không được phép vào trang quản trị.")
+            raise ValueError("TÃ i khoáº£n khÃ´ng Ä‘Æ°á»£c phÃ©p vÃ o trang quáº£n trá»‹.")
         if user.role != role:
             raise ValueError("Role session khong con hop le.")
 
@@ -953,6 +1175,12 @@ class AppStore:
         normalized = value.strip().lower()
         return normalized.startswith("https://www.youtube.com/watch") or normalized.startswith("https://youtube.com/watch")
 
+    @staticmethod
+    def _is_youtube_studio_url(value: str | None) -> bool:
+        if not value:
+            return False
+        return value.strip().lower().startswith("https://studio.youtube.com/")
+
     def _job_user_status_view(self, job: RenderJobRecord) -> dict[str, Any]:
         if job.status == "completed":
             if self._is_youtube_watch_url(job.output_url):
@@ -964,6 +1192,16 @@ class AppStore:
                     "render_at": self._format_datetime(job.upload_started_at or job.completed_at),
                     "upload_at": self._format_datetime(job.completed_at),
                     "youtube_watch_url": job.output_url,
+                }
+            if self._is_youtube_studio_url(job.output_url) or job.upload_started_at:
+                return {
+                    "label": "Đã gửi YouTube",
+                    "class": "inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[10px] font-semibold text-sky-700",
+                    "progress_text_class": "text-sky-600",
+                    "progress_bar_class": "bg-sky-500",
+                    "render_at": self._format_datetime(job.upload_started_at or job.completed_at),
+                    "upload_at": self._format_datetime(job.completed_at),
+                    "youtube_watch_url": None,
                 }
             return {
                 "label": "Render hoàn tất",
@@ -1017,6 +1255,10 @@ class AppStore:
         elif job.status in {"uploading", "completed"}:
             download_progress = 100
             render_progress = 100
+            if job.status == "uploading":
+                upload_progress = min(max(job.progress, 0), 100)
+            elif job.upload_started_at or AppStore._is_youtube_watch_url(job.output_url) or AppStore._is_youtube_studio_url(job.output_url):
+                upload_progress = 100
         elif job.status in {"error", "cancelled"}:
             if job.upload_started_at or AppStore._is_youtube_watch_url(job.output_url):
                 download_progress = 100
@@ -1094,7 +1336,7 @@ class AppStore:
 
     def _authenticate_worker(self, worker_id: str, shared_secret: str) -> WorkerRecord:
         if shared_secret != self.get_worker_shared_secret():
-            raise ValueError("Worker shared secret không hợp lệ.")
+            raise ValueError("Worker shared secret khÃ´ng há»£p lá»‡.")
         return self._find_worker(worker_id)
 
     def _refresh_queue_positions(self) -> None:
@@ -1131,7 +1373,7 @@ class AppStore:
 
     def _worker_thread_summary(self, worker: WorkerRecord) -> dict[str, int | str]:
         running_threads = self._count_worker_running_jobs(worker)
-        max_threads = max(1, int(worker.threads or worker.capacity or 1))
+        max_threads = self._effective_worker_thread_limit(worker)
         return {
             "running_threads": running_threads,
             "max_threads": max_threads,
@@ -1142,112 +1384,156 @@ class AppStore:
         running_threads = self._count_worker_running_jobs(worker)
         worker.status = "busy" if running_threads > 0 else "online"
 
-    def _refresh_worker_job_leases(self, worker_id: str, now: datetime | None = None) -> None:
+    def _refresh_worker_job_leases(
+        self,
+        worker_id: str,
+        now: datetime | None = None,
+        *,
+        job_ids: list[str] | None = None,
+    ) -> None:
         lease_base = now or self._now()
         active_statuses = self._worker_active_job_statuses()
+        allowed_job_ids = {str(job_id).strip() for job_id in (job_ids or []) if str(job_id).strip()}
         for job in self.jobs:
             if job.claimed_by_worker_id == worker_id and job.status in active_statuses:
+                if allowed_job_ids and job.id not in allowed_job_ids:
+                    continue
                 job.lease_expires_at = lease_base + timedelta(minutes=5)
 
     def register_worker(self, payload: WorkerRegisterPayload) -> WorkerControlResponse:
-        if payload.shared_secret != self.get_worker_shared_secret():
-            raise ValueError("Worker shared secret không hợp lệ.")
+        with self._worker_state_lock:
+            if payload.shared_secret != self.get_worker_shared_secret():
+                raise ValueError("Worker shared secret khÃ´ng há»£p lá»‡.")
 
-        now = self._now()
-        worker_display_name = self._default_worker_display_name(payload.worker_id, payload.name)
-        existing = next((worker for worker in self.workers if worker.id == payload.worker_id), None)
-        manager = next((user for user in self.users if user.username == payload.manager_name and user.role == "manager"), None)
-        if existing is None:
-            worker = WorkerRecord(
-                id=payload.worker_id,
-                name=worker_display_name,
-                manager_id=manager.id if manager else None,
-                manager_name=payload.manager_name,
-                group=payload.group or payload.manager_name,
-                status="online",
-                capacity=payload.capacity,
-                load_percent=0,
-                bandwidth_kbps=0,
-                disk_used_gb=0,
-                disk_total_gb=payload.disk_total_gb,
-                threads=payload.threads,
-                last_seen_at=now,
-            )
-            self.workers.append(worker)
-        else:
-            existing.name = worker_display_name
-            existing.manager_id = manager.id if manager else existing.manager_id
-            existing.manager_name = payload.manager_name
-            existing.group = payload.group or payload.manager_name
-            existing.capacity = max(int(existing.capacity or 1), int(payload.capacity or 1))
-            existing.threads = max(1, int(existing.threads or payload.threads or 1))
-            existing.disk_total_gb = payload.disk_total_gb or existing.disk_total_gb
-            existing.status = "online"
-            existing.last_seen_at = now
-            worker = existing
+            now = self._now()
+            worker_display_name = self._default_worker_display_name(payload.worker_id, payload.name)
+            public_base_url = str(payload.public_base_url or "").strip() or None
+            existing = next((worker for worker in self.workers if worker.id == payload.worker_id), None)
+            manager = next((user for user in self.users if user.username == payload.manager_name and user.role == "manager"), None)
+            normalized_threads = self._normalize_requested_worker_threads(payload.threads)
+            if existing is None:
+                worker = WorkerRecord(
+                    id=payload.worker_id,
+                    name=worker_display_name,
+                    manager_id=manager.id if manager else None,
+                    manager_name=payload.manager_name,
+                    group=payload.group or payload.manager_name,
+                    status="online",
+                    capacity=payload.capacity,
+                    load_percent=0,
+                    bandwidth_kbps=0,
+                    disk_used_gb=0,
+                    disk_total_gb=payload.disk_total_gb,
+                    threads=normalized_threads,
+                    last_seen_at=now,
+                    public_base_url=public_base_url,
+                    browser_session_enabled=payload.browser_session_enabled,
+                    browser_display_base=payload.browser_display_base,
+                    browser_vnc_port_base=payload.browser_vnc_port_base,
+                    browser_web_port_base=payload.browser_web_port_base,
+                    browser_debug_port_base=payload.browser_debug_port_base,
+                )
+                self.workers.append(worker)
+            else:
+                existing.name = worker_display_name
+                existing.manager_id = manager.id if manager else existing.manager_id
+                existing.manager_name = payload.manager_name
+                existing.group = payload.group or payload.manager_name
+                existing.capacity = max(int(existing.capacity or 1), int(payload.capacity or 1))
+                existing.threads = self._normalize_requested_worker_threads(
+                    payload.threads or existing.threads or 1,
+                )
+                existing.disk_total_gb = payload.disk_total_gb or existing.disk_total_gb
+                existing.status = "online"
+                existing.last_seen_at = now
+                existing.public_base_url = public_base_url or existing.public_base_url
+                existing.browser_session_enabled = payload.browser_session_enabled
+                existing.browser_display_base = payload.browser_display_base
+                existing.browser_vnc_port_base = payload.browser_vnc_port_base
+                existing.browser_web_port_base = payload.browser_web_port_base
+                existing.browser_debug_port_base = payload.browser_debug_port_base
+                worker = existing
 
-        self._save_state()
-        return WorkerControlResponse(ok=True, worker=deepcopy(worker))
+            self._save_state()
+            return WorkerControlResponse(ok=True, worker=deepcopy(worker))
 
     def heartbeat_worker(self, payload: WorkerHeartbeatPayload) -> WorkerControlResponse:
-        worker = self._authenticate_worker(payload.worker_id, payload.shared_secret)
-        now = self._now()
-        worker.load_percent = payload.load_percent
-        worker.bandwidth_kbps = payload.bandwidth_kbps
-        worker.disk_used_gb = payload.disk_used_gb
-        worker.disk_total_gb = payload.disk_total_gb or worker.disk_total_gb
-        worker.threads = payload.threads
-        worker.last_seen_at = now
-        if payload.active_job_ids is None:
-            self._refresh_worker_job_leases(worker.id, now)
-        else:
-            self._reconcile_worker_jobs_from_heartbeat(
-                worker,
-                active_job_ids=payload.active_job_ids,
-                now=now,
-            )
-        if self._count_worker_running_jobs(worker) > 0:
-            worker.status = "busy"
-        else:
-            worker.status = payload.status
-        self._save_state()
-        return WorkerControlResponse(ok=True, worker=deepcopy(worker))
+        with self._worker_state_lock:
+            worker = self._authenticate_worker(payload.worker_id, payload.shared_secret)
+            now = self._now()
+            worker.load_percent = payload.load_percent
+            worker.bandwidth_kbps = payload.bandwidth_kbps
+            worker.disk_used_gb = payload.disk_used_gb
+            worker.disk_total_gb = payload.disk_total_gb or worker.disk_total_gb
+            worker.threads = self._normalize_requested_worker_threads(payload.threads)
+            worker.last_seen_at = now
+            if payload.public_base_url is not None:
+                worker.public_base_url = str(payload.public_base_url).strip() or None
+            if payload.browser_session_enabled is not None:
+                worker.browser_session_enabled = bool(payload.browser_session_enabled)
+            if payload.browser_display_base is not None:
+                worker.browser_display_base = payload.browser_display_base
+            if payload.browser_vnc_port_base is not None:
+                worker.browser_vnc_port_base = payload.browser_vnc_port_base
+            if payload.browser_web_port_base is not None:
+                worker.browser_web_port_base = payload.browser_web_port_base
+            if payload.browser_debug_port_base is not None:
+                worker.browser_debug_port_base = payload.browser_debug_port_base
+            if payload.active_job_ids is None:
+                self._reconcile_worker_jobs_from_heartbeat(
+                    worker,
+                    active_job_ids=[],
+                    now=now,
+                )
+            else:
+                self._reconcile_worker_jobs_from_heartbeat(
+                    worker,
+                    active_job_ids=payload.active_job_ids,
+                    now=now,
+                )
+            if self._count_worker_running_jobs(worker) > 0:
+                worker.status = "busy"
+            else:
+                worker.status = payload.status
+            self._save_state()
+            return WorkerControlResponse(ok=True, worker=deepcopy(worker))
 
     def claim_next_job(self, worker_id: str, shared_secret: str) -> tuple[WorkerRecord, RenderJobRecord | None]:
-        worker = self._authenticate_worker(worker_id, shared_secret)
-        now = self._now()
-        max_threads = max(1, int(worker.threads or worker.capacity or 1))
-        active_jobs = self._count_worker_running_jobs(worker)
-        if active_jobs >= max_threads:
+        with self._worker_state_lock:
+            worker = self._authenticate_worker(worker_id, shared_secret)
+            now = self._now()
+            max_threads = self._effective_worker_thread_limit(worker)
+            active_jobs = self._count_worker_running_jobs(worker)
+            if active_jobs >= max_threads:
+                self._sync_worker_runtime_status(worker)
+                self._save_state()
+                return deepcopy(worker), None
+
+            candidates = [
+                job
+                for job in self.jobs
+                if job.worker_name in {worker.id, worker.name}
+                and job.status in {"pending", "queueing"}
+                and (job.scheduled_at is None or job.scheduled_at <= now)
+                and (job.claimed_by_worker_id is None or (job.lease_expires_at and job.lease_expires_at <= now))
+            ]
+            candidates.sort(key=lambda item: (item.queue_order or 10_000, item.created_at))
+
+            if not candidates:
+                self._sync_worker_runtime_status(worker)
+                self._save_state()
+                return deepcopy(worker), None
+
+            job = candidates[0]
+            job.status = "queueing"
+            job.claimed_by_worker_id = worker_id
+            job.claimed_at = now
+            self._refresh_worker_job_leases(worker_id, now, job_ids=[job.id])
+            job.started_at = job.started_at or now
             self._sync_worker_runtime_status(worker)
+            self._refresh_queue_positions()
             self._save_state()
-            return deepcopy(worker), None
-
-        candidates = [
-            job
-            for job in self.jobs
-            if job.worker_name in {worker.id, worker.name}
-            and job.status in {"pending", "queueing"}
-            and (job.scheduled_at is None or job.scheduled_at <= now)
-            and (job.claimed_by_worker_id is None or (job.lease_expires_at and job.lease_expires_at <= now))
-        ]
-        candidates.sort(key=lambda item: (item.queue_order or 10_000, item.created_at))
-
-        if not candidates:
-            self._sync_worker_runtime_status(worker)
-            self._save_state()
-            return deepcopy(worker), None
-
-        job = candidates[0]
-        job.status = "queueing"
-        job.claimed_by_worker_id = worker_id
-        job.claimed_at = now
-        self._refresh_worker_job_leases(worker_id, now)
-        job.started_at = job.started_at or now
-        self._sync_worker_runtime_status(worker)
-        self._refresh_queue_positions()
-        self._save_state()
-        return deepcopy(worker), deepcopy(job)
+            return deepcopy(worker), deepcopy(job)
 
     def _find_claimed_job(self, job_id: str, worker_id: str) -> RenderJobRecord:
         for job in self.jobs:
@@ -1276,27 +1562,28 @@ class AppStore:
         progress: int,
         message: str | None = None,
     ) -> RenderJobRecord:
-        worker = self._authenticate_worker(worker_id, shared_secret)
-        job = self._find_claimed_job(job_id, worker_id)
-        self._ensure_worker_job_can_continue(job)
-        now = self._now()
+        with self._worker_state_lock:
+            worker = self._authenticate_worker(worker_id, shared_secret)
+            job = self._find_claimed_job(job_id, worker_id)
+            self._ensure_worker_job_can_continue(job)
+            now = self._now()
 
-        job.claimed_by_worker_id = worker_id
-        job.claimed_at = job.claimed_at or now
-        self._refresh_worker_job_leases(worker_id, now)
-        job.started_at = job.started_at or now
-        job.status = status  # type: ignore[assignment]
-        job.progress = max(0, min(100, progress))
-        if message:
-            job.error_message = message
-        if status == "downloading" and job.download_started_at is None:
-            job.download_started_at = now
-        if status == "uploading" and job.upload_started_at is None:
-            job.upload_started_at = now
-        self._sync_worker_runtime_status(worker)
+            job.claimed_by_worker_id = worker_id
+            job.claimed_at = job.claimed_at or now
+            self._refresh_worker_job_leases(worker_id, now, job_ids=[job.id])
+            job.started_at = job.started_at or now
+            job.status = status  # type: ignore[assignment]
+            job.progress = max(0, min(100, progress))
+            if message:
+                job.error_message = message
+            if status == "downloading" and job.download_started_at is None:
+                job.download_started_at = now
+            if status == "uploading" and job.upload_started_at is None:
+                job.upload_started_at = now
+            self._sync_worker_runtime_status(worker)
 
-        self._save_state()
-        return deepcopy(job)
+            self._save_state()
+            return deepcopy(job)
 
     def complete_worker_job(
         self,
@@ -1307,39 +1594,41 @@ class AppStore:
         output_url: str | None = None,
         message: str | None = None,
     ) -> RenderJobRecord:
-        worker = self._authenticate_worker(worker_id, shared_secret)
-        job = self._find_claimed_job(job_id, worker_id)
-        self._ensure_worker_job_can_continue(job)
-        now = self._now()
+        with self._worker_state_lock:
+            worker = self._authenticate_worker(worker_id, shared_secret)
+            job = self._find_claimed_job(job_id, worker_id)
+            self._ensure_worker_job_can_continue(job)
+            now = self._now()
 
-        job.status = "completed"
-        job.progress = 100
-        job.completed_at = now
-        job.can_cancel = False
-        job.output_url = output_url
-        job.error_message = message
-        job.lease_expires_at = None
-        self._sync_worker_runtime_status(worker)
-        if self._is_youtube_watch_url(output_url):
-            self._cleanup_uploaded_assets_for_job(job, exclude_job_id=job.id)
-        self._refresh_queue_positions()
-        self._save_state()
-        return deepcopy(job)
+            job.status = "completed"
+            job.progress = 100
+            job.completed_at = now
+            job.can_cancel = False
+            job.output_url = output_url
+            job.error_message = message
+            job.lease_expires_at = None
+            self._sync_worker_runtime_status(worker)
+            if self._is_youtube_watch_url(output_url):
+                self._cleanup_uploaded_assets_for_job(job, exclude_job_id=job.id)
+            self._refresh_queue_positions()
+            self._save_state()
+            return deepcopy(job)
 
     def fail_worker_job(self, *, job_id: str, worker_id: str, shared_secret: str, message: str) -> RenderJobRecord:
-        worker = self._authenticate_worker(worker_id, shared_secret)
-        job = self._find_claimed_job(job_id, worker_id)
-        now = self._now()
+        with self._worker_state_lock:
+            worker = self._authenticate_worker(worker_id, shared_secret)
+            job = self._find_claimed_job(job_id, worker_id)
+            now = self._now()
 
-        job.status = "error"
-        job.completed_at = now
-        job.can_cancel = False
-        job.error_message = message
-        job.lease_expires_at = None
-        self._sync_worker_runtime_status(worker)
-        self._refresh_queue_positions()
-        self._save_state()
-        return deepcopy(job)
+            job.status = "error"
+            job.completed_at = now
+            job.can_cancel = False
+            job.error_message = message
+            job.lease_expires_at = None
+            self._sync_worker_runtime_status(worker)
+            self._refresh_queue_positions()
+            self._save_state()
+            return deepcopy(job)
 
     def _find_channel(self, channel_id: str) -> ChannelRecord:
         for channel in self.channels:
@@ -1361,7 +1650,11 @@ class AppStore:
 
     def _user_jobs_for_workspace(self, user_id: str) -> list[RenderJobRecord]:
         channel_ids = self._user_channel_ids(user_id)
+        assigned_worker = self._assigned_worker_for_user(user_id)
         jobs = [job for job in self.jobs if job.channel_id in channel_ids]
+        if assigned_worker is not None:
+            allowed_worker_aliases = {assigned_worker.id, assigned_worker.name}
+            jobs = [job for job in jobs if (job.worker_name or "") in allowed_worker_aliases]
         return sorted(deepcopy(jobs), key=lambda item: item.created_at, reverse=True)
 
     def _find_user_visible_job(self, user_id: str, job_id: str) -> RenderJobRecord:
@@ -1370,13 +1663,61 @@ class AppStore:
             raise KeyError(job_id)
         return job
 
+    def _assigned_worker_link_for_user(self, user_id: str) -> dict[str, Any] | None:
+        links = [link for link in self.user_worker_links if link.get("user_id") == user_id]
+        if not links:
+            return None
+        links.sort(key=lambda item: int(item.get("id") or 0))
+        return links[0]
+
+    def _assigned_worker_for_user(self, user: UserSummary | str) -> WorkerRecord | None:
+        user_id = user.id if isinstance(user, UserSummary) else user
+        link = self._assigned_worker_link_for_user(user_id)
+        if not link:
+            return None
+        try:
+            return self._find_worker(str(link.get("worker_id") or ""))
+        except KeyError:
+            return None
+
     def _pick_worker_for_user(self, user: UserSummary) -> WorkerRecord:
-        linked_worker_ids = [link["worker_id"] for link in self.user_worker_links if link["user_id"] == user.id]
-        if linked_worker_ids:
-            return self._find_worker(linked_worker_ids[0])
-        if self.workers:
-            return self.workers[0]
-        raise ValueError("Chua co BOT nao de gan cho kenh OAuth.")
+        worker = self._assigned_worker_for_user(user)
+        if worker is not None:
+            return worker
+        raise ValueError("User nay chua duoc cap VPS render/upload.")
+
+    def _channel_matches_user_worker(self, user: UserSummary, channel: ChannelRecord) -> bool:
+        worker = self._assigned_worker_for_user(user)
+        if worker is None:
+            return False
+        return channel.worker_id == worker.id
+
+    def _assert_channel_matches_user_worker(self, user: UserSummary, channel: ChannelRecord) -> WorkerRecord:
+        worker = self._pick_worker_for_user(user)
+        if channel.worker_id == worker.id:
+            return worker
+        assigned_label = self._resolve_worker_display_name(worker.id)
+        channel_label = self._resolve_channel_worker_display_name(channel)
+        raise ValueError(
+            f"Kenh nay dang gan voi VPS {channel_label}. User {user.username} duoc cap VPS {assigned_label}. "
+            "Hay reconnect kenh tren VPS duoc cap truoc khi render/upload."
+        )
+
+    @staticmethod
+    def _worker_browser_base(worker: WorkerRecord) -> tuple[int, int, int, int]:
+        return (
+            int(worker.browser_display_base or 90),
+            int(worker.browser_vnc_port_base or 15900),
+            int(worker.browser_web_port_base or 16080),
+            int(worker.browser_debug_port_base or 19220),
+        )
+
+    def _assert_worker_browser_ready(self, worker: WorkerRecord) -> None:
+        worker_label = self._resolve_worker_display_name(worker.id)
+        if not worker.browser_session_enabled:
+            raise ValueError(f"VPS {worker_label} chua bat browser session.")
+        if not str(worker.public_base_url or "").strip():
+            raise ValueError(f"VPS {worker_label} chua khai bao public_base_url cho noVNC.")
 
     def _ensure_channel_user_link(self, *, channel_id: str, user_id: str) -> None:
         exists = next(
@@ -1392,6 +1733,480 @@ class AppStore:
 
         next_id = max([item["id"] for item in self.channel_user_links], default=0) + 1
         self.channel_user_links.append({"id": next_id, "channel_id": channel_id, "user_id": user_id})
+
+    def _find_browser_session(self, session_id: str) -> BrowserSessionRecord:
+        for session in self.browser_sessions:
+            if session.session_id == session_id:
+                return session
+        raise KeyError(session_id)
+
+    def _find_user_browser_session(self, user_id: str, session_id: str) -> BrowserSessionRecord:
+        session = self._find_browser_session(session_id)
+        if session.owner_user_id != user_id:
+            raise KeyError(session_id)
+        return session
+
+    def _browser_session_response(self, session: BrowserSessionRecord) -> BrowserSessionResponse:
+        return BrowserSessionResponse(
+            session_id=session.session_id,
+            status=session.status,
+            target_worker_id=session.target_worker_id,
+            target_worker_name=session.target_worker_name,
+            target_worker_public_base_url=session.target_worker_public_base_url,
+            novnc_url=session.novnc_url,
+            access_password=session.access_password,
+            expires_at=session.expires_at,
+            current_url=session.current_url,
+            current_title=session.current_title,
+            detected_channel_id=session.detected_channel_id,
+            detected_channel_name=session.detected_channel_name,
+            channel_record_id=session.channel_record_id,
+            last_error=session.last_error,
+        )
+
+    def _cleanup_stale_browser_sessions(self) -> None:
+        now = self._now(trim=False)
+        changed = False
+        keep_sessions: list[BrowserSessionRecord] = []
+        for session in self.browser_sessions:
+            if session.status in {"closed", "expired"}:
+                if session.expires_at < now - timedelta(hours=12):
+                    changed = True
+                    continue
+                keep_sessions.append(session)
+                continue
+
+            if session.expires_at <= now:
+                session.status = "expired"
+                changed = True
+                keep_sessions.append(session)
+                continue
+            keep_sessions.append(session)
+
+        if changed:
+            self.browser_sessions = keep_sessions
+            self._save_state()
+
+    def _active_browser_session_for_user(self, user_id: str) -> BrowserSessionRecord | None:
+        self._cleanup_stale_browser_sessions()
+        candidates = [
+            session
+            for session in self.browser_sessions
+            if session.owner_user_id == user_id
+            and session.status in {"launching", "awaiting_confirmation", "confirmed"}
+            and session.expires_at > self._now(trim=False)
+        ]
+        if not candidates:
+            return None
+        return sorted(candidates, key=lambda item: item.created_at, reverse=True)[0]
+
+    def _allocate_browser_ports_for_worker(self, worker: WorkerRecord) -> tuple[int, int, int, int]:
+        display_base, vnc_base, web_base, debug_base = self._worker_browser_base(worker)
+        now = self._now(trim=False)
+        taken = {
+            (session.display_number, session.vnc_port, session.web_port, session.debug_port)
+            for session in self.browser_sessions
+            if session.target_worker_id == worker.id
+            if (
+                session.status in {"launching", "awaiting_confirmation", "confirmed"}
+                or session.expires_at >= now - timedelta(minutes=5)
+            )
+        }
+        for offset in range(0, 200):
+            candidate = (
+                display_base + offset,
+                vnc_base + offset,
+                web_base + offset,
+                debug_base + offset,
+            )
+            if candidate not in taken:
+                return candidate
+        raise ValueError(
+            f"Da het pool port browser session tren VPS {self._resolve_worker_display_name(worker.id)}."
+        )
+
+    def _sync_browser_session_details(self, session: BrowserSessionRecord) -> BrowserSessionRecord:
+        if not session.novnc_url and session.target_worker_public_base_url:
+            session.novnc_url = self._build_browser_session_novnc_url(
+                session.target_worker_public_base_url,
+                session.web_port,
+                session.access_password,
+            )
+        return session
+
+    @staticmethod
+    def _build_browser_session_novnc_url(base_url: str, web_port: int, access_password: str) -> str:
+        encoded_password = quote(access_password, safe="")
+        return (
+            f"{base_url.rstrip('/')}:{web_port}/vnc.html?autoconnect=1&resize=scale&view_only=0"
+            f"#password={encoded_password}"
+        )
+
+    @staticmethod
+    def _extract_html_meta_content(document: str, *patterns: str) -> str | None:
+        for pattern in patterns:
+            match = re.search(pattern, document, re.IGNORECASE)
+            if not match:
+                continue
+            value = html.unescape(str(match.group(1) or "").strip())
+            if value:
+                return value
+        return None
+
+    def _fetch_public_youtube_channel_metadata(self, channel_id: str) -> dict[str, str | None]:
+        cleaned_channel_id = str(channel_id or "").strip()
+        if not cleaned_channel_id:
+            return {"channel_name": None, "avatar_url": None}
+
+        request = Request(
+            f"https://www.youtube.com/channel/{cleaned_channel_id}",
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+                )
+            },
+        )
+        try:
+            with urlopen(request, timeout=10) as response:
+                document = response.read().decode("utf-8", errors="replace")
+        except (HTTPError, URLError, TimeoutError, OSError):
+            return {"channel_name": None, "avatar_url": None}
+
+        channel_name = self._extract_html_meta_content(
+            document,
+            r'<meta\s+property="og:title"\s+content="([^"]+)"',
+            r'<meta\s+name="title"\s+content="([^"]+)"',
+            r"<title>([^<]+)</title>",
+        )
+        if channel_name:
+            channel_name = re.sub(r"\s*-\s*YouTube\s*$", "", channel_name, flags=re.IGNORECASE).strip()
+            if channel_name.lower() in {"youtube", "youtube studio", "studio"}:
+                channel_name = None
+
+        avatar_url = self._extract_html_meta_content(
+            document,
+            r'<meta\s+property="og:image"\s+content="([^"]+)"',
+            r'<link\s+rel="image_src"\s+href="([^"]+)"',
+        )
+        return {
+            "channel_name": channel_name,
+            "avatar_url": avatar_url,
+        }
+
+    @staticmethod
+    def _browser_channel_metadata_is_generic(channel: ChannelRecord) -> bool:
+        if channel.connection_mode != "browser_profile":
+            return False
+        normalized_name = str(channel.name or "").strip().lower()
+        if not normalized_name:
+            return True
+        if normalized_name in {
+            "trang tổng quan của kênh",
+            "trang tong quan cua kenh",
+            "youtube studio",
+            "dashboard",
+            "studio",
+        }:
+            return True
+        return not str(channel.avatar_url or "").strip()
+
+    def _refresh_browser_channel_metadata(self, channel: ChannelRecord) -> bool:
+        if not self._browser_channel_metadata_is_generic(channel):
+            return False
+
+        public_metadata = self._fetch_public_youtube_channel_metadata(channel.channel_id)
+        resolved_name = str(public_metadata.get("channel_name") or "").strip()
+        resolved_avatar = str(public_metadata.get("avatar_url") or "").strip() or None
+        changed = False
+
+        if resolved_name and channel.name != resolved_name:
+            channel.name = resolved_name
+            changed = True
+        if resolved_avatar and channel.avatar_url != resolved_avatar:
+            channel.avatar_url = resolved_avatar
+            changed = True
+
+        if not changed:
+            return False
+
+        for job in self.jobs:
+            if job.channel_id != channel.id:
+                continue
+            job.channel_name = channel.name
+            job.channel_avatar_url = channel.avatar_url
+        return True
+
+    def _refresh_browser_channels_metadata(self, channels: list[ChannelRecord]) -> bool:
+        changed = False
+        for channel in channels:
+            if self._refresh_browser_channel_metadata(channel):
+                changed = True
+        if changed:
+            self._save_state()
+        return changed
+
+    def _upsert_browser_connected_channel(
+        self,
+        *,
+        user: UserSummary,
+        session: BrowserSessionRecord,
+        channel_id: str,
+        channel_name: str,
+        avatar_url: str | None = None,
+    ) -> ChannelRecord:
+        worker = self._pick_worker_for_user(user)
+        existing_channel = next((item for item in self.channels if item.channel_id == channel_id), None)
+        now = self._now()
+        if existing_channel:
+            channel = existing_channel
+        else:
+            channel = ChannelRecord(
+                id=f"channel-{uuid4().hex[:8]}",
+                name=channel_name,
+                channel_id=channel_id,
+                avatar_url=avatar_url,
+                worker_id=worker.id,
+                worker_name=worker.id,
+                manager_name=user.manager_name or worker.manager_name,
+                status="connected",
+                connection_mode="browser_profile",
+            )
+            self.channels.append(channel)
+
+        previous_browser_profile_key = channel.browser_profile_key
+        previous_connection_mode = channel.connection_mode
+        channel.name = channel_name
+        channel.status = "connected"
+        channel.worker_id = worker.id
+        channel.worker_name = worker.id
+        channel.manager_name = user.manager_name or worker.manager_name
+        channel.connection_mode = "browser_profile"
+        channel.browser_profile_key = session.profile_key
+        channel.browser_profile_path = session.profile_path
+        channel.browser_connected_at = now
+        if avatar_url:
+            channel.avatar_url = avatar_url
+        if (
+            previous_connection_mode == "browser_profile"
+            and previous_browser_profile_key
+            and previous_browser_profile_key != session.profile_key
+        ):
+            self._queue_browser_profile_cleanup(
+                worker_id=worker.id,
+                profile_key=previous_browser_profile_key,
+            )
+        for job in self.jobs:
+            if job.channel_id != channel.id:
+                continue
+            job.channel_name = channel.name
+            job.channel_avatar_url = channel.avatar_url
+        self._ensure_channel_user_link(channel_id=channel.id, user_id=user.id)
+        return channel
+
+    def create_browser_session(self, user_id: str) -> BrowserSessionResponse:
+        user = self._require_workspace_user(user_id)
+        worker = self._pick_worker_for_user(user)
+        existing = self._active_browser_session_for_user(user.id)
+        if existing:
+            self._sync_browser_session_details(existing)
+            existing.status = "closed"
+            existing.expires_at = self._now(trim=False)
+            if existing.target_worker_id != worker.id:
+                existing.last_error = "Session cũ đã đóng do VPS được cấp đã thay đổi."
+            else:
+                existing.last_error = "Session cũ đã đóng để mở phiên thêm kênh mới."
+            self._queue_browser_profile_cleanup_if_orphan(
+                worker_id=existing.target_worker_id,
+                profile_key=existing.profile_key,
+            )
+            self._save_state()
+
+        self._close_orphan_browser_sessions_for_user(user.id)
+        self._assert_worker_browser_ready(worker)
+        display_number, vnc_port, web_port, debug_port = self._allocate_browser_ports_for_worker(worker)
+        now = self._now(trim=False)
+        lifetime_minutes = self.browser_runtime.load_config().lifetime_minutes
+        session = BrowserSessionRecord(
+            session_id=f"browser-{uuid4().hex[:12]}",
+            owner_user_id=user.id,
+            owner_username=user.username,
+            target_worker_id=worker.id,
+            target_worker_name=self._resolve_worker_display_name(worker.id),
+            target_worker_public_base_url=str(worker.public_base_url or "").rstrip("/") or None,
+            profile_key=f"{user.username}-{uuid4().hex[:10]}",
+            display_number=display_number,
+            vnc_port=vnc_port,
+            web_port=web_port,
+            debug_port=debug_port,
+            access_password=secrets.token_urlsafe(9),
+            status="launching",
+            created_at=now,
+            expires_at=now + timedelta(minutes=lifetime_minutes),
+        )
+        self.browser_sessions.append(session)
+        self._sync_browser_session_details(session)
+        self._save_state()
+        return self._browser_session_response(session)
+
+    def get_browser_session(self, user_id: str, session_id: str) -> BrowserSessionResponse:
+        self._require_workspace_user(user_id)
+        self._cleanup_stale_browser_sessions()
+        session = self._find_user_browser_session(user_id, session_id)
+        self._sync_browser_session_details(session)
+        self._save_state()
+        return self._browser_session_response(session)
+
+    def confirm_browser_session(self, user_id: str, session_id: str) -> dict[str, Any]:
+        user = self._require_workspace_user(user_id)
+        self._cleanup_stale_browser_sessions()
+        session = self._find_user_browser_session(user.id, session_id)
+        if session.status not in {"awaiting_confirmation", "confirmed"}:
+            raise ValueError("Browser session không còn ở trạng thái xác nhận hợp lệ.")
+
+        self._sync_browser_session_details(session)
+        channel_id = str(session.detected_channel_id or "").strip()
+        channel_name = str(session.detected_channel_name or "").strip() or channel_id
+        if not channel_id:
+            raise ValueError("Chưa nhận diện được channel. Hãy mở YouTube Studio đúng kênh rồi thử lại.")
+
+        public_metadata = self._fetch_public_youtube_channel_metadata(channel_id)
+        channel_name = str(public_metadata.get("channel_name") or "").strip() or channel_name
+        avatar_url = str(public_metadata.get("avatar_url") or "").strip() or None
+
+        channel = self._upsert_browser_connected_channel(
+            user=user,
+            session=session,
+            channel_id=channel_id,
+            channel_name=channel_name or channel_id,
+            avatar_url=avatar_url,
+        )
+        confirmed_at = self._now(trim=False)
+        session.status = "closed"
+        session.confirmed_at = confirmed_at
+        session.channel_record_id = channel.id
+        session.expires_at = confirmed_at
+        self._save_state()
+        return {
+            "session": self._browser_session_response(session).model_dump(mode="json"),
+            "channel": {
+                "channel_record_id": channel.id,
+                "channel_id": channel.channel_id,
+                "channel_name": channel.name,
+                "connection_mode": channel.connection_mode,
+            },
+        }
+
+    def close_browser_session(self, user_id: str, session_id: str) -> BrowserSessionResponse:
+        self._require_workspace_user(user_id)
+        session = self._find_user_browser_session(user_id, session_id)
+        session.status = "closed"
+        session.expires_at = self._now(trim=False)
+        self._queue_browser_profile_cleanup_if_orphan(
+            worker_id=session.target_worker_id,
+            profile_key=session.profile_key,
+        )
+        self._save_state()
+        return self._browser_session_response(session)
+
+    def get_worker_browser_sessions(self, worker_id: str, shared_secret: str) -> list[BrowserSessionRecord]:
+        worker = self._authenticate_worker(worker_id, shared_secret)
+        self._cleanup_stale_browser_sessions()
+        now = self._now(trim=False)
+        sessions = [
+            session
+            for session in self.browser_sessions
+            if session.target_worker_id == worker.id
+            and (
+                session.status in {"launching", "awaiting_confirmation", "confirmed"}
+                or session.expires_at >= now - timedelta(minutes=30)
+            )
+        ]
+        for session in sessions:
+            session.target_worker_public_base_url = str(worker.public_base_url or "").rstrip("/") or None
+            self._sync_browser_session_details(session)
+        return [deepcopy(session) for session in sessions]
+
+    def get_worker_browser_profile_cleanup_tasks(
+        self,
+        worker_id: str,
+        shared_secret: str,
+    ) -> list[dict[str, str]]:
+        worker = self._authenticate_worker(worker_id, shared_secret)
+        tasks: list[dict[str, str]] = []
+        for item in self.browser_profile_cleanup_tasks:
+            if str(item.get("worker_id") or "").strip() != worker.id:
+                continue
+            profile_key = str(item.get("profile_key") or "").strip()
+            if not profile_key:
+                continue
+            tasks.append({"profile_key": profile_key})
+        return tasks
+
+    def ack_worker_browser_profile_cleanup_tasks(
+        self,
+        worker_id: str,
+        shared_secret: str,
+        profile_keys: list[str],
+    ) -> list[str]:
+        worker = self._authenticate_worker(worker_id, shared_secret)
+        normalized = {
+            str(profile_key or "").strip()
+            for profile_key in profile_keys
+            if str(profile_key or "").strip()
+        }
+        if not normalized:
+            return []
+
+        cleared: list[str] = []
+        remaining: list[dict[str, Any]] = []
+        for item in self.browser_profile_cleanup_tasks:
+            item_worker_id = str(item.get("worker_id") or "").strip()
+            item_profile_key = str(item.get("profile_key") or "").strip()
+            if item_worker_id == worker.id and item_profile_key in normalized:
+                cleared.append(item_profile_key)
+                continue
+            remaining.append(item)
+
+        if len(remaining) != len(self.browser_profile_cleanup_tasks):
+            self.browser_profile_cleanup_tasks = remaining
+            self._save_state()
+        return cleared
+
+    def sync_worker_browser_session(
+        self,
+        session_id: str,
+        payload: WorkerBrowserSessionSyncPayload,
+    ) -> BrowserSessionRecord:
+        worker = self._authenticate_worker(payload.worker_id, payload.shared_secret)
+        session = self._find_browser_session(session_id)
+        if session.target_worker_id != worker.id:
+            raise ValueError("Browser session dang thuoc VPS khac.")
+
+        if not (
+            session.status in {"closed", "expired"}
+            and payload.status in {"launching", "awaiting_confirmation", "confirmed"}
+        ):
+            session.status = payload.status
+
+        session.novnc_url = payload.novnc_url or session.novnc_url
+        session.current_url = payload.current_url
+        session.current_title = payload.current_title
+        session.detected_channel_id = payload.detected_channel_id
+        session.detected_channel_name = payload.detected_channel_name
+        session.last_error = payload.last_error
+        session.profile_path = payload.profile_path or session.profile_path
+        session.session_path = payload.session_path or session.session_path
+        session.password_file = payload.password_file or session.password_file
+        session.xvfb_pid = payload.xvfb_pid
+        session.openbox_pid = payload.openbox_pid
+        session.chromium_pid = payload.chromium_pid
+        session.x11vnc_pid = payload.x11vnc_pid
+        session.websockify_pid = payload.websockify_pid
+        if payload.status in {"awaiting_confirmation", "confirmed"} and session.launched_at is None:
+            session.launched_at = self._now(trim=False)
+        self._save_state()
+        return deepcopy(session)
 
     def _user_meta_record(self, user_id: str) -> dict[str, Any]:
         return self.user_meta.setdefault(
@@ -1428,7 +2243,7 @@ class AppStore:
     def _selected_manager_ids(self, manager_ids: list[str] | None) -> list[str]:
         available_ids = [user.id for user in self.users if user.role == "manager"]
         if not manager_ids:
-            return available_ids
+            return []
         return [manager_id for manager_id in manager_ids if manager_id in available_ids]
 
     def _manager_options(self, selected_ids: list[str] | None = None) -> list[dict[str, str | bool]]:
@@ -1675,6 +2490,10 @@ class AppStore:
             return worker.manager_name
         return str(channel.manager_name or "-")
 
+    @staticmethod
+    def _channel_connected_at(channel: ChannelRecord) -> datetime | None:
+        return channel.browser_connected_at or channel.oauth_connected_at
+
     def _resolve_job_manager_id(self, job: RenderJobRecord) -> str | None:
         username_to_id = self._manager_username_to_id_map()
         channel = self._find_channel_optional(job.channel_id)
@@ -1720,26 +2539,9 @@ class AppStore:
         return cls._normalize_datetime(parsed)
 
     def _exchange_channel_refresh_token(self, channel: ChannelRecord) -> str:
-        refresh_token = str(channel.oauth_refresh_token or "").strip()
-        client_id = str(os.getenv("GOOGLE_CLIENT_ID", "")).strip()
-        client_secret = str(os.getenv("GOOGLE_CLIENT_SECRET", "")).strip()
-        if not refresh_token:
-            raise ValueError("Kênh chưa có refresh token OAuth thật.")
-        if not client_id or not client_secret:
-            raise ValueError("Thiếu GOOGLE_CLIENT_ID hoặc GOOGLE_CLIENT_SECRET trên control plane.")
-        token_payload = self._post_form_json(
-            "https://oauth2.googleapis.com/token",
-            {
-                "client_id": client_id,
-                "client_secret": client_secret,
-                "refresh_token": refresh_token,
-                "grant_type": "refresh_token",
-            },
+        raise ValueError(
+            "Luong OAuth/API upload da duoc tat tren nhanh hien tai. Hay reconnect kenh bang Ubuntu Browser truoc khi upload."
         )
-        access_token = str(token_payload.get("access_token") or "").strip()
-        if not access_token:
-            raise ValueError("Google không trả về access_token khi refresh token.")
-        return access_token
 
     def _recover_uploaded_watch_url(self, job: RenderJobRecord) -> str | None:
         channel = self._find_channel_optional(job.channel_id)
@@ -1855,6 +2657,14 @@ class AppStore:
         bootstrap = self.get_user_bootstrap(user_id)
         jobs_response = self.get_user_jobs(user_id)
         now = self._now()
+        browser_worker = self._assigned_worker_for_user(bootstrap.user)
+        browser_session_enabled = bool(browser_worker and browser_worker.browser_session_enabled and browser_worker.public_base_url)
+        has_assigned_worker = browser_worker is not None
+        active_browser_session = self._active_browser_session_for_user(user_id)
+        browser_session_payload = None
+        if active_browser_session:
+            self._sync_browser_session_details(active_browser_session)
+            browser_session_payload = self._browser_session_response(active_browser_session).model_dump(mode="json")
 
         queued_jobs = [job for job in jobs_response.jobs if job.status in {"pending", "queueing"}]
         rendering_jobs = [job for job in jobs_response.jobs if job.status == "rendering"]
@@ -1933,9 +2743,11 @@ class AppStore:
                     "scheduled_waiting": scheduled_waiting,
                     "scheduled_wait_at": scheduled_wait_at,
                     "status": status_view["label"],
+                    "status_key": job.status,
                     "status_class": status_view["class"],
                     "progress_text_class": status_view["progress_text_class"],
                     "progress_bar_class": status_view["progress_bar_class"],
+                    "error_message": (job.error_message or "").strip(),
                     "youtube_watch_url": status_view["youtube_watch_url"],
                     "icon": "hard-drive-download" if is_drive else None,
                     "icon_class": "text-sky-600",
@@ -1954,6 +2766,19 @@ class AppStore:
             "user_role": bootstrap.user.manager_name or bootstrap.user.role,
             "logout_path": "/logout",
             "upload_capabilities": bootstrap.upload_capabilities.model_dump(mode="json"),
+            "channel_connect_mode": "browser_session",
+            "channel_connect_blocked_message": "Bạn chưa được manager cấp VPS. Hãy liên hệ manager trước khi thêm kênh."
+            if not has_assigned_worker
+            else None,
+            "browser_session_enabled": browser_session_enabled,
+            "browser_worker": {
+                "id": browser_worker.id,
+                "name": self._resolve_worker_display_name(browser_worker.id),
+                "public_base_url": browser_worker.public_base_url,
+            }
+            if browser_worker
+            else None,
+            "browser_session": browser_session_payload,
             "notice": notice,
             "notice_level": notice_level,
             "kpis": [
@@ -1978,7 +2803,12 @@ class AppStore:
     def get_user_bootstrap(self, user_id: str) -> UserBootstrapResponse:
         user = deepcopy(self._require_workspace_user(user_id))
         assigned_channel_ids = self._user_channel_ids(user.id)
-        channels = deepcopy([channel for channel in self.channels if channel.id in assigned_channel_ids])
+        assigned_worker = self._assigned_worker_for_user(user)
+        channels = [channel for channel in self.channels if channel.id in assigned_channel_ids]
+        if assigned_worker is not None:
+            channels = [channel for channel in channels if channel.worker_id == assigned_worker.id]
+        self._refresh_browser_channels_metadata(channels)
+        channels = deepcopy(channels)
         connected_count = len([channel for channel in channels if channel.status == "connected"])
         reconnect_count = len([channel for channel in channels if channel.status != "connected"])
         return UserBootstrapResponse(
@@ -1999,6 +2829,7 @@ class AppStore:
             "render_tabs": dashboard["render_tabs"],
             "render_jobs": dashboard["render_jobs"],
             "render_summary": dashboard["render_summary"],
+            "browser_session": dashboard.get("browser_session"),
         }
 
     def _resolve_job_preview(self, job: RenderJobRecord) -> dict[str, str] | None:
@@ -2051,10 +2882,11 @@ class AppStore:
         return None
 
     def create_job(self, user_id: str, payload: JobCreatePayload, source_file_names: dict[str, str | None]) -> RenderJobRecord:
-        self._require_workspace_user(user_id)
+        user = self._require_workspace_user(user_id)
         channel = self._find_channel(payload.channel_id)
         if not self._user_has_channel_access(user_id, channel.id):
-            raise ValueError("Ban khong co quyen tao job tren kenh nay.")
+            raise ValueError("Bạn không có quyền tạo job trên kênh này.")
+        worker = self._assert_channel_matches_user_worker(user, channel)
         queue_order = max([job.queue_order or 0 for job in self.jobs], default=0) + 1
         created_at = self._now()
         normalize = lambda value: (value or "").strip() or None
@@ -2122,8 +2954,8 @@ class AppStore:
             channel_id=channel.id,
             channel_name=channel.name,
             channel_avatar_url=channel.avatar_url,
-            worker_name=channel.worker_name,
-            manager_name=channel.manager_name,
+            worker_name=worker.id,
+            manager_name=user.manager_name or worker.manager_name,
             status="pending",
             progress=0,
             queue_order=queue_order,
@@ -2234,26 +3066,37 @@ class AppStore:
             jobs=deepcopy(self.jobs),
         )
 
-    def _build_user_rows(self, manager_ids: list[str] | None = None) -> list[dict[str, Any]]:
+    def _build_user_rows(
+        self,
+        manager_ids: list[str] | None = None,
+        *,
+        viewer_role: str = "admin",
+        viewer_id: str | None = None,
+    ) -> list[dict[str, Any]]:
         selected_manager_ids = set(self._selected_manager_ids(manager_ids))
         rows: list[dict[str, Any]] = []
         managers_by_username = {user.username: user for user in self.users if user.role == "manager"}
 
         for user in self.users:
+            manager = managers_by_username.get(user.manager_name or "")
+            resolved_manager_id = user.manager_id or (manager.id if manager else "")
+
+            if viewer_role == "manager":
+                if user.role != "user" or not viewer_id or resolved_manager_id != viewer_id:
+                    continue
+
             include_row = True
             if selected_manager_ids:
                 if user.role == "manager":
                     include_row = user.id in selected_manager_ids
                 elif user.role == "user":
-                    manager = managers_by_username.get(user.manager_name or "")
-                    include_row = bool(manager and manager.id in selected_manager_ids)
+                    include_row = resolved_manager_id in selected_manager_ids
 
             if not include_row:
                 continue
 
             role_label, role_class = self._role_badge(user.role)
             meta = self._user_meta_record(user.id)
-            manager = managers_by_username.get(user.manager_name or "")
             rows.append(
                 {
                     "index": len(rows) + 1,
@@ -2305,7 +3148,7 @@ class AppStore:
                     "username": user.username,
                     "display_name": user.display_name,
                     "credential_status": self._credential_status_label(meta),
-                    "updated_meta": f"{meta.get('updated_by') or '-'} • {self._format_compact_datetime(meta.get('updated_at'))}",
+                    "updated_meta": f"{meta.get('updated_by') or '-'} â€¢ {self._format_compact_datetime(meta.get('updated_at'))}",
                 }
             )
 
@@ -2348,17 +3191,135 @@ class AppStore:
                     "status_class": status_class,
                     "bot_type": mapping.get("bot_type", "1080p"),
                     "number_of_threads": mapping["threads"],
-                    "note": mapping["note"],
+                    "note": mapping.get("note") or "VPS duoc cap",
                     "disk_text": f"{worker.disk_used_gb:.1f}GB / {worker.disk_total_gb:.1f}GB",
                     "bandwidth_text": f"{worker.bandwidth_kbps:,.0f} KB/s",
                 }
             )
         return rows
 
+    def _worker_assigned_user_link(self, worker_id: str, *, exclude_user_id: str | None = None) -> dict[str, Any] | None:
+        for mapping in self.user_worker_links:
+            if mapping.get("worker_id") != worker_id:
+                continue
+            if exclude_user_id and mapping.get("user_id") == exclude_user_id:
+                continue
+            return mapping
+        return None
+
+    def _worker_candidates_for_user(self, user: UserSummary) -> list[dict[str, str]]:
+        candidates: list[dict[str, str]] = []
+        current_link = self._assigned_worker_link_for_user(user.id)
+        current_worker_id = str(current_link.get("worker_id") or "") if current_link else ""
+        for worker in self.workers:
+            if user.manager_name and worker.manager_name != user.manager_name:
+                continue
+            if self._worker_assigned_user_link(worker.id, exclude_user_id=user.id):
+                continue
+            candidates.append({"id": worker.id, "name": self._resolve_worker_display_name(worker.id)})
+        if current_worker_id and current_worker_id not in {item["id"] for item in candidates}:
+            worker = self._find_worker(current_worker_id)
+            candidates.insert(0, {"id": worker.id, "name": self._resolve_worker_display_name(worker.id)})
+        return candidates
+
+    def _resolved_user_manager_id(self, user: UserSummary) -> str | None:
+        if user.role != "user":
+            return None
+        if user.manager_id:
+            return user.manager_id
+        manager = next(
+            (
+                item
+                for item in self.users
+                if item.role == "manager" and item.username == (user.manager_name or "")
+            ),
+            None,
+        )
+        return manager.id if manager else None
+
+    def _assigned_user_for_worker(self, worker_id: str) -> UserSummary | None:
+        mapping = self._worker_assigned_user_link(worker_id)
+        if mapping is None:
+            return None
+        try:
+            return self._find_user(str(mapping.get("user_id") or ""))
+        except KeyError:
+            return None
+
+    def _bot_user_options(
+        self,
+        *,
+        viewer_role: str = "admin",
+        viewer_id: str | None = None,
+    ) -> list[dict[str, str]]:
+        options: list[dict[str, str]] = []
+        for user in self.users:
+            if user.role != "user":
+                continue
+            manager_id = self._resolved_user_manager_id(user)
+            if viewer_role == "manager" and viewer_id and manager_id != viewer_id:
+                continue
+            assigned_worker = self._assigned_worker_for_user(user.id)
+            options.append(
+                {
+                    "id": user.id,
+                    "username": user.username,
+                    "display_name": user.display_name,
+                    "manager_id": manager_id or "",
+                    "manager_name": user.manager_name or "",
+                    "assigned_worker_id": assigned_worker.id if assigned_worker else "",
+                    "assigned_worker_name": self._resolve_worker_display_name(assigned_worker.id) if assigned_worker else "",
+                }
+            )
+        options.sort(key=lambda item: ((item["manager_name"] or "").casefold(), item["username"].casefold()))
+        return options
+
+    def _bot_assignment_worker_options(self, manager_ids: list[str] | None = None) -> list[dict[str, Any]]:
+        options: list[dict[str, Any]] = []
+        for row in self._build_bot_rows(manager_ids):
+            options.append(
+                {
+                    "id": row["id"],
+                    "name": row["name"],
+                    "manager_id": row["manager_id"],
+                    "manager_name": row["manager_name"],
+                    "assigned_user_id": row["assigned_user_id"],
+                    "assigned_user_name": row["assigned_user_name"],
+                    "status_label": row["status_label"],
+                    "total_channels": row["total_channels"],
+                }
+            )
+        return options
+
+    def _available_bot_assignment_workers(self, manager_ids: list[str] | None = None) -> list[dict[str, Any]]:
+        options: list[dict[str, Any]] = []
+        for row in self._build_bot_rows(manager_ids):
+            if row["assigned_user_id"]:
+                continue
+            options.append(
+                {
+                    "id": row["id"],
+                    "name": row["name"],
+                    "manager_id": row["manager_id"],
+                    "manager_name": row["manager_name"],
+                    "group": row["group"],
+                    "status_label": row["status_label"],
+                    "status_class": row["status_class"],
+                    "total_channels": row["total_channels"],
+                    "load_percent": row["load_percent"],
+                    "thread_text": row["thread_text"],
+                    "bandwidth_text": row["bandwidth_text"],
+                    "disk_text": row["disk_text"],
+                }
+            )
+        return options
+
     def get_admin_user_index_context(
         self,
         *,
         manager_ids: list[str] | None = None,
+        viewer_role: str = "admin",
+        viewer_id: str | None = None,
         notice: str | None = None,
         notice_level: str = "success",
     ) -> dict[str, Any]:
@@ -2373,10 +3334,16 @@ class AppStore:
         context.update(
             {
                 "template": "admin/user_index.html",
-                "users": self._build_user_rows(manager_ids),
-                "manager_form_options": [{"id": user.id, "label": user.username} for user in self.users if user.role == "manager"],
+                "users": self._build_user_rows(manager_ids, viewer_role=viewer_role, viewer_id=viewer_id),
+                "manager_form_options": [
+                    {"id": user.id, "label": user.username}
+                    for user in self.users
+                    if user.role == "manager" and (viewer_role != "manager" or user.id == viewer_id)
+                ],
             }
         )
+        if viewer_role == "manager" and viewer_id:
+            context["manager_options"] = [item for item in context["manager_options"] if item["id"] == viewer_id]
         return context
 
     def get_admin_user_create_context(
@@ -2420,7 +3387,7 @@ class AppStore:
         meta = self._user_meta_record(user.id)
         manager = next((item for item in self.users if item.username == user.manager_name), None)
         context = self._admin_shell_context(
-            page_title="Cập nhật user",
+            page_title="Cáº­p nháº­t user",
             active_page="users",
             user_section="users",
             notice=notice,
@@ -2486,8 +3453,9 @@ class AppStore:
     ) -> dict[str, Any]:
         user = self._find_user(user_id)
         meta = self._user_meta_record(user.id)
+        assigned_worker = self._assigned_worker_for_user(user)
         context = self._admin_shell_context(
-            page_title=f"Gán BOT cho {user.username}",
+            page_title=f"BOT của {user.username}",
             active_page="users",
             user_section="users",
             notice=notice,
@@ -2510,8 +3478,14 @@ class AppStore:
                     "manager_name": user.manager_name or "-",
                     "link_telegram": meta.get("telegram") or "-",
                 },
+                "assigned_worker": {
+                    "id": assigned_worker.id,
+                    "name": self._resolve_worker_display_name(assigned_worker.id),
+                }
+                if assigned_worker
+                else None,
                 "rows": self._build_user_bot_links(user.id),
-                "worker_candidates": [{"id": worker.id, "name": self._resolve_worker_display_name(worker.id)} for worker in self.workers],
+                "worker_candidates": self._worker_candidates_for_user(user),
             }
         )
         return context
@@ -2521,6 +3495,7 @@ class AppStore:
         for index, worker in enumerate(self._filtered_workers(manager_ids), start=1):
             status_label, status_class = self._worker_status_badge(worker.status)
             thread_summary = self._worker_thread_summary(worker)
+            assigned_user = self._assigned_user_for_worker(worker.id)
             rows.append(
                 {
                     "index": index,
@@ -2531,6 +3506,8 @@ class AppStore:
                     "name": self._resolve_worker_display_name(worker.id),
                     "raw_name": self._resolve_worker_display_name(worker.id),
                     "group": worker.group or worker.manager_name,
+                    "assigned_user_id": assigned_user.id if assigned_user else "",
+                    "assigned_user_name": assigned_user.username if assigned_user else "BOT trống",
                     "status_label": status_label,
                     "status_class": status_class,
                     "created_at": self._format_full_datetime(worker.last_seen_at),
@@ -2551,9 +3528,13 @@ class AppStore:
         self,
         *,
         manager_ids: list[str] | None = None,
+        viewer_role: str = "admin",
+        viewer_id: str | None = None,
+        focus_user_id: str | None = None,
         notice: str | None = None,
         notice_level: str = "success",
     ) -> dict[str, Any]:
+        worker_rows = self._build_bot_rows(manager_ids)
         context = self._admin_shell_context(
             page_title="Danh sách BOT",
             active_page="workers",
@@ -2561,12 +3542,52 @@ class AppStore:
             notice=notice,
             notice_level=notice_level,
         )
+        assignment_manager_id = ""
+        if viewer_role == "manager" and viewer_id:
+            assignment_manager_id = viewer_id
+        elif len(context.get("selected_manager_ids") or []) == 1:
+            assignment_manager_id = str(context["selected_manager_ids"][0])
+
+        focus_user: dict[str, Any] | None = None
+        assignment_user_id = ""
+        if focus_user_id:
+            user = self._find_user(focus_user_id)
+            resolved_manager_id = user.id if user.role == "manager" else (self._resolved_user_manager_id(user) or "")
+            assigned_worker = self._assigned_worker_for_user(user.id) if user.role == "user" else None
+            focus_user = {
+                "id": user.id,
+                "username": user.username,
+                "display_name": user.display_name,
+                "role": user.role,
+                "manager_id": resolved_manager_id,
+                "manager_name": user.manager_name or (user.username if user.role == "manager" else "-"),
+                "assigned_worker_id": assigned_worker.id if assigned_worker else "",
+                "assigned_worker_name": self._resolve_worker_display_name(assigned_worker.id) if assigned_worker else "",
+                "total_channels": self._user_channel_count(user),
+            }
+            if resolved_manager_id:
+                assignment_manager_id = resolved_manager_id
+            if user.role == "user":
+                assignment_user_id = user.id
+
         context.update(
             {
                 "template": "admin/worker_index.html",
-                "workers": self._build_bot_rows(manager_ids),
+                "workers": worker_rows,
+                "bot_user_options": self._bot_user_options(viewer_role=viewer_role, viewer_id=viewer_id),
+                "available_assignment_workers": self._available_bot_assignment_workers(manager_ids),
+                "focus_user": focus_user,
+                "assignment_manager_id": assignment_manager_id,
+                "assignment_user_id": assignment_user_id,
+                "available_worker_count": len([row for row in worker_rows if not row["assigned_user_id"]]),
+                "assigned_worker_count": len([row for row in worker_rows if row["assigned_user_id"]]),
+                "selected_manager_labels": [
+                    item["username"] for item in context.get("manager_options", []) if item.get("selected")
+                ],
             }
         )
+        if viewer_role == "manager" and viewer_id:
+            context["manager_options"] = [item for item in context["manager_options"] if item["id"] == viewer_id]
         return context
 
     def get_admin_bots_of_user_context(
@@ -2578,8 +3599,8 @@ class AppStore:
     ) -> dict[str, Any]:
         user = self._find_user(user_id)
         if user.role == "user":
-            worker_ids = [link["worker_id"] for link in self.user_worker_links if link["user_id"] == user.id]
-            worker_source = [self._find_worker(worker_id) for worker_id in worker_ids]
+            assigned_worker = self._assigned_worker_for_user(user)
+            worker_source = [assigned_worker] if assigned_worker else []
         elif user.role == "manager":
             worker_source = [worker for worker in self.workers if worker.manager_name == user.username]
         else:
@@ -2681,19 +3702,19 @@ class AppStore:
         display_name = display_name.strip()
         role = role.strip().lower()
         if not username or not display_name or not password.strip():
-            raise ValueError("UserName, DisplayName và Password là bắt buộc.")
+            raise ValueError("UserName, DisplayName vÃ  Password lÃ  báº¯t buá»™c.")
         if any(user.username.lower() == username.lower() for user in self.users):
-            raise ValueError("UserName đã tồn tại.")
+            raise ValueError("UserName Ä‘Ã£ tá»“n táº¡i.")
         if role not in {"user", "manager", "admin"}:
-            raise ValueError("Role không hợp lệ.")
+            raise ValueError("Role khÃ´ng há»£p lá»‡.")
 
         manager_name: str | None = None
         if role == "user":
             if not manager_id:
-                raise ValueError("User thường phải được gán manager.")
+                raise ValueError("User thÆ°á»ng pháº£i Ä‘Æ°á»£c gÃ¡n manager.")
             manager = self._find_user(manager_id)
             if manager.role != "manager":
-                raise ValueError("Manager được chọn không hợp lệ.")
+                raise ValueError("Manager Ä‘Æ°á»£c chá»n khÃ´ng há»£p lá»‡.")
             manager_name = manager.username
 
         user_id = f"user-{uuid4().hex[:8]}"
@@ -2712,12 +3733,12 @@ class AppStore:
     def _validate_admin_username(self, username: str, *, exclude_user_id: str | None = None) -> str:
         normalized_username = username.strip()
         if not normalized_username:
-            raise ValueError("Tên đăng nhập là bắt buộc.")
+            raise ValueError("TÃªn Ä‘Äƒng nháº­p lÃ  báº¯t buá»™c.")
         if any(
             user.id != exclude_user_id and user.username.lower() == normalized_username.lower()
             for user in self.users
         ):
-            raise ValueError("Tên đăng nhập đã tồn tại.")
+            raise ValueError("TÃªn Ä‘Äƒng nháº­p Ä‘Ã£ tá»“n táº¡i.")
         return normalized_username
 
     def _cascade_manager_username_change(self, old_username: str, new_username: str) -> None:
@@ -2739,9 +3760,9 @@ class AppStore:
     def delete_admin_user(self, user_id: str) -> None:
         user = self._find_user(user_id)
         if user.role == "admin" and len([item for item in self.users if item.role == "admin"]) <= 1:
-            raise ValueError("Không thể xóa admin cuối cùng.")
+            raise ValueError("KhÃ´ng thá»ƒ xÃ³a admin cuá»‘i cÃ¹ng.")
         if user.role == "manager" and any(item.role == "user" and item.manager_name == user.username for item in self.users):
-            raise ValueError("Manager này đang quản lý user khác, chưa thể xóa.")
+            raise ValueError("Manager nÃ y Ä‘ang quáº£n lÃ½ user khÃ¡c, chÆ°a thá»ƒ xÃ³a.")
 
         self.users = [item for item in self.users if item.id != user_id]
         self.user_meta.pop(user_id, None)
@@ -2750,11 +3771,12 @@ class AppStore:
         for session in [item for item in self.upload_sessions if item.owner_user_id == user_id]:
             self._remove_upload_session_file(session)
         self.upload_sessions = [item for item in self.upload_sessions if item.owner_user_id != user_id]
+        self.browser_sessions = [item for item in self.browser_sessions if item.owner_user_id != user_id]
         self._save_state()
 
     def reset_admin_user_password(self, user_id: str, password: str, updated_by: str = "admin") -> None:
         if not password.strip():
-            raise ValueError("Password mới là bắt buộc.")
+            raise ValueError("Password má»›i lÃ  báº¯t buá»™c.")
         self._find_user(user_id)
         meta = self._user_meta_record(user_id)
         meta["password_hash"] = self._hash_password(password.strip())
@@ -2777,7 +3799,7 @@ class AppStore:
     ) -> UserSummary:
         user = self._find_user(user_id)
         if not display_name.strip():
-            raise ValueError("DisplayName là bắt buộc.")
+            raise ValueError("DisplayName lÃ  báº¯t buá»™c.")
 
         old_username = user.username
         can_edit_username = actor_role == "admin" or (actor_role == "manager" and user.role == "user")
@@ -2791,10 +3813,10 @@ class AppStore:
 
         if user.role == "user":
             if not manager_id:
-                raise ValueError("User thường phải được gán manager.")
+                raise ValueError("User thÆ°á»ng pháº£i Ä‘Æ°á»£c gÃ¡n manager.")
             manager = self._find_user(manager_id)
             if manager.role != "manager":
-                raise ValueError("Manager được chọn không hợp lệ.")
+                raise ValueError("Manager Ä‘Æ°á»£c chá»n khÃ´ng há»£p lá»‡.")
             user.manager_name = manager.username
         else:
             user.manager_name = None
@@ -2810,14 +3832,14 @@ class AppStore:
         user = self._find_user(user_id)
         if promote:
             if user.role == "admin":
-                raise ValueError("Admin hiện tại không cần gán thêm quyền manager.")
+                raise ValueError("Admin hiá»‡n táº¡i khÃ´ng cáº§n gÃ¡n thÃªm quyá»n manager.")
             user.role = "manager"
             user.manager_name = None
         else:
             if user.role != "manager":
-                raise ValueError("User này không phải manager.")
+                raise ValueError("User nÃ y khÃ´ng pháº£i manager.")
             if any(item.role == "user" and item.manager_name == user.username for item in self.users):
-                raise ValueError("Manager này đang quản lý user khác, chưa thể gỡ quyền.")
+                raise ValueError("Manager nÃ y Ä‘ang quáº£n lÃ½ user khÃ¡c, chÆ°a thá»ƒ gá»¡ quyá»n.")
             user.role = "user"
             user.manager_name = None
 
@@ -2833,9 +3855,9 @@ class AppStore:
             user.manager_name = None
         else:
             if user.role != "admin":
-                raise ValueError("User này không phải admin.")
+                raise ValueError("User nÃ y khÃ´ng pháº£i admin.")
             if len([item for item in self.users if item.role == "admin"]) <= 1:
-                raise ValueError("Không thể gỡ quyền admin cuối cùng.")
+                raise ValueError("KhÃ´ng thá»ƒ gá»¡ quyá»n admin cuá»‘i cÃ¹ng.")
             user.role = "user"
             user.manager_name = None
 
@@ -2844,22 +3866,131 @@ class AppStore:
         meta["updated_at"] = self._now()
         self._save_state()
 
-    def update_bot(self, worker_id: str, name: str, group: str, manager_id: str | None, updated_by: str = "admin") -> None:
+    def update_bot(
+        self,
+        worker_id: str,
+        name: str,
+        manager_id: str | None,
+        assigned_user_id: str | None = None,
+        updated_by: str = "admin",
+    ) -> None:
         worker = self._find_worker(worker_id)
         if not name.strip():
             raise ValueError("Tên BOT là bắt buộc.")
-        if not group.strip():
-            raise ValueError("Group BOT là bắt buộc.")
-        worker.name = name.strip()
-        worker.group = group.strip()
+        if not manager_id and assigned_user_id:
+            inferred_user = self._find_user(assigned_user_id)
+            manager_id = self._resolved_user_manager_id(inferred_user)
+        if not manager_id:
+            raise ValueError("Vui lòng chọn manager.")
 
-        if manager_id:
-            manager = self._find_user(manager_id)
-            if manager.role != "manager":
-                raise ValueError("Manager được chọn không hợp lệ.")
+        worker.name = name.strip()
+
+        manager = self._find_user(manager_id)
+        if manager.role != "manager":
+            raise ValueError("Manager được chọn không hợp lệ.")
+        manager_changed = worker.manager_id != manager.id
+        worker.manager_id = manager.id
+        worker.manager_name = manager.username
+        worker.group = manager.username
+
+        if manager_changed:
+            for channel in self.channels:
+                if channel.worker_id == worker.id:
+                    channel.manager_name = manager.username
+            for job in self.jobs:
+                if job.worker_name == worker.id:
+                    job.manager_name = manager.username
+
+        if assigned_user_id:
+            assigned_user = self._find_user(assigned_user_id)
+            if assigned_user.role != "user":
+                raise ValueError("User được chọn không hợp lệ.")
+            assigned_user_manager_id = self._resolved_user_manager_id(assigned_user)
+            if assigned_user_manager_id != manager.id:
+                raise ValueError("User phải thuộc manager đã chọn.")
+
+            self.user_worker_links = [
+                link
+                for link in self.user_worker_links
+                if not (
+                    str(link.get("worker_id") or "") == worker.id
+                    and str(link.get("user_id") or "") != assigned_user.id
+                )
+            ]
+
+            existing_link = self._assigned_worker_link_for_user(assigned_user.id)
+            if existing_link:
+                existing_link["worker_id"] = worker.id
+                existing_link["threads"] = max(1, int(existing_link.get("threads") or worker.threads or 1))
+                existing_link["note"] = str(existing_link.get("note") or "").strip() or "VPS duoc cap"
+                existing_link["bot_type"] = str(existing_link.get("bot_type") or "1080p").strip() or "1080p"
+            else:
+                next_id = max([int(item.get("id") or 0) for item in self.user_worker_links], default=0) + 1
+                self.user_worker_links.append(
+                    {
+                        "id": next_id,
+                        "user_id": assigned_user.id,
+                        "worker_id": worker.id,
+                        "threads": max(1, int(worker.threads or 1)),
+                        "bot_type": "1080p",
+                        "note": "VPS duoc cap",
+                    }
+                )
+        else:
+            self.user_worker_links = [link for link in self.user_worker_links if str(link.get("worker_id") or "") != worker.id]
+        self._save_state()
+
+    def assign_available_bots(
+        self,
+        worker_ids: list[str],
+        *,
+        manager_id: str | None,
+        assigned_user_id: str | None = None,
+        updated_by: str = "admin",
+    ) -> int:
+        normalized_worker_ids: list[str] = []
+        seen_worker_ids: set[str] = set()
+        for raw_worker_id in worker_ids:
+            worker_id = str(raw_worker_id or "").strip()
+            if not worker_id or worker_id in seen_worker_ids:
+                continue
+            normalized_worker_ids.append(worker_id)
+            seen_worker_ids.add(worker_id)
+
+        if not normalized_worker_ids:
+            raise ValueError("Vui lòng chọn ít nhất 1 BOT trống.")
+        if not manager_id:
+            raise ValueError("Vui lòng chọn manager.")
+
+        manager = self._find_user(manager_id)
+        if manager.role != "manager":
+            raise ValueError("Manager được chọn không hợp lệ.")
+
+        assigned_user: UserSummary | None = None
+        if assigned_user_id:
+            assigned_user = self._find_user(assigned_user_id)
+            if assigned_user.role != "user":
+                raise ValueError("User được chọn không hợp lệ.")
+            assigned_user_manager_id = self._resolved_user_manager_id(assigned_user)
+            if assigned_user_manager_id != manager.id:
+                raise ValueError("User phải thuộc manager đã chọn.")
+            if len(normalized_worker_ids) != 1:
+                raise ValueError("Mỗi user chỉ được giữ 1 BOT. Hãy chỉ chọn 1 BOT khi cấp thẳng cho user.")
+
+        selected_workers: list[WorkerRecord] = []
+        for worker_id in normalized_worker_ids:
+            worker = self._find_worker(worker_id)
+            current_user = self._assigned_user_for_worker(worker.id)
+            if current_user and (assigned_user is None or current_user.id != assigned_user.id):
+                worker_label = self._resolve_worker_display_name(worker.id)
+                raise ValueError(f"BOT {worker_label} không còn trống. Hãy tải lại danh sách rồi thử lại.")
+            selected_workers.append(worker)
+
+        for worker in selected_workers:
             manager_changed = worker.manager_id != manager.id
             worker.manager_id = manager.id
             worker.manager_name = manager.username
+            worker.group = manager.username
             if manager_changed:
                 for channel in self.channels:
                     if channel.worker_id == worker.id:
@@ -2867,8 +3998,43 @@ class AppStore:
                 for job in self.jobs:
                     if job.worker_name == worker.id:
                         job.manager_name = manager.username
-                self.user_worker_links = [link for link in self.user_worker_links if link["worker_id"] != worker.id]
+
+        if assigned_user is not None:
+            selected_worker = selected_workers[0]
+            self.user_worker_links = [
+                link
+                for link in self.user_worker_links
+                if not (
+                    str(link.get("worker_id") or "") == selected_worker.id
+                    and str(link.get("user_id") or "") != assigned_user.id
+                )
+            ]
+            existing_link = self._assigned_worker_link_for_user(assigned_user.id)
+            if existing_link:
+                existing_link["worker_id"] = selected_worker.id
+                existing_link["threads"] = max(1, int(existing_link.get("threads") or selected_worker.threads or 1))
+                existing_link["note"] = str(existing_link.get("note") or "").strip() or "VPS duoc cap"
+                existing_link["bot_type"] = str(existing_link.get("bot_type") or "1080p").strip() or "1080p"
+            else:
+                next_id = max([int(item.get("id") or 0) for item in self.user_worker_links], default=0) + 1
+                self.user_worker_links.append(
+                    {
+                        "id": next_id,
+                        "user_id": assigned_user.id,
+                        "worker_id": selected_worker.id,
+                        "threads": max(1, int(selected_worker.threads or 1)),
+                        "bot_type": "1080p",
+                        "note": "VPS duoc cap",
+                    }
+                )
+        else:
+            selected_worker_ids = set(normalized_worker_ids)
+            self.user_worker_links = [
+                link for link in self.user_worker_links if str(link.get("worker_id") or "") not in selected_worker_ids
+            ]
+
         self._save_state()
+        return len(normalized_worker_ids)
 
     def delete_bot(self, worker_id: str) -> None:
         self._find_worker(worker_id)
@@ -2886,19 +4052,18 @@ class AppStore:
     def update_bot_thread(self, worker_id: str, thread: int) -> None:
         worker = self._find_worker(worker_id)
         if thread < 1:
-            raise ValueError("Số luồng phải lớn hơn hoặc bằng 1.")
-        worker.threads = thread
-        if worker.capacity < thread:
-            worker.capacity = thread
+            raise ValueError("Sá»‘ luá»“ng pháº£i lá»›n hÆ¡n hoáº·c báº±ng 1.")
+        worker.threads = self._fixed_assignment_threads()
+        worker.capacity = self._fixed_assignment_threads()
         self._save_state()
 
     def add_user_bot(self, user_id: str, worker_id: str, threads: int, bot_type: str = "1080p", note: str | None = None) -> None:
         user = self._find_user(user_id)
         self._find_worker(worker_id)
         if user.role != "user":
-            raise ValueError("Chỉ user thường mới gán BOT trực tiếp.")
+            raise ValueError("Chá»‰ user thÆ°á»ng má»›i gÃ¡n BOT trá»±c tiáº¿p.")
         if any(item["user_id"] == user_id and item["worker_id"] == worker_id for item in self.user_worker_links):
-            raise ValueError("BOT này đã được gán cho user.")
+            raise ValueError("BOT nÃ y Ä‘Ã£ Ä‘Æ°á»£c gÃ¡n cho user.")
         next_id = max([item["id"] for item in self.user_worker_links], default=0) + 1
         self.user_worker_links.append(
             {
@@ -2907,7 +4072,7 @@ class AppStore:
                 "worker_id": worker_id,
                 "threads": max(1, threads),
                 "bot_type": bot_type.lower(),
-                "note": (note or "").strip() or "BOT phụ",
+                "note": (note or "").strip() or "BOT phá»¥",
             }
         )
 
@@ -2921,7 +4086,7 @@ class AppStore:
         for mapping in self.user_worker_links:
             if mapping["id"] != mapping_id:
                 continue
-                raise ValueError("BOT này đã tồn tại trong danh sách gán.")
+                raise ValueError("BOT nÃ y Ä‘Ã£ tá»“n táº¡i trong danh sÃ¡ch gÃ¡n.")
             mapping["threads"] = max(1, threads)
             mapping["note"] = (note or "").strip() or mapping["note"]
             return
@@ -2931,9 +4096,9 @@ class AppStore:
         user = self._find_user(user_id)
         self._find_worker(worker_id)
         if user.role != "user":
-            raise ValueError("Chỉ user thường mới gán BOT trực tiếp.")
+            raise ValueError("Chá»‰ user thÆ°á»ng má»›i gÃ¡n BOT trá»±c tiáº¿p.")
         if any(item["user_id"] == user_id and item["worker_id"] == worker_id for item in self.user_worker_links):
-            raise ValueError("BOT này đã được gán cho user.")
+            raise ValueError("BOT nÃ y Ä‘Ã£ Ä‘Æ°á»£c gÃ¡n cho user.")
         next_id = max([item["id"] for item in self.user_worker_links], default=0) + 1
         self.user_worker_links.append(
             {
@@ -2942,7 +4107,7 @@ class AppStore:
                 "worker_id": worker_id,
                 "threads": max(1, threads),
                 "bot_type": bot_type.lower(),
-                "note": (note or "").strip() or "BOT phụ",
+                "note": (note or "").strip() or "BOT phá»¥",
             }
         )
 
@@ -2954,7 +4119,77 @@ class AppStore:
             if bot_type:
                 mapping["bot_type"] = bot_type.lower()
             if note is not None:
-                mapping["note"] = (note or "").strip() or mapping.get("note", "BOT phụ")
+                mapping["note"] = (note or "").strip() or mapping.get("note", "BOT phá»¥")
+            return
+        raise KeyError(mapping_id)
+
+    def add_user_bot(self, user_id: str, worker_id: str, threads: int, bot_type: str = "1080p", note: str | None = None) -> None:
+        user = self._find_user(user_id)
+        worker = self._find_worker(worker_id)
+        if user.role != "user":
+            raise ValueError("Chi user thuong moi duoc cap VPS truc tiep.")
+        if user.manager_name and worker.manager_name != user.manager_name:
+            raise ValueError("User chi duoc cap VPS thuoc manager cua minh.")
+
+        occupant = self._worker_assigned_user_link(worker_id, exclude_user_id=user_id)
+        if occupant is not None:
+            occupied_user = self._find_user(str(occupant.get("user_id") or ""))
+            raise ValueError(f"VPS nay dang duoc gan cho user {occupied_user.username}.")
+
+        normalized_note = (note or "").strip() or "VPS duoc cap"
+        existing = self._assigned_worker_link_for_user(user_id)
+        if existing:
+            existing["worker_id"] = worker_id
+            existing["threads"] = self._fixed_assignment_threads()
+            existing["bot_type"] = bot_type.lower()
+            existing["note"] = normalized_note
+        else:
+            next_id = max([int(item.get("id") or 0) for item in self.user_worker_links], default=0) + 1
+            self.user_worker_links.append(
+                {
+                    "id": next_id,
+                    "user_id": user_id,
+                    "worker_id": worker_id,
+                    "threads": self._fixed_assignment_threads(),
+                    "bot_type": bot_type.lower(),
+                    "note": normalized_note,
+                }
+            )
+
+        for session in self.browser_sessions:
+            if session.owner_user_id != user_id:
+                continue
+            if session.status in {"launching", "awaiting_confirmation", "confirmed"}:
+                session.status = "closed"
+                session.expires_at = self._now(trim=False)
+                session.last_error = "Session da dong do VPS duoc cap da thay doi."
+
+        self._save_state()
+
+    def delete_user_bot(self, mapping_id: int) -> None:
+        mapping = next((item for item in self.user_worker_links if item["id"] == mapping_id), None)
+        if mapping is None:
+            raise KeyError(mapping_id)
+        self.user_worker_links = [item for item in self.user_worker_links if item["id"] != mapping_id]
+        for session in self.browser_sessions:
+            if session.owner_user_id != mapping["user_id"]:
+                continue
+            if session.status in {"launching", "awaiting_confirmation", "confirmed"}:
+                session.status = "closed"
+                session.expires_at = self._now(trim=False)
+                session.last_error = "Session da dong do user khong con duoc cap VPS."
+        self._save_state()
+
+    def update_user_bot(self, mapping_id: int, threads: int, bot_type: str | None = None, note: str | None = None) -> None:
+        for mapping in self.user_worker_links:
+            if mapping["id"] != mapping_id:
+                continue
+            mapping["threads"] = self._fixed_assignment_threads()
+            if bot_type:
+                mapping["bot_type"] = bot_type.lower()
+            if note is not None:
+                mapping["note"] = (note or "").strip() or mapping.get("note") or "VPS duoc cap"
+            self._save_state()
             return
         raise KeyError(mapping_id)
 
@@ -3036,7 +4271,7 @@ class AppStore:
                     "group": channel.manager_name,
                     "status_label": status_label,
                     "status_class": status_class,
-                    "created_at": self._format_full_datetime(channel.oauth_connected_at),
+                    "created_at": self._format_full_datetime(self._channel_connected_at(channel)),
                 }
             )
 
@@ -3141,7 +4376,7 @@ class AppStore:
                     "group": (worker.group if worker and worker.group else manager_name),
                     "status_label": status_label,
                     "status_class": status_class,
-                    "created_at": self._format_full_datetime(channel.oauth_connected_at),
+                    "created_at": self._format_full_datetime(self._channel_connected_at(channel)),
                     "total_users": self._channel_user_count(channel.id),
                     "total_renders": len([job for job in self.jobs if job.channel_id == channel.id]),
                 }
@@ -3209,7 +4444,7 @@ class AppStore:
             rows.append(row)
 
         context = self._admin_shell_context(
-            page_title=f"Thêm kênh cho người dùng {user.username}",
+            page_title=f"ThÃªm kÃªnh cho ngÆ°á»i dÃ¹ng {user.username}",
             active_page="channels",
             notice=notice,
             notice_level=notice_level,
@@ -3257,7 +4492,7 @@ class AppStore:
         ]
 
         context = self._admin_shell_context(
-            page_title=f"Danh sách người dùng của kênh {channel.name}",
+            page_title=f"Danh sÃ¡ch ngÆ°á»i dÃ¹ng cá»§a kÃªnh {channel.name}",
             active_page="channels",
             notice=notice,
             notice_level=notice_level,
@@ -3280,9 +4515,11 @@ class AppStore:
         user = self._find_user(user_id)
         channel = self._find_channel(channel_id)
         if user.role != "user":
-            raise ValueError("Chỉ user thường mới được gán vào kênh.")
+            raise ValueError("Chá»‰ user thÆ°á»ng má»›i Ä‘Æ°á»£c gÃ¡n vÃ o kÃªnh.")
         if user.manager_id and self._resolve_channel_manager_id(channel) != user.manager_id:
-            raise ValueError("User không cùng manager với kênh này.")
+            raise ValueError("User khÃ´ng cÃ¹ng manager vá»›i kÃªnh nÃ y.")
+
+        self._assert_channel_matches_user_worker(user, channel)
 
         existing = next(
             (link for link in self.channel_user_links if link["user_id"] == user.id and link["channel_id"] == channel.id),
@@ -3307,14 +4544,105 @@ class AppStore:
         channel.oauth_connected_at = self._now()
         self._save_state()
 
+    def _queue_browser_profile_cleanup(self, *, worker_id: str, profile_key: str | None) -> None:
+        cleaned_worker_id = str(worker_id or "").strip()
+        cleaned_profile_key = str(profile_key or "").strip()
+        if not cleaned_worker_id or not cleaned_profile_key:
+            return
+        for item in self.browser_profile_cleanup_tasks:
+            if (
+                str(item.get("worker_id") or "").strip() == cleaned_worker_id
+                and str(item.get("profile_key") or "").strip() == cleaned_profile_key
+            ):
+                return
+        self.browser_profile_cleanup_tasks.append(
+            {
+                "worker_id": cleaned_worker_id,
+                "profile_key": cleaned_profile_key,
+                "queued_at": self._now(trim=False).isoformat(),
+            }
+        )
+
+    def _browser_profile_bound_channel(self, profile_key: str | None) -> ChannelRecord | None:
+        cleaned_profile_key = str(profile_key or "").strip()
+        if not cleaned_profile_key:
+            return None
+        return next(
+            (
+                channel
+                for channel in self.channels
+                if channel.connection_mode == "browser_profile"
+                and str(channel.browser_profile_key or "").strip() == cleaned_profile_key
+            ),
+            None,
+        )
+
+    def _queue_browser_profile_cleanup_if_orphan(self, *, worker_id: str, profile_key: str | None) -> None:
+        if self._browser_profile_bound_channel(profile_key) is not None:
+            return
+        self._queue_browser_profile_cleanup(worker_id=worker_id, profile_key=profile_key)
+
+    def _close_orphan_browser_sessions_for_user(self, user_id: str) -> None:
+        closed_at = self._now(trim=False)
+        changed = False
+        for session in self.browser_sessions:
+            if session.owner_user_id != user_id:
+                continue
+            if session.status not in {"launching", "awaiting_confirmation", "confirmed"}:
+                continue
+            if self._browser_profile_bound_channel(session.profile_key) is not None:
+                continue
+            session.status = "closed"
+            session.expires_at = closed_at
+            session.last_error = "Session da dong vi profile tam khong con gan voi kenh nao."
+            self._queue_browser_profile_cleanup_if_orphan(
+                worker_id=session.target_worker_id,
+                profile_key=session.profile_key,
+            )
+            changed = True
+        if changed:
+            self._save_state()
+
+    def _close_browser_sessions_for_profile(self, profile_key: str | None) -> None:
+        cleaned_profile_key = str(profile_key or "").strip()
+        if not cleaned_profile_key:
+            return
+        closed_at = self._now(trim=False)
+        for session in self.browser_sessions:
+            if str(session.profile_key or "").strip() != cleaned_profile_key:
+                continue
+            if session.status not in {"launching", "awaiting_confirmation", "confirmed"}:
+                continue
+            session.status = "closed"
+            session.expires_at = closed_at
+            session.last_error = "Session da dong vi kenh/profile da bi xoa."
+
+    def _schedule_channel_browser_profile_cleanup(self, channel: ChannelRecord) -> None:
+        if channel.connection_mode != "browser_profile":
+            return
+        self._close_browser_sessions_for_profile(channel.browser_profile_key)
+        self._queue_browser_profile_cleanup(
+            worker_id=channel.worker_id,
+            profile_key=channel.browser_profile_key,
+        )
+
     def delete_channel(self, channel_id: str) -> None:
-        self._find_channel(channel_id)
+        channel = self._find_channel(channel_id)
+        linked_user_ids = [
+            str(link.get("user_id") or "").strip()
+            for link in self.channel_user_links
+            if link.get("channel_id") == channel.id
+        ]
+        self._schedule_channel_browser_profile_cleanup(channel)
         removed_jobs = [job for job in self.jobs if job.channel_id == channel_id]
         for job in removed_jobs:
             self._purge_job_artifacts(job, exclude_job_id=job.id)
         self.channels = [channel for channel in self.channels if channel.id != channel_id]
         self.channel_user_links = [link for link in self.channel_user_links if link["channel_id"] != channel_id]
         self.jobs = [job for job in self.jobs if job.channel_id != channel_id]
+        for user_id in linked_user_ids:
+            if user_id:
+                self._close_orphan_browser_sessions_for_user(user_id)
         self._save_state()
 
     def delete_user_connected_channel(self, channel_id: str, *, user_id: str) -> None:
@@ -3339,7 +4667,7 @@ class AppStore:
                     "BotName": self._resolve_channel_worker_display_name(channel),
                     "ChannelGmail": channel.oauth_email or "",
                     "Group": next((worker.group for worker in self.workers if worker.id == channel.worker_id), channel.manager_name),
-                    "CreatedTime": self._format_full_datetime(channel.oauth_connected_at),
+                    "CreatedTime": self._format_full_datetime(self._channel_connected_at(channel)),
                     "TotalUser": self._channel_user_count(channel.id),
                     "Status": channel.status,
                     "UserUpload": ",".join(self._channel_users(channel)),
@@ -3439,7 +4767,7 @@ class AppStore:
             return asset.url or asset.file_name or ""
 
         context = self._admin_shell_context(
-            page_title="Thông tin Render",
+            page_title="ThÃ´ng tin Render",
             active_page="renders",
             notice=notice,
             notice_level=notice_level,
@@ -3552,7 +4880,7 @@ class AppStore:
         if not client_id or not redirect_uri:
             return OAuthStartResponse(
                 auth_url=None,
-                message="Đã sẵn sàng cho flow Google OAuth. Cần bổ sung GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET và GOOGLE_REDIRECT_URI để bật kết nối thật.",
+                message="ÄÃ£ sáºµn sÃ ng cho flow Google OAuth. Cáº§n bá»• sung GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET vÃ  GOOGLE_REDIRECT_URI Ä‘á»ƒ báº­t káº¿t ná»‘i tháº­t.",
             )
 
         query = urlencode(
@@ -3569,7 +4897,7 @@ class AppStore:
         )
         return OAuthStartResponse(
             auth_url=f"https://accounts.google.com/o/oauth2/v2/auth?{query}",
-            message="Đã tạo URL kết nối Google OAuth.",
+            message="ÄÃ£ táº¡o URL káº¿t ná»‘i Google OAuth.",
         )
 
     def complete_google_oauth(self, *, user_id: str, code: str, base_url: str | None = None) -> dict[str, str]:
@@ -3622,37 +4950,51 @@ class AppStore:
         if not channel_id:
             raise ValueError("Google tra ve du lieu channel khong hop le.")
 
+        current_user = self._require_workspace_user(user_id)
+        worker = self._pick_worker_for_user(current_user)
         existing_channel = next((channel for channel in self.channels if channel.channel_id == channel_id), None)
         existing_refresh_token = existing_channel.oauth_refresh_token if existing_channel else None
         if not refresh_token and not existing_refresh_token:
             raise ValueError("Google khong tra ve refresh_token. Hay xoa quyen app cu va ket noi lai.")
 
-        current_user = self._require_workspace_user(user_id)
         if existing_channel:
             channel = existing_channel
         else:
-            worker = self._pick_worker_for_user(current_user)
             channel = ChannelRecord(
                 id=f"channel-{uuid4().hex[:8]}",
                 name=channel_name,
                 channel_id=channel_id,
                 avatar_url=avatar_url,
                 worker_id=worker.id,
-                worker_name=worker.name,
+                worker_name=worker.id,
                 manager_name=current_user.manager_name or worker.manager_name,
                 status="connected",
             )
             self.channels.append(channel)
 
+        previous_browser_profile_key = channel.browser_profile_key
+        previous_connection_mode = channel.connection_mode
         channel.name = channel_name
         channel.avatar_url = avatar_url or channel.avatar_url
         channel.status = "connected"
+        channel.worker_id = worker.id
+        channel.worker_name = worker.id
+        channel.manager_name = current_user.manager_name or worker.manager_name
         channel.oauth_email = oauth_email or channel.oauth_email
         channel.oauth_connected_at = now
         channel.oauth_google_subject = oauth_google_subject or channel.oauth_google_subject
         channel.oauth_refresh_token = refresh_token or existing_refresh_token
         channel.oauth_scope = scope or channel.oauth_scope
         channel.oauth_token_type = token_type or channel.oauth_token_type
+        channel.connection_mode = "oauth"
+        channel.browser_profile_key = None
+        channel.browser_profile_path = None
+        channel.browser_connected_at = None
+        if previous_connection_mode == "browser_profile" and previous_browser_profile_key:
+            self._queue_browser_profile_cleanup(
+                worker_id=worker.id,
+                profile_key=previous_browser_profile_key,
+            )
 
         self._ensure_channel_user_link(channel_id=channel.id, user_id=current_user.id)
         self._save_state()
@@ -3745,13 +5087,13 @@ class AppStore:
         self._cleanup_stale_uploads()
         capabilities = self.get_upload_capabilities()
         if payload.size_bytes <= 0:
-            raise ValueError("Kích thước file phải lớn hơn 0.")
+            raise ValueError("KÃ­ch thÆ°á»›c file pháº£i lá»›n hÆ¡n 0.")
         if payload.size_bytes > capabilities.max_local_upload_bytes:
-            raise ValueError("File vượt quá giới hạn local upload hiện tại.")
+            raise ValueError("File vÆ°á»£t quÃ¡ giá»›i háº¡n local upload hiá»‡n táº¡i.")
 
         extension = Path(payload.file_name).suffix.lower()
         if extension not in capabilities.allowed_extensions:
-            raise ValueError(f"Định dạng file không hỗ trợ: {extension or '(không có extension)'}")
+            raise ValueError(f"Äá»‹nh dáº¡ng file khÃ´ng há»— trá»£: {extension or '(khÃ´ng cÃ³ extension)'}")
 
         sanitized_name = self._sanitize_filename(payload.file_name)
         now = self._now(trim=False)
@@ -3788,19 +5130,19 @@ class AppStore:
         self._require_workspace_user(user_id)
         session = self._find_user_upload_session(user_id, session_id)
         if session.status not in {"active", "completed"}:
-            raise ValueError("Upload session không còn hoạt động.")
+            raise ValueError("Upload session khÃ´ng cÃ²n hoáº¡t Ä‘á»™ng.")
         if session.status == "completed":
             return self._upload_response(session)
         if offset < 0:
-            raise ValueError("Offset không hợp lệ.")
+            raise ValueError("Offset khÃ´ng há»£p lá»‡.")
 
         temp_path = self._absolute_upload_path(session.temp_path)
         temp_path.parent.mkdir(parents=True, exist_ok=True)
         current_size = temp_path.stat().st_size if temp_path.exists() else 0
         if offset != current_size:
-            raise ValueError(f"Offset không khớp. Server đang có {current_size} bytes.")
+            raise ValueError(f"Offset khÃ´ng khá»›p. Server Ä‘ang cÃ³ {current_size} bytes.")
         if offset + len(chunk) > session.size_bytes:
-            raise ValueError("Chunk vượt quá kích thước đã khai báo.")
+            raise ValueError("Chunk vÆ°á»£t quÃ¡ kÃ­ch thÆ°á»›c Ä‘Ã£ khai bÃ¡o.")
 
         with temp_path.open("ab") as file_obj:
             file_obj.write(chunk)
@@ -3809,7 +5151,7 @@ class AppStore:
         session.updated_at = self._now(trim=False)
         session.expires_at = session.updated_at + timedelta(hours=24)
         if session.received_bytes > session.size_bytes:
-            raise ValueError("Upload vượt quá kích thước đã khai báo.")
+            raise ValueError("Upload vÆ°á»£t quÃ¡ kÃ­ch thÆ°á»›c Ä‘Ã£ khai bÃ¡o.")
 
         if session.received_bytes == session.size_bytes:
             session.status = "completed"
@@ -3837,7 +5179,7 @@ class AppStore:
             None,
         )
         if session is None or session.status != "completed" or not session.stored_file_name:
-            raise ValueError("Uploaded asset không hợp lệ hoặc chưa hoàn tất.")
+            raise ValueError("Uploaded asset khÃ´ng há»£p lá»‡ hoáº·c chÆ°a hoÃ n táº¥t.")
         return session.stored_file_name
 
     def _find_job_asset(self, job: RenderJobRecord, slot: str) -> JobAsset:
@@ -3859,7 +5201,7 @@ class AppStore:
         self._ensure_worker_job_can_continue(job)
         asset = self._find_job_asset(job, slot)
         if asset.source_mode != "local" or not asset.file_name:
-            raise ValueError("Asset này không phải local upload.")
+            raise ValueError("Asset nÃ y khÃ´ng pháº£i local upload.")
 
         file_path = self.upload_asset_dir / asset.file_name
         if not file_path.exists():
@@ -3947,13 +5289,11 @@ class AppStore:
         job = self._find_claimed_job(job_id, worker_id)
         self._ensure_worker_job_can_continue(job)
         channel = self._find_channel(job.channel_id)
-        refresh_token = str(channel.oauth_refresh_token or "").strip()
-        client_id = str(os.getenv("GOOGLE_CLIENT_ID", "")).strip()
-        client_secret = str(os.getenv("GOOGLE_CLIENT_SECRET", "")).strip()
-        if not refresh_token:
-            raise ValueError("Kênh chưa có refresh token OAuth thật. Hãy kết nối lại Google/YouTube.")
-        if not client_id or not client_secret:
-            raise ValueError("Thiếu GOOGLE_CLIENT_ID hoặc GOOGLE_CLIENT_SECRET trên control plane.")
+        self._refresh_browser_channel_metadata(channel)
+        if channel.connection_mode != "browser_profile":
+            raise ValueError(
+                "Luong OAuth/API upload da duoc tat tren nhanh hien tai. Hay reconnect kenh bang Ubuntu Browser truoc khi upload."
+            )
         privacy_status = job.visibility if job.visibility in {"private", "public", "unlisted"} else "private"
         return WorkerYouTubeUploadTarget(
             job_id=job.id,
@@ -3962,9 +5302,9 @@ class AppStore:
             title=job.title,
             description=job.description,
             privacy_status=privacy_status,
-            client_id=client_id,
-            client_secret=client_secret,
-            refresh_token=refresh_token,
+            connection_mode="browser_profile",
+            browser_profile_key=channel.browser_profile_key,
+            browser_profile_path=channel.browser_profile_path,
         )
 
     def abort_upload_session(self, user_id: str, session_id: str) -> None:
@@ -3979,3 +5319,4 @@ class AppStore:
 
 
 store = AppStore()
+
