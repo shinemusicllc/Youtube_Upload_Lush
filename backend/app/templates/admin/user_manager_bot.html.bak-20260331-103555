@@ -1,0 +1,134 @@
+{% extends "admin/_layout.html" %}
+
+{% block content %}
+<section class="space-y-6">
+    <div class="panel p-5">
+        <div class="flex flex-col gap-5">
+            <div class="flex items-start gap-3">
+                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50">
+                    <i data-lucide="server" class="h-4.5 w-4.5 text-brand-600"></i>
+                </div>
+                <div>
+                    <h2 class="section-title">VPS được cấp cho {{ dashboard.user_record.username }}</h2>
+                    <p class="section-note">Mỗi user làm việc trên 1 VPS duy nhất. Nếu đổi VPS, user cần đăng nhập lại kênh trên VPS mới.</p>
+                </div>
+            </div>
+            {% include "admin/_user_tabs.html" %}
+        </div>
+    </div>
+
+    <div class="grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
+        <div class="panel p-6">
+            <form method="post" action="/admin/user/addbot" class="space-y-5">
+                <input type="hidden" name="user_id" value="{{ dashboard.user_record.id }}">
+
+                {% if dashboard.error %}
+                <div class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] font-medium text-rose-700">{{ dashboard.error }}</div>
+                {% endif %}
+
+                <div class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                    <p class="text-[12px] font-semibold text-slate-900">{{ dashboard.user_record.username }}</p>
+                    <p class="mt-1 text-[11px] text-slate-500">Manager: {{ dashboard.user_record.manager_name or 'Không gán' }}</p>
+                </div>
+
+                <label class="block">
+                    <span class="mb-2 block text-[12px] font-semibold text-slate-700">Chọn VPS</span>
+                    <select class="toolbar-select" name="worker_id" required>
+                        <option value="">-- Chọn VPS --</option>
+                        {% for worker in dashboard.worker_candidates %}
+                        <option value="{{ worker.id }}">{{ worker.name }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+
+                <div class="grid gap-5 md:grid-cols-2">
+                    <label class="block">
+                        <span class="mb-2 block text-[12px] font-semibold text-slate-700">Loại VPS</span>
+                        <select class="toolbar-select" name="bot_type" required>
+                            <option value="1080p">1080p</option>
+                            <option value="4k">4K</option>
+                        </select>
+                    </label>
+                    <label class="block">
+                        <span class="mb-2 block text-[12px] font-semibold text-slate-700">Số luồng</span>
+                        <input class="toolbar-input" type="number" min="1" name="number_of_threads" value="1" required>
+                    </label>
+                </div>
+
+                <div class="flex items-center justify-end border-t border-slate-200 pt-4">
+                    <button type="submit" class="action-btn action-btn-emerald px-4 py-2 text-[13px]">
+                        <i data-lucide="plus" class="h-4 w-4"></i>
+                        Cấp / Đổi VPS
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <div class="panel overflow-hidden">
+            <div class="border-b border-slate-200/80 px-5 py-4">
+                <h3 class="section-title">VPS đang được gán</h3>
+                <p class="section-note">Mỗi user chỉ giữ 1 mapping user -> VPS -> số luồng.</p>
+            </div>
+
+            <div class="table-shell">
+                <table class="admin-table" data-admin-list-table>
+                    <thead>
+                        <tr>
+                            <th class="w-14">STT</th>
+                            <th>VPS</th>
+                            <th>Manager</th>
+                            <th>Trạng thái</th>
+                            <th>Loại</th>
+                            <th>Disk</th>
+                            <th>Băng thông</th>
+                            <th>Luồng</th>
+                            <th class="text-right">Tác vụ</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in dashboard.rows %}
+                        <tr>
+                            <td class="table-mono text-slate-500">{{ row.index }}</td>
+                            <td>
+                                <p class="text-[13px] font-semibold text-slate-900">{{ row.worker_name }}</p>
+                                <p class="table-meta">{{ row.note }}</p>
+                            </td>
+                            <td class="text-[12px] font-medium text-slate-700">{{ row.manager_name }}</td>
+                            <td><span class="{{ row.status_class }}">{{ row.status_label }}</span></td>
+                            <td>
+                                <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-700">{{ row.bot_type }}</span>
+                            </td>
+                            <td class="table-mono text-slate-600">{{ row.disk_text }}</td>
+                            <td class="table-mono text-slate-600">{{ row.bandwidth_text }}</td>
+                            <td>
+                                <form method="post" action="/admin/user/updatebotuser" class="flex items-center justify-end gap-2">
+                                    <input type="hidden" name="user_id" value="{{ dashboard.user_record.id }}">
+                                    <input type="hidden" name="assignment_id" value="{{ row.id }}">
+                                    <input class="toolbar-input !min-h-[36px] w-20 px-3 py-2 text-center" type="number" min="1" name="number_of_threads" value="{{ row.number_of_threads }}">
+                                    <button type="submit" class="action-btn action-btn-amber">
+                                        <i data-lucide="save" class="h-3.5 w-3.5"></i>
+                                        Lưu
+                                    </button>
+                                </form>
+                            </td>
+                            <td>
+                                <div class="flex items-center justify-end gap-2">
+                                    <form method="post" action="/admin/user/deletebot" data-bulk-delete-form onsubmit="return confirm('Gỡ VPS này khỏi user?');">
+                                        <input type="hidden" name="user_id" value="{{ dashboard.user_record.id }}">
+                                        <input type="hidden" name="assignment_id" value="{{ row.id }}">
+                                        <button type="submit" class="action-btn action-btn-rose">
+                                            <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
+                                            Gỡ
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

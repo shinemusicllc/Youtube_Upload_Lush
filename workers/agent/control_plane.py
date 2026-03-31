@@ -41,35 +41,10 @@ class YouTubeUploadTarget:
     title: str
     description: str | None
     privacy_status: str
-    connection_mode: str = "oauth"
-    browser_profile_key: str | None = None
-    browser_profile_path: str | None = None
-    client_id: str | None = None
-    client_secret: str | None = None
-    refresh_token: str | None = None
-    token_uri: str = "https://oauth2.googleapis.com/token"
-
-
-@dataclass
-class BrowserSessionAssignment:
-    session_id: str
-    status: str
-    profile_key: str
-    display_number: int
-    vnc_port: int
-    web_port: int
-    debug_port: int
-    access_password: str
-    current_url: str | None
-    current_title: str | None
-    detected_channel_id: str | None
-    detected_channel_name: str | None
-    novnc_url: str | None
-
-
-@dataclass
-class BrowserProfileCleanupAssignment:
-    profile_key: str
+    client_id: str
+    client_secret: str
+    refresh_token: str
+    token_uri: str
 
 
 def register_worker(client: httpx.Client, config: WorkerConfig) -> None:
@@ -85,23 +60,12 @@ def register_worker(client: httpx.Client, config: WorkerConfig) -> None:
             "capacity": config.capacity,
             "threads": config.threads,
             "disk_total_gb": total_gb,
-            "public_base_url": config.browser_public_base_url,
-            "browser_session_enabled": config.browser_session_enabled,
-            "browser_display_base": config.browser_display_base,
-            "browser_vnc_port_base": config.browser_vnc_port_base,
-            "browser_web_port_base": config.browser_web_port_base,
-            "browser_debug_port_base": config.browser_debug_port_base,
         },
     )
     response.raise_for_status()
 
 
-def heartbeat_worker(
-    client: httpx.Client,
-    config: WorkerConfig,
-    *,
-    active_job_ids: list[str] | None = None,
-) -> None:
+def heartbeat_worker(client: httpx.Client, config: WorkerConfig) -> None:
     used_gb, total_gb = _disk_usage()
     response = client.post(
         "/api/workers/heartbeat",
@@ -114,117 +78,6 @@ def heartbeat_worker(
             "disk_total_gb": total_gb,
             "threads": config.threads,
             "status": "online",
-            "active_job_ids": active_job_ids if active_job_ids is not None else [],
-            "public_base_url": config.browser_public_base_url,
-            "browser_session_enabled": config.browser_session_enabled,
-            "browser_display_base": config.browser_display_base,
-            "browser_vnc_port_base": config.browser_vnc_port_base,
-            "browser_web_port_base": config.browser_web_port_base,
-            "browser_debug_port_base": config.browser_debug_port_base,
-        },
-    )
-    response.raise_for_status()
-
-
-def poll_browser_sessions(
-    client: httpx.Client,
-    config: WorkerConfig,
-) -> tuple[list[BrowserSessionAssignment], list[BrowserProfileCleanupAssignment]]:
-    response = client.post(
-        "/api/workers/browser-sessions/poll",
-        json={
-            "worker_id": config.worker_id,
-            "shared_secret": config.shared_secret,
-        },
-    )
-    response.raise_for_status()
-    payload = response.json()
-    sessions = []
-    for item in payload.get("sessions") or []:
-        sessions.append(
-            BrowserSessionAssignment(
-                session_id=str(item["session_id"]),
-                status=str(item["status"]),
-                profile_key=str(item["profile_key"]),
-                display_number=int(item["display_number"]),
-                vnc_port=int(item["vnc_port"]),
-                web_port=int(item["web_port"]),
-                debug_port=int(item["debug_port"]),
-                access_password=str(item["access_password"]),
-                current_url=item.get("current_url"),
-                current_title=item.get("current_title"),
-                detected_channel_id=item.get("detected_channel_id"),
-                detected_channel_name=item.get("detected_channel_name"),
-                novnc_url=item.get("novnc_url"),
-            )
-        )
-    cleanup_profiles = [
-        BrowserProfileCleanupAssignment(profile_key=str(item.get("profile_key") or "").strip())
-        for item in (payload.get("cleanup_profiles") or [])
-        if str(item.get("profile_key") or "").strip()
-    ]
-    return sessions, cleanup_profiles
-
-
-def ack_browser_profile_cleanup(
-    client: httpx.Client,
-    config: WorkerConfig,
-    profile_keys: list[str],
-) -> None:
-    if not profile_keys:
-        return
-    response = client.post(
-        "/api/workers/browser-profiles/cleanup-ack",
-        json={
-            "worker_id": config.worker_id,
-            "shared_secret": config.shared_secret,
-            "profile_keys": profile_keys,
-        },
-    )
-    response.raise_for_status()
-
-
-def sync_browser_session(
-    client: httpx.Client,
-    config: WorkerConfig,
-    session_id: str,
-    *,
-    status: str,
-    novnc_url: str | None = None,
-    current_url: str | None = None,
-    current_title: str | None = None,
-    detected_channel_id: str | None = None,
-    detected_channel_name: str | None = None,
-    last_error: str | None = None,
-    profile_path: str | None = None,
-    session_path: str | None = None,
-    password_file: str | None = None,
-    xvfb_pid: int | None = None,
-    openbox_pid: int | None = None,
-    chromium_pid: int | None = None,
-    x11vnc_pid: int | None = None,
-    websockify_pid: int | None = None,
-) -> None:
-    response = client.post(
-        f"/api/workers/browser-sessions/{session_id}/sync",
-        json={
-            "worker_id": config.worker_id,
-            "shared_secret": config.shared_secret,
-            "status": status,
-            "novnc_url": novnc_url,
-            "current_url": current_url,
-            "current_title": current_title,
-            "detected_channel_id": detected_channel_id,
-            "detected_channel_name": detected_channel_name,
-            "last_error": last_error,
-            "profile_path": profile_path,
-            "session_path": session_path,
-            "password_file": password_file,
-            "xvfb_pid": xvfb_pid,
-            "openbox_pid": openbox_pid,
-            "chromium_pid": chromium_pid,
-            "x11vnc_pid": x11vnc_pid,
-            "websockify_pid": websockify_pid,
         },
     )
     response.raise_for_status()
@@ -261,27 +114,6 @@ def update_job_progress(
             "progress": progress,
             "message": message,
         },
-    )
-    response.raise_for_status()
-
-
-def upload_job_thumbnail(
-    client: httpx.Client,
-    config: WorkerConfig,
-    job_id: str,
-    *,
-    file_name: str,
-    payload: bytes,
-    content_type: str = "image/jpeg",
-) -> None:
-    response = client.post(
-        f"/api/workers/jobs/{job_id}/thumbnail",
-        headers={
-            **worker_auth_headers(config),
-            "x-file-name": file_name,
-            "content-type": content_type,
-        },
-        content=payload,
     )
     response.raise_for_status()
 
@@ -332,11 +164,8 @@ def get_job_youtube_target(client: httpx.Client, config: WorkerConfig, job_id: s
         title=str(payload["title"]),
         description=payload.get("description"),
         privacy_status=str(payload["privacy_status"]),
-        connection_mode=str(payload.get("connection_mode") or "oauth"),
-        browser_profile_key=payload.get("browser_profile_key"),
-        browser_profile_path=payload.get("browser_profile_path"),
-        client_id=payload.get("client_id"),
-        client_secret=payload.get("client_secret"),
-        refresh_token=payload.get("refresh_token"),
+        client_id=str(payload["client_id"]),
+        client_secret=str(payload["client_secret"]),
+        refresh_token=str(payload["refresh_token"]),
         token_uri=str(payload.get("token_uri") or "https://oauth2.googleapis.com/token"),
     )

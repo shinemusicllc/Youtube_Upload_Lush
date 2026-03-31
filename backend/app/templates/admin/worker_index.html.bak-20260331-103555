@@ -1,0 +1,542 @@
+{% extends "admin/_layout.html" %}
+
+{% block content %}
+<section class="space-y-6">
+    {% include "admin/_admin_notice.html" %}
+
+    <div class="panel p-5">
+        <div class="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div class="flex items-start gap-3">
+                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50">
+                    <i data-lucide="server" class="h-4.5 w-4.5 text-brand-600"></i>
+                </div>
+                <div>
+                    <h2 class="section-title">Danh sách BOT</h2>
+                    <p class="section-note">Quản lý cụm BOT theo manager, theo dõi tài nguyên hiện tại và thao tác nhanh trên từng VPS.</p>
+                </div>
+            </div>
+
+            <form method="get" action="/admin/ManagerBOT/index" class="grid gap-3 lg:min-w-[520px]" data-manager-auto-submit="true">
+                {% include "admin/_manager_picker.html" %}
+            </form>
+        </div>
+    </div>
+
+    {% include "admin/_summary_strip.html" %}
+
+    <div class="panel overflow-hidden">
+        <div class="border-b border-slate-200/80 px-5 py-4">
+            <h3 class="section-title">Cụm BOT VPS</h3>
+            <p class="section-note">Danh sách BOT theo manager, theo dõi tải hiện tại, dung lượng, băng thông thực và user đang được gán trên từng VPS.</p>
+        </div>
+
+        <div class="table-shell">
+            <table class="admin-table" data-admin-list-table="worker-index">
+                <thead>
+                    <tr>
+                        <th class="w-14">STT</th>
+                        <th>BOT</th>
+                        <th>User</th>
+                        <th>Trạng thái</th>
+                        <th>Tải</th>
+                        <th>Disk</th>
+                        <th>Băng thông</th>
+                        <th>Luồng</th>
+                        <th class="text-right">Tác vụ</th>
+                    </tr>
+                </thead>
+                <tbody data-worker-live-body data-live-endpoint="/api/admin/bots">
+                    {% for worker in dashboard.workers %}
+                    <tr data-worker-row-id="{{ worker.id }}" data-search-text="{{ worker.name }} {{ worker.manager_name }} {{ worker.assigned_user_name }}">
+                        <td class="table-mono text-slate-500">{{ worker.index }}</td>
+                        <td>
+                            <div>
+                                <p class="text-[13px] font-semibold text-slate-900">{{ worker.name }}</p>
+                                <p class="table-meta">Manager {{ worker.manager_name }}</p>
+                            </div>
+                        </td>
+                        <td>
+                            <p class="text-[12px] font-medium text-slate-800">{{ worker.assigned_user_name }}</p>
+                            <p class="table-meta">{{ worker.total_channels }} kênh trên VPS này</p>
+                        </td>
+                        <td><span class="{{ worker.status_class }}">{{ worker.status_label }}</span></td>
+                        <td>
+                            <p class="table-mono font-semibold text-slate-800">{{ worker.load_percent }}%</p>
+                            <div class="mt-2 h-1.5 w-24 overflow-hidden rounded-full bg-slate-100">
+                                <div class="h-full rounded-full bg-brand-500" style="width: {{ worker.load_percent }}%;"></div>
+                            </div>
+                        </td>
+                        <td class="table-mono text-slate-700">{{ worker.disk_text }}</td>
+                        <td class="table-mono text-slate-700">{{ worker.bandwidth_text }}</td>
+                        <td>
+                            <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-700">
+                                {{ worker.thread_text }}
+                            </span>
+                        </td>
+                        <td>
+                            <div class="flex items-center justify-end gap-2">
+                                <a href="/admin/channel/bot?botId={{ worker.id }}&botName={{ worker.raw_name }}" class="action-btn action-btn-sky">
+                                    <i data-lucide="link-2" class="h-3.5 w-3.5"></i>
+                                    DS kênh
+                                </a>
+                                <a href="/admin/bot/userofbot?botId={{ worker.id }}&botName={{ worker.raw_name }}" class="action-btn action-btn-primary">
+                                    <i data-lucide="users" class="h-3.5 w-3.5"></i>
+                                    DS user
+                                </a>
+                                <button
+                                    type="button"
+                                    class="action-btn action-btn-amber"
+                                    data-dialog-open="thread-bot-dialog"
+                                    data-worker-id="{{ worker.id }}"
+                                    data-worker-name="{{ worker.name }}"
+                                    data-thread="{{ worker.threads }}"
+                                >
+                                    <i data-lucide="waypoints" class="h-3.5 w-3.5"></i>
+                                    Luồng
+                                </button>
+                                <button
+                                    type="button"
+                                    class="action-btn action-btn-emerald"
+                                    data-dialog-open="edit-bot-dialog"
+                                    data-worker-id="{{ worker.id }}"
+                                    data-worker-name="{{ worker.raw_name }}"
+                                    data-manager-id="{{ worker.manager_id }}"
+                                    data-user-id="{{ worker.assigned_user_id }}"
+                                >
+                                    <i data-lucide="pencil" class="h-3.5 w-3.5"></i>
+                                    Sửa
+                                </button>
+                                <button
+                                    type="button"
+                                    class="action-btn action-btn-rose"
+                                    data-dialog-open="delete-bot-dialog"
+                                    data-worker-id="{{ worker.id }}"
+                                    data-worker-name="{{ worker.name }}"
+                                >
+                                    <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
+                                    Xóa
+                                </button>
+                                <form method="post" action="/admin/managerbot/delete" data-bulk-delete-form class="hidden">
+                                    <input type="hidden" name="Id" value="{{ worker.id }}">
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+<dialog id="edit-bot-dialog" class="admin-dialog">
+    <div class="panel">
+        <form method="post" action="/admin/bot/update">
+            <div class="border-b border-slate-200 px-5 py-4">
+                <h3 class="section-title">Cập nhật BOT</h3>
+                <p class="section-note">Cập nhật tên BOT, chọn manager phụ trách, rồi chọn user sẽ dùng VPS này.</p>
+            </div>
+            <div class="space-y-4 px-5 py-5">
+                <input type="hidden" name="Id" id="edit-bot-id">
+                <div>
+                    <label class="field-label" for="edit-bot-name">Tên BOT</label>
+                    <input class="toolbar-input" id="edit-bot-name" name="Name" required>
+                </div>
+                <div>
+                    <label class="field-label" for="edit-bot-manager-id">Chọn manager</label>
+                    <select
+                        class="toolbar-select"
+                        id="edit-bot-manager-id"
+                        name="UserIdManager"
+                        data-admin-select-search="true"
+                        data-admin-select-search-placeholder="Gõ để tìm manager..."
+                        required
+                    >
+                        <option value="">-- Chọn manager --</option>
+                        {% for manager in dashboard.manager_options %}
+                        <option value="{{ manager.id }}">{{ manager.username }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="field-label" for="edit-bot-user-id">Chọn User</label>
+                    <select
+                        class="toolbar-select"
+                        id="edit-bot-user-id"
+                        name="UserId"
+                        data-admin-select-search="true"
+                        data-admin-select-search-placeholder="Gõ để tìm user..."
+                    >
+                        <option value="">-- Chọn user --</option>
+                        {% for user in dashboard.bot_user_options %}
+                        <option
+                            value="{{ user.id }}"
+                            data-manager-id="{{ user.manager_id }}"
+                            data-search-text="{{ user.username }} {{ user.display_name }} {{ user.manager_name }}"
+                        >
+                            {{ user.username }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
+                <button type="button" class="action-btn action-btn-slate" data-dialog-close>Đóng</button>
+                <button type="submit" class="action-btn action-btn-emerald">Cập nhật</button>
+            </div>
+        </form>
+    </div>
+</dialog>
+
+<dialog id="delete-bot-dialog" class="admin-dialog">
+    <div class="panel">
+        <form method="post" action="/admin/managerbot/delete">
+            <div class="border-b border-slate-200 px-5 py-4">
+                <h3 class="section-title">Xóa BOT</h3>
+                <p class="section-note">Thao tác này sẽ gỡ toàn bộ kênh, user mapping và job đang gắn với BOT này trong seed local.</p>
+            </div>
+            <div class="space-y-3 px-5 py-5">
+                <input type="hidden" name="Id" id="delete-bot-id">
+                <p class="text-[13px] text-slate-700">Bạn có chắc muốn xóa <strong id="delete-bot-name"></strong>?</p>
+            </div>
+            <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
+                <button type="button" class="action-btn action-btn-slate" data-dialog-close>Đóng</button>
+                <button type="submit" class="action-btn action-btn-rose">Xóa BOT</button>
+            </div>
+        </form>
+    </div>
+</dialog>
+
+<dialog id="thread-bot-dialog" class="admin-dialog">
+    <div class="panel">
+        <form method="post" action="/admin/bot/updateThread">
+            <div class="border-b border-slate-200 px-5 py-4">
+                <h3 class="section-title">Cập nhật số luồng BOT</h3>
+                <p class="section-note">Điều chỉnh số job tối đa BOT được phép xử lý song song. Cột Luồng hiển thị theo dạng đang chạy / tối đa.</p>
+            </div>
+            <div class="space-y-4 px-5 py-5">
+                <input type="hidden" name="Id" id="thread-bot-id">
+                <div>
+                    <label class="field-label" for="thread-bot-name">BOT</label>
+                    <input class="toolbar-input bg-slate-50" id="thread-bot-name" readonly>
+                </div>
+                <div>
+                    <label class="field-label" for="thread-bot-value">Số luồng tối đa</label>
+                    <input class="toolbar-input" id="thread-bot-value" name="Thread" type="number" min="1" required>
+                </div>
+            </div>
+            <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
+                <button type="button" class="action-btn action-btn-slate" data-dialog-close>Đóng</button>
+                <button type="submit" class="action-btn action-btn-amber">Cập nhật luồng</button>
+            </div>
+        </form>
+    </div>
+</dialog>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const table = document.querySelector('table[data-admin-list-table="worker-index"]');
+    const tbody = table ? table.querySelector('[data-worker-live-body]') : null;
+    const managerSelect = document.getElementById('edit-bot-manager-id');
+    const userSelect = document.getElementById('edit-bot-user-id');
+    if (userSelect && userSelect.options && userSelect.options[0]) {
+      userSelect.options[0].textContent = '-- Chọn User --';
+    }
+    if (!table || !tbody) {
+      return;
+    }
+
+    const pollMs = 5000;
+    let pollingController = null;
+    let pollingTimer = null;
+    let lastPayloadSignature = '';
+
+    function escapeHtml(value) {
+      return String(value === null || value === undefined ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function clampPercent(value) {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) {
+        return 0;
+      }
+      return Math.max(0, Math.min(100, Math.round(numeric)));
+    }
+
+    function buildManagerQuery(url) {
+      const currentParams = new URLSearchParams(window.location.search);
+      currentParams.forEach(function (value, key) {
+        if (key === 'manager_ids') {
+          url.searchParams.append(key, value);
+        }
+      });
+    }
+
+    function buildWorkerSearchText(worker) {
+      return [
+        worker.name,
+        worker.raw_name,
+        worker.group,
+        worker.manager_name,
+        worker.assigned_user_name,
+        worker.bandwidth_text,
+        worker.disk_text,
+        worker.status_label,
+        worker.thread_text
+      ].filter(Boolean).join(' ');
+    }
+
+    function syncEditBotUserOptions(preserveSelection) {
+      if (!managerSelect || !userSelect) {
+        return;
+      }
+      const currentValue = preserveSelection ? userSelect.value : '';
+      const managerId = managerSelect.value || '';
+      let visibleCount = 0;
+
+      Array.from(userSelect.options).forEach(function (option, index) {
+        if (index === 0) {
+          option.hidden = false;
+          option.disabled = false;
+          return;
+        }
+        const optionManagerId = option.dataset.managerId || '';
+        const visible = Boolean(managerId) && optionManagerId === managerId;
+        option.hidden = !visible;
+        option.disabled = !visible;
+        if (visible) {
+          visibleCount += 1;
+        }
+      });
+
+      userSelect.disabled = !managerId || visibleCount === 0;
+      if (!managerId) {
+        userSelect.value = '';
+      } else {
+        const selectedOption = Array.from(userSelect.options).find(function (option) {
+          return option.value === currentValue && !option.disabled;
+        });
+        userSelect.value = selectedOption ? currentValue : '';
+      }
+      userSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    function resolveManagerIdFromUser(userId) {
+      if (!userSelect || !userId) {
+        return '';
+      }
+      const matchedOption = Array.from(userSelect.options).find(function (option) {
+        return option.value === userId;
+      });
+      return matchedOption ? (matchedOption.dataset.managerId || '') : '';
+    }
+
+    function buildWorkerRowMarkup(worker) {
+      const loadPercent = clampPercent(worker.load_percent);
+      const workerId = escapeHtml(worker.id);
+      const workerName = escapeHtml(worker.name);
+      const rawWorkerName = escapeHtml(worker.raw_name || worker.name);
+      const workerIdParam = encodeURIComponent(String(worker.id || ''));
+      const workerNameParam = encodeURIComponent(String(worker.raw_name || worker.name || ''));
+      const managerName = escapeHtml(worker.manager_name);
+      const managerId = escapeHtml(worker.manager_id || '');
+      const assignedUserId = escapeHtml(worker.assigned_user_id || '');
+      const assignedUserName = escapeHtml(worker.assigned_user_name || 'Chưa gán user');
+      const statusLabel = escapeHtml(worker.status_label);
+      const statusClass = escapeHtml(worker.status_class);
+      const threadText = escapeHtml(worker.thread_text || '0/1');
+      const bandwidthText = escapeHtml(worker.bandwidth_text);
+      const diskText = escapeHtml(worker.disk_text);
+      const totalChannels = escapeHtml(worker.total_channels);
+      const searchText = escapeHtml(buildWorkerSearchText(worker));
+
+      return [
+        '<tr data-worker-row-id="', workerId, '" data-search-text="', searchText, '">',
+        '  <td class="table-mono text-slate-500">', escapeHtml(worker.index), '</td>',
+        '  <td>',
+        '    <div>',
+        '      <p class="text-[13px] font-semibold text-slate-900">', workerName, '</p>',
+        '      <p class="table-meta">Manager ', managerName, '</p>',
+        '    </div>',
+        '  </td>',
+        '  <td>',
+        '    <p class="text-[12px] font-medium text-slate-800">', assignedUserName, '</p>',
+        '    <p class="table-meta">', totalChannels, ' k&#234;nh tr&#234;n VPS n&#224;y</p>',
+        '  </td>',
+        '  <td><span class="', statusClass, '">', statusLabel, '</span></td>',
+        '  <td>',
+        '    <p class="table-mono font-semibold text-slate-800">', String(loadPercent), '%</p>',
+        '    <div class="mt-2 h-1.5 w-24 overflow-hidden rounded-full bg-slate-100">',
+        '      <div class="h-full rounded-full bg-brand-500" style="width: ', String(loadPercent), '%;"></div>',
+        '    </div>',
+        '  </td>',
+        '  <td class="table-mono text-slate-700">', diskText, '</td>',
+        '  <td class="table-mono text-slate-700">', bandwidthText, '</td>',
+        '  <td>',
+        '    <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-700">',
+               threadText,
+        '    </span>',
+        '  </td>',
+        '  <td>',
+        '    <div class="flex items-center justify-end gap-2">',
+        '      <a href="/admin/channel/bot?botId=', workerIdParam, '&botName=', workerNameParam, '" class="action-btn action-btn-sky">',
+        '        <i data-lucide="link-2" class="h-3.5 w-3.5"></i>',
+        '        DS k&#234;nh',
+        '      </a>',
+        '      <a href="/admin/bot/userofbot?botId=', workerIdParam, '&botName=', workerNameParam, '" class="action-btn action-btn-primary">',
+        '        <i data-lucide="users" class="h-3.5 w-3.5"></i>',
+        '        DS user',
+        '      </a>',
+        '      <button type="button" class="action-btn action-btn-amber" data-dialog-open="thread-bot-dialog" data-worker-id="', workerId, '" data-worker-name="', workerName, '" data-thread="', escapeHtml(worker.threads), '">',
+        '        <i data-lucide="waypoints" class="h-3.5 w-3.5"></i>',
+        '        Lu&#7891;ng',
+        '      </button>',
+        '      <button type="button" class="action-btn action-btn-emerald" data-dialog-open="edit-bot-dialog" data-worker-id="', workerId, '" data-worker-name="', rawWorkerName, '" data-manager-id="', managerId, '" data-user-id="', assignedUserId, '">',
+        '        <i data-lucide="pencil" class="h-3.5 w-3.5"></i>',
+        '        S&#7917;a',
+        '      </button>',
+        '      <button type="button" class="action-btn action-btn-rose" data-dialog-open="delete-bot-dialog" data-worker-id="', workerId, '" data-worker-name="', workerName, '">',
+        '        <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>',
+        '        X&#243;a',
+        '      </button>',
+        '      <form method="post" action="/admin/managerbot/delete" data-bulk-delete-form class="hidden">',
+        '        <input type="hidden" name="Id" value="', workerId, '">',
+        '      </form>',
+        '    </div>',
+        '  </td>',
+        '</tr>'
+      ].join('');
+    }
+
+    function fillDialogFields(button) {
+      if (!button) {
+        return;
+      }
+
+      if (button.matches('[data-dialog-open="edit-bot-dialog"]')) {
+        document.getElementById('edit-bot-id').value = button.dataset.workerId || '';
+        document.getElementById('edit-bot-name').value = button.dataset.workerName || '';
+        const inferredManagerId = button.dataset.managerId || resolveManagerIdFromUser(button.dataset.userId || '');
+        if (managerSelect) {
+          managerSelect.value = inferredManagerId;
+          managerSelect.dispatchEvent(new Event('change', { bubbles: true }));
+          syncEditBotUserOptions(false);
+        }
+        if (userSelect) {
+          userSelect.value = button.dataset.userId || '';
+          userSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        return;
+      }
+
+      if (button.matches('[data-dialog-open="delete-bot-dialog"]')) {
+        document.getElementById('delete-bot-id').value = button.dataset.workerId || '';
+        document.getElementById('delete-bot-name').textContent = button.dataset.workerName || '';
+        return;
+      }
+
+      if (button.matches('[data-dialog-open="thread-bot-dialog"]')) {
+        document.getElementById('thread-bot-id').value = button.dataset.workerId || '';
+        document.getElementById('thread-bot-name').value = button.dataset.workerName || '';
+        document.getElementById('thread-bot-value').value = button.dataset.thread || '1';
+      }
+    }
+
+    document.addEventListener('click', function (event) {
+      const button = event.target.closest('[data-dialog-open]');
+      if (!button) {
+        return;
+      }
+      fillDialogFields(button);
+    });
+
+    if (managerSelect) {
+      managerSelect.addEventListener('change', function () {
+        syncEditBotUserOptions(true);
+      });
+    }
+    if (userSelect) {
+      userSelect.addEventListener('change', function () {
+        if (!managerSelect) {
+          return;
+        }
+        const nextManagerId = resolveManagerIdFromUser(userSelect.value);
+        if (nextManagerId && managerSelect.value !== nextManagerId) {
+          managerSelect.value = nextManagerId;
+          syncEditBotUserOptions(true);
+        }
+      });
+    }
+    syncEditBotUserOptions(true);
+
+    async function fetchLiveWorkers() {
+      if (!table || !tbody) {
+        return;
+      }
+      if (document.hidden || document.querySelector('dialog[open]')) {
+        return;
+      }
+
+      if (pollingController) {
+        pollingController.abort();
+      }
+      pollingController = new AbortController();
+
+      const endpoint = tbody.dataset.liveEndpoint;
+      const requestUrl = new URL(endpoint, window.location.origin);
+      buildManagerQuery(requestUrl);
+
+      const response = await fetch(requestUrl.toString(), {
+        method: 'GET',
+        credentials: 'same-origin',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        signal: pollingController.signal
+      });
+      if (!response.ok) {
+        throw new Error('Failed to fetch live BOT rows.');
+      }
+
+      const payload = await response.json();
+      const items = Array.isArray(payload.items) ? payload.items : [];
+      const signature = JSON.stringify(items);
+      if (signature === lastPayloadSignature) {
+        return;
+      }
+
+      lastPayloadSignature = signature;
+      tbody.innerHTML = items.map(buildWorkerRowMarkup).join('');
+      table.dispatchEvent(new CustomEvent('admin-table:refresh-rows'));
+    }
+
+    function scheduleLivePoll() {
+      window.clearTimeout(pollingTimer);
+      pollingTimer = window.setTimeout(async function () {
+        try {
+          await fetchLiveWorkers();
+        } catch (error) {
+          if (!error || error.name !== 'AbortError') {
+            console.error(error);
+          }
+        } finally {
+          scheduleLivePoll();
+        }
+      }, pollMs);
+    }
+
+    lastPayloadSignature = JSON.stringify(
+      Array.from(tbody.querySelectorAll(':scope > tr')).map(function (row) {
+        return row.textContent.replace(/\s+/g, ' ').trim();
+      })
+    );
+
+    scheduleLivePoll();
+  });
+</script>
+{% endblock %}
