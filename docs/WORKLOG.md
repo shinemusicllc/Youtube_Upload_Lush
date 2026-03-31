@@ -180,3 +180,6 @@ ode --check backend/app/static/js/admin_tables.js.
 - [2026-04-01 00:46] Bo cum mui ten trung gian khoi workspace `Cấp phát BOT` va doi split desktop thanh 2 panel truc tiep de giam thao tac thua.
 - [2026-04-01 00:46] Doi luong chon BOT sang auto-add: tick BOT la dua thang vao danh sach gan, `select all` va `Ctrl+A` cung di theo cung hanh vi moi.
 - [2026-04-01 00:46] Verify lai bang `python -m compileall backend/app`, `TestClient`, va HTTP login local: `/admin/bot/assignment` tra `200`, co copy moi `BOT đã thêm` va hint `thêm thẳng vào danh sách cấp phát`.
+- [2026-04-01 00:55] Dong goi bo file thay doi, upload len `82.197.71.6`, backup nhanh file cu tren host, bung source moi vao `/opt/youtube-upload-lush`, va restart `youtube-upload-web.service`.
+- [2026-04-01 00:55] Push thanh cong local `main` len GitHub tai commit `e5766d426f703382ef6e35a13e4a6aaf7f84822b`, sau do chot checkout tren VPS cung ve dung commit nay.
+- [2026-04-01 00:55] Verify production bang `systemctl is-active youtube-upload-web.service`, `curl http://127.0.0.1:8000/api/health = {\"status\":\"ok\"}`, va xac nhan repo tren VPS dang o `HEAD = e5766d426f703382ef6e35a13e4a6aaf7f84822b`.

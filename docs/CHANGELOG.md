@@ -329,3 +329,10 @@
 - Fixed: Khong con can tick BOT roi bam mui ten moi thay xuat hien ben phai.
 - Affected files: `backend/app/templates/admin/bot_assignment.html`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`
 - Impact/Risk: Chi doi UI/JS tren man cap phat; submit contract van giu nguyen, nhung flow thao tac cua user da duoc don sang auto-add.
+
+### 2026-04-01 00:55 - deploy_bot_assignment_refinement_to_vps_and_github
+- Added: Ban refine moi cua `Cấp phát BOT` da duoc rollout len control VPS `82.197.71.6` va dong bo len GitHub `main`.
+- Changed: Checkout tren VPS `/opt/youtube-upload-lush` duoc cap nhat ve commit `e5766d426f703382ef6e35a13e4a6aaf7f84822b`, giu nguyen runtime va restart lai `youtube-upload-web.service`.
+- Fixed: Local, GitHub, va source dang chay tren VPS quay ve cung mot moc commit cho bo thay doi UI admin BOT assignment.
+- Affected files: `backend/app/routers/web.py`, `backend/app/store.py`, `backend/app/templates/admin/_layout.html`, `backend/app/templates/admin/bot_assignment.html`, `backend/app/templates/admin/user_index.html`, `backend/app/templates/admin/user_manager_bot.html`, `backend/app/templates/admin/worker_index.html`, `docs/CHANGELOG.md`, `docs/DECISIONS.md`, `docs/UI_SYSTEM.md`, `docs/WORKLOG.md`
+- Impact/Risk: App tren VPS dang healthy sau restart; rieng `scripts/bootstrap_host.sh` van phat sinh loi cu phap trong luot chay tu dong, nen lan nay da chot deploy bang sync + restart thu cong.
