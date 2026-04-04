@@ -11,6 +11,7 @@ WorkerStatus = Literal["online", "busy", "offline"]
 ChannelStatus = Literal["connected", "pending_reconnect", "disconnected"]
 JobStatus = Literal["pending", "queueing", "downloading", "rendering", "uploading", "completed", "cancelled", "error"]
 SourceMode = Literal["drive", "local"]
+JobVisibility = Literal["draft", "private", "public", "unlisted"]
 UploadSessionStatus = Literal["active", "completed", "expired", "cancelled"]
 ChannelConnectionMode = Literal["oauth", "browser_profile"]
 BrowserSessionStatus = Literal["launching", "awaiting_confirmation", "confirmed", "closed", "expired", "failed"]
@@ -35,9 +36,13 @@ class WorkerRecord(BaseModel):
     manager_id: str | None = None
     manager_name: str
     group: str | None = None
+    created_at: datetime | None = None
     status: WorkerStatus
     capacity: int
     load_percent: int
+    ram_percent: int = 0
+    ram_used_gb: float = 0
+    ram_total_gb: float = 0
     bandwidth_kbps: float
     disk_used_gb: float
     disk_total_gb: float
@@ -124,8 +129,12 @@ class RenderJobRecord(BaseModel):
     manager_name: str | None = None
     status: JobStatus
     progress: int = 0
+    download_progress: int = 0
+    render_progress: int = 0
+    upload_progress: int = 0
+    status_message: str | None = None
     queue_order: int | None = None
-    visibility: str = "private"
+    visibility: JobVisibility = "draft"
     time_render_string: str = "00:30:00"
     scheduled_at: datetime | None = None
     created_at: datetime
@@ -155,6 +164,7 @@ class JobCreatePayload(BaseModel):
     title: str
     description: str | None = None
     source_mode: SourceMode
+    visibility: JobVisibility = "draft"
     intro_url: str | None = None
     video_loop_url: str | None = None
     audio_loop_url: str | None = None
@@ -222,6 +232,10 @@ class BrowserSessionResponse(BaseModel):
     detected_channel_name: str | None = None
     channel_record_id: str | None = None
     last_error: str | None = None
+
+
+class BrowserSessionCreateRequest(BaseModel):
+    worker_id: str | None = None
 
 
 class BrowserSessionConfirmResponse(BaseModel):
@@ -307,6 +321,9 @@ class WorkerHeartbeatPayload(BaseModel):
     worker_id: str
     shared_secret: str
     load_percent: int = 0
+    ram_percent: int = 0
+    ram_used_gb: float = 0
+    ram_total_gb: float = 0
     bandwidth_kbps: float = 0
     disk_used_gb: float = 0
     disk_total_gb: float = 0
@@ -390,11 +407,6 @@ class WorkerYouTubeUploadTarget(BaseModel):
     channel_name: str
     title: str
     description: str | None = None
-    privacy_status: Literal["private", "public", "unlisted"] = "private"
-    connection_mode: ChannelConnectionMode = "oauth"
+    connection_mode: ChannelConnectionMode = "browser_profile"
     browser_profile_key: str | None = None
     browser_profile_path: str | None = None
-    client_id: str | None = None
-    client_secret: str | None = None
-    refresh_token: str | None = None
-    token_uri: str = "https://oauth2.googleapis.com/token"

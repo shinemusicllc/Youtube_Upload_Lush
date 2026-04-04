@@ -11,8 +11,8 @@
                     <i data-lucide="server" class="h-4.5 w-4.5 text-brand-600"></i>
                 </div>
                 <div>
-                    <h2 class="section-title">Danh sách BOT</h2>
-                    <p class="section-note">Theo dõi cụm BOT theo manager, user đang giữ BOT và trạng thái tài nguyên live.</p>
+                    <h2 class="section-title">Danh s&#225;ch BOT</h2>
+                    <p class="section-note">Theo d&#245;i c&#7909;m VPS, metadata BOT v&#224; tr&#7841;ng th&#225;i t&#224;i nguy&#234;n live theo th&#7901;i gian th&#7921;c.</p>
                 </div>
             </div>
 
@@ -31,8 +31,8 @@
 
     <div class="panel overflow-hidden">
         <div class="border-b border-slate-200/80 px-5 py-4">
-            <h3 class="section-title">Cụm BOT VPS</h3>
-            <p class="section-note">Danh sách BOT theo manager, user đang giữ BOT, số kênh trên mỗi VPS và trạng thái tài nguyên live. Production đang khóa cố định 1 job active / VPS.</p>
+            <h3 class="section-title">C&#7909;m BOT VPS</h3>
+            <p class="section-note">M&#7895;i VPS c&#243; th&#7875; g&#225;n cho nhi&#7873;u user; b&#7843;ng n&#224;y theo d&#245;i metadata BOT, s&#7889; k&#234;nh, s&#7889; user v&#224; t&#224;i nguy&#234;n live t&#7915; heartbeat worker.</p>
         </div>
 
         <div class="table-shell">
@@ -41,74 +41,94 @@
                     <tr>
                         <th class="w-14">STT</th>
                         <th>BOT</th>
-                        <th>User</th>
-                        <th>Trạng thái</th>
-                        <th>Tải</th>
-                        <th>Disk</th>
-                        <th>Băng thông</th>
-                        <th>Luồng</th>
-                        <th class="text-right">Tác vụ</th>
+                        <th>Group</th>
+                        <th>Ng&#224;y t&#7841;o</th>
+                        <th>S&#7889; k&#234;nh</th>
+                        <th>S&#7889; user</th>
+                        <th>Tr&#7841;ng th&#225;i</th>
+                        <th>RAM</th>
+                        <th class="w-[98px]">Disk</th>
+                        <th class="w-[86px]">Bandwith</th>
+                        <th>Lu&#7891;ng</th>
+                        <th class="w-[320px] text-right">T&#225;c v&#7909;</th>
                     </tr>
                 </thead>
                 <tbody data-worker-live-body data-live-endpoint="/api/admin/bots">
                     {% for worker in dashboard.workers %}
-                    <tr data-worker-row-id="{{ worker.id }}" data-search-text="{{ worker.name }} {{ worker.manager_name }} {{ worker.assigned_user_name }}">
+                    {% set created_parts = (worker.created_at or '').split(' ') %}
+                    <tr
+                        data-worker-row-id="{{ worker.id }}"
+                        data-search-text="{{ worker.bot_id }} {{ worker.name }} {{ worker.group }} {{ worker.manager_name }} {{ worker.assigned_user_name }} {{ worker.assigned_user_names_text }} {{ worker.created_at }} {{ worker.ram_text }} {{ worker.disk_text }} {{ worker.bandwidth_text }}"
+                    >
                         <td class="table-mono text-slate-500">{{ worker.index }}</td>
                         <td>
                             <div>
                                 <p class="text-[13px] font-semibold text-slate-900">{{ worker.name }}</p>
-                                <p class="table-meta">Manager {{ worker.manager_name }}</p>
+                                <p class="table-meta">{{ worker.manager_name }}</p>
                             </div>
                         </td>
+                        <td class="text-[12px] font-medium text-slate-700">{{ worker.group }}</td>
+                        <td class="table-mono text-slate-600">
+                            <p>{{ created_parts[0] if created_parts and created_parts[0] else '--' }}</p>
+                            <p class="mt-1 text-[11px] text-slate-500">{{ ' '.join(created_parts[1:]) if created_parts|length > 1 else '--' }}</p>
+                        </td>
                         <td>
-                            <p class="text-[12px] font-medium text-slate-800">{{ worker.assigned_user_name }}</p>
-                            <p class="table-meta">{{ worker.total_channels }} kênh trên VPS này</p>
+                            <span class="inline-flex items-center rounded-full border border-brand-100 bg-brand-50 px-2.5 py-1 text-[10px] font-semibold text-brand-700">
+                                {{ worker.total_channels }} k&#234;nh
+                            </span>
+                        </td>
+                        <td>
+                            <span class="inline-flex items-center rounded-full border border-sky-100 bg-sky-50 px-2.5 py-1 text-[10px] font-semibold text-sky-700">
+                                {{ worker.total_users }} user
+                            </span>
                         </td>
                         <td><span class="{{ worker.status_class }}">{{ worker.status_label }}</span></td>
                         <td>
-                            <p class="table-mono font-semibold text-slate-800">{{ worker.load_percent }}%</p>
+                            <p class="table-mono font-semibold text-slate-800">{{ worker.ram_percent }}%</p>
+                            <p class="mt-1 text-[11px] text-slate-500">{{ worker.ram_text }}</p>
                             <div class="mt-2 h-1.5 w-24 overflow-hidden rounded-full bg-slate-100">
-                                <div class="h-full rounded-full bg-brand-500" style="width: {{ worker.load_percent }}%;"></div>
+                                <div class="h-full rounded-full bg-brand-500" style="width: {{ worker.ram_percent }}%;"></div>
                             </div>
                         </td>
-                        <td class="table-mono text-slate-700">{{ worker.disk_text }}</td>
-                        <td class="table-mono text-slate-700">{{ worker.bandwidth_text }}</td>
+                        <td class="table-mono whitespace-nowrap text-[11px] leading-tight tracking-[-0.01em] text-slate-700">{{ worker.disk_text }}</td>
+                        <td class="table-mono whitespace-nowrap text-[11px] leading-tight tracking-[-0.01em] text-slate-700">{{ worker.bandwidth_text }}</td>
                         <td>
                             <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-700">
                                 {{ worker.thread_text }}
                             </span>
                         </td>
-                        <td>
-                            <div class="flex items-center justify-end gap-2">
-                                <a href="/admin/channel/bot?botId={{ worker.id }}&botName={{ worker.raw_name }}" class="action-btn action-btn-sky">
+                        <td class="align-middle">
+                            <div class="flex flex-wrap items-center justify-end gap-2 xl:flex-nowrap">
+                                <a href="/admin/channel/bot?botId={{ worker.id }}&botName={{ worker.raw_name }}" class="action-btn action-btn-sky whitespace-nowrap">
                                     <i data-lucide="link-2" class="h-3.5 w-3.5"></i>
-                                    DS kênh
+                                    DS k&#234;nh
                                 </a>
-                                <a href="/admin/bot/userofbot?botId={{ worker.id }}&botName={{ worker.raw_name }}" class="action-btn action-btn-primary">
+                                <a href="/admin/bot/userofbot?botId={{ worker.id }}&botName={{ worker.raw_name }}" class="action-btn action-btn-primary whitespace-nowrap">
                                     <i data-lucide="users" class="h-3.5 w-3.5"></i>
                                     DS user
                                 </a>
                                 <button
                                     type="button"
-                                    class="action-btn action-btn-emerald"
+                                    class="action-btn action-btn-emerald whitespace-nowrap"
                                     data-dialog-open="edit-bot-dialog"
                                     data-worker-id="{{ worker.id }}"
                                     data-worker-name="{{ worker.raw_name }}"
+                                    data-worker-group="{{ worker.group or '' }}"
                                     data-manager-id="{{ worker.manager_id }}"
                                     data-user-id="{{ worker.assigned_user_id }}"
                                 >
                                     <i data-lucide="pencil" class="h-3.5 w-3.5"></i>
-                                    Sửa
+                                    S&#7917;a
                                 </button>
                                 <button
                                     type="button"
-                                    class="action-btn action-btn-rose"
+                                    class="action-btn action-btn-rose whitespace-nowrap"
                                     data-dialog-open="delete-bot-dialog"
                                     data-worker-id="{{ worker.id }}"
                                     data-worker-name="{{ worker.name }}"
                                 >
                                     <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
-                                    Xóa
+                                    X&#243;a
                                 </button>
                                 <form method="post" action="/admin/managerbot/delete" data-bulk-delete-form class="hidden">
                                     <input type="hidden" name="Id" value="{{ worker.id }}">
@@ -134,56 +154,71 @@
             {% endif %}
 
             <div class="border-b border-slate-200 px-5 py-4">
-                <h3 class="section-title">Cập nhật BOT</h3>
-                <p class="section-note">Sửa tên BOT hoặc đổi manager, đổi user ngay tại danh sách BOT để tránh phải đi qua từng trang user.</p>
+                <h3 class="section-title">C&#7853;p nh&#7853;t BOT</h3>
+                {% if dashboard.manager_binding_locked %}
+                <p class="section-note">S&#7917;a t&#234;n BOT, gi&#7919; manager c&#7889; &#273;&#7883;nh v&#224; g&#225;n user d&#249;ng BOT ngay t&#7841;i Danh s&#225;ch BOT. Manager ch&#7881; thao t&#225;c trong ph&#7841;m vi user do ch&#237;nh m&#236;nh qu&#7843;n l&#253;.</p>
+                {% else %}
+                <p class="section-note">S&#7917;a t&#234;n BOT v&#224; ch&#7885;n manager ngay t&#7841;i Danh s&#225;ch BOT. Admin c&#243; th&#7875; ch&#7885;n manager ho&#7863;c ch&#237;nh t&#224;i kho&#7843;n admin.</p>
+                {% endif %}
             </div>
             <div class="space-y-4 px-5 py-5">
                 <input type="hidden" name="Id" id="edit-bot-id">
                 <div>
-                    <label class="field-label" for="edit-bot-name">Tên BOT</label>
+                    <label class="field-label" for="edit-bot-name">T&#234;n BOT</label>
                     <input class="toolbar-input" id="edit-bot-name" name="Name" required>
                 </div>
                 <div>
-                    <label class="field-label" for="edit-bot-manager-id">Chọn manager</label>
-                    <select
-                        class="toolbar-select"
-                        id="edit-bot-manager-id"
-                        name="UserIdManager"
-                        data-admin-select-search="true"
-                        data-admin-select-search-placeholder="Gõ để tìm manager..."
-                        required
-                    >
-                        <option value="">-- Chọn manager --</option>
-                        {% for manager in dashboard.manager_options %}
-                        <option value="{{ manager.id }}">{{ manager.username }}</option>
-                        {% endfor %}
-                    </select>
+                    <label class="field-label" for="edit-bot-group">Group</label>
+                    <input class="toolbar-input" id="edit-bot-group" name="Group" placeholder="Nh&#7853;p ghi ch&#250; / nh&#243;m BOT">
+                </div>
+
+                {% if dashboard.manager_binding_locked %}
+                <div>
+                    {% if dashboard.bot_manager_options %}
+                    <input type="hidden" name="UserIdManager" value="{{ dashboard.bot_manager_options[0].id }}">
+                    {% endif %}
                 </div>
                 <div>
-                    <label class="field-label" for="edit-bot-user-id">Chọn user</label>
+                    <label class="field-label" for="edit-bot-user-id">Users</label>
                     <select
                         class="toolbar-select"
                         id="edit-bot-user-id"
                         name="UserId"
                         data-admin-select-search="true"
-                        data-admin-select-search-placeholder="Gõ để tìm user..."
+                        data-admin-select-search-placeholder="G&#245; &#273;&#7875; t&#236;m user..."
                     >
-                        <option value="">-- Để BOT trống trong kho manager --</option>
+                        <option value="" hidden>-- Ch&#7885;n user --</option>
                         {% for user in dashboard.bot_user_options %}
-                        <option
-                            value="{{ user.id }}"
-                            data-manager-id="{{ user.manager_id }}"
-                            data-search-text="{{ user.username }} {{ user.display_name }} {{ user.manager_name }}"
-                        >
-                            {{ user.username }}
+                        <option value="{{ user.id }}">
+                            {{ user.username }}{% if user.role == 'manager' %} (Ch&#237;nh b&#7841;n){% elif user.role == 'admin' %} (Admin){% endif %}
                         </option>
                         {% endfor %}
                     </select>
                 </div>
+                {% else %}
+                <div>
+                    <label class="field-label" for="edit-bot-manager-id">Managers</label>
+                    <select
+                        class="toolbar-select"
+                        id="edit-bot-manager-id"
+                        name="UserIdManager"
+                        data-admin-select-search="true"
+                        data-admin-select-search-placeholder="G&#245; &#273;&#7875; t&#236;m manager..."
+                        required
+                    >
+                        <option value="" hidden>-- Ch&#7885;n Manager --</option>
+                        {% for manager in dashboard.bot_manager_options %}
+                        <option value="{{ manager.id }}">
+                            {{ manager.username }}{% if manager.role == 'admin' %} (Admin){% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% endif %}
             </div>
             <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
-                <button type="button" class="action-btn action-btn-slate" data-dialog-close>Đóng</button>
-                <button type="submit" class="action-btn action-btn-emerald">Cập nhật</button>
+                <button type="button" class="action-btn action-btn-slate" data-dialog-close>&#272;&#243;ng</button>
+                <button type="submit" class="action-btn action-btn-emerald">C&#7853;p nh&#7853;t</button>
             </div>
         </form>
     </div>
@@ -200,16 +235,16 @@
             {% endif %}
 
             <div class="border-b border-slate-200 px-5 py-4">
-                <h3 class="section-title">Xóa BOT</h3>
-                <p class="section-note">Thao tác này sẽ gỡ kênh, user mapping và job đang bám trên BOT này trong state hiện tại.</p>
+                <h3 class="section-title">X&#243;a BOT</h3>
+                <p class="section-note">Thao t&#225;c n&#224;y s&#7869; g&#7905; BOT kh&#7887;i &#273;i&#7873;u ph&#7889;i hi&#7879;n t&#7841;i v&#224; x&#243;a mapping live c&#242;n b&#225;m tr&#234;n BOT &#273;&#243;.</p>
             </div>
             <div class="space-y-3 px-5 py-5">
                 <input type="hidden" name="Id" id="delete-bot-id">
-                <p class="text-[13px] text-slate-700">Bạn có chắc muốn xóa <strong id="delete-bot-name"></strong>?</p>
+                <p class="text-[13px] text-slate-700">B&#7841;n c&#243; ch&#7855;c mu&#7889;n x&#243;a <strong id="delete-bot-name"></strong>?</p>
             </div>
             <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
-                <button type="button" class="action-btn action-btn-slate" data-dialog-close>Đóng</button>
-                <button type="submit" class="action-btn action-btn-rose">Xóa BOT</button>
+                <button type="button" class="action-btn action-btn-slate" data-dialog-close>&#272;&#243;ng</button>
+                <button type="submit" class="action-btn action-btn-rose">X&#243;a BOT</button>
             </div>
         </form>
     </div>
@@ -223,30 +258,7 @@
     const tbody = table ? table.querySelector('[data-worker-live-body]') : null;
     const editManagerSelect = document.getElementById('edit-bot-manager-id');
     const editUserSelect = document.getElementById('edit-bot-user-id');
-    const assignmentForm = document.querySelector('[data-bot-assignment-form]');
-    const assignmentManagerSelect = document.getElementById('assignment-manager-id');
-    const assignmentUserSelect = document.getElementById('assignment-user-id');
-    const assignmentSubmit = document.querySelector('[data-assignment-submit]');
-    const assignmentModeNote = document.querySelector('[data-assignment-mode-note]');
-    const availableBotSearch = document.querySelector('[data-available-bot-search]');
-    const availableBotCards = Array.from(document.querySelectorAll('[data-assignment-worker-card]'));
-    const availableBotCheckboxes = Array.from(document.querySelectorAll('[data-assignment-worker-checkbox]'));
-    const availableBotEmptyFiltered = document.querySelector('[data-available-bot-empty="filtered"]');
-    const selectedBotShell = document.querySelector('[data-selected-bot-shell]');
-    const selectedBotTags = document.querySelector('[data-selected-bot-tags]');
-    const selectedCountNodes = Array.from(document.querySelectorAll('[data-selected-bot-count], [data-selected-bot-count-mirror]'));
-    const visibleBotCountNode = document.querySelector('[data-visible-bot-count]');
-    const selectAllVisibleButton = document.querySelector('[data-select-all-visible]');
-    const clearSelectionButton = document.querySelector('[data-clear-bot-selection]');
-
-    if (editUserSelect && editUserSelect.options && editUserSelect.options[0]) {
-      editUserSelect.options[0].textContent = '-- Để BOT trống trong kho manager --';
-    }
-    if (!table || !tbody) {
-      return;
-    }
-
-    const pollMs = 5000;
+    const pollMs = 3000;
     let pollingController = null;
     let pollingTimer = null;
     let lastPayloadSignature = '';
@@ -279,11 +291,17 @@
 
     function buildWorkerSearchText(worker) {
       return [
+        worker.bot_id,
         worker.name,
         worker.raw_name,
         worker.group,
         worker.manager_name,
         worker.assigned_user_name,
+        worker.assigned_user_names_text,
+        worker.created_at,
+        worker.total_channels,
+        worker.total_users,
+        worker.ram_text,
         worker.bandwidth_text,
         worker.disk_text,
         worker.status_label,
@@ -291,187 +309,42 @@
       ].filter(Boolean).join(' ');
     }
 
-    function filterUserOptions(selectElement, managerId, preserveSelection) {
-      if (!selectElement) {
-        return;
-      }
-      const currentValue = preserveSelection ? selectElement.value : '';
-      let visibleCount = 0;
-
-      Array.from(selectElement.options).forEach(function (option, index) {
-        if (index === 0) {
-          option.hidden = false;
-          option.disabled = false;
-          return;
-        }
-        const optionManagerId = option.dataset.managerId || '';
-        const visible = Boolean(managerId) && optionManagerId === managerId;
-        option.hidden = !visible;
-        option.disabled = !visible;
-        if (visible) {
-          visibleCount += 1;
-        }
-      });
-
-      selectElement.disabled = !managerId || visibleCount === 0;
-      if (!managerId) {
-        selectElement.value = '';
-      } else {
-        const selectedOption = Array.from(selectElement.options).find(function (option) {
-          return option.value === currentValue && !option.disabled;
-        });
-        selectElement.value = selectedOption ? currentValue : '';
-      }
+    function renderCountBadge(count, tone, label) {
+      return `<span class="inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold ${tone}">${escapeHtml(count)} ${label}</span>`;
     }
 
-    function resolveManagerIdFromUser(selectElement, userId) {
-      if (!selectElement || !userId) {
-        return '';
+    function splitDateTime(value) {
+      const raw = String(value || '').trim();
+      if (!raw) {
+        return { date: '--', time: '--' };
       }
-      const matchedOption = Array.from(selectElement.options).find(function (option) {
-        return option.value === userId;
-      });
-      return matchedOption ? (matchedOption.dataset.managerId || '') : '';
-    }
-
-    function syncEditBotUserOptions(preserveSelection) {
-      if (!editManagerSelect || !editUserSelect) {
-        return;
-      }
-      filterUserOptions(editUserSelect, editManagerSelect.value || '', preserveSelection);
-    }
-
-    function getSelectedBotCheckboxes() {
-      return availableBotCheckboxes.filter(function (checkbox) {
-        return checkbox.checked;
-      });
-    }
-
-    function renderSelectedBotSummary() {
-      const selectedBots = getSelectedBotCheckboxes();
-      selectedCountNodes.forEach(function (node) {
-        node.textContent = String(selectedBots.length);
-      });
-
-      if (!selectedBotShell || !selectedBotTags) {
-        return selectedBots.length;
-      }
-
-      if (!selectedBots.length) {
-        selectedBotShell.hidden = true;
-        selectedBotTags.innerHTML = '';
-        return 0;
-      }
-
-      selectedBotShell.hidden = false;
-      selectedBotTags.innerHTML = selectedBots.map(function (checkbox) {
-        const botName = escapeHtml(checkbox.dataset.botName || checkbox.value || '');
-        const managerName = escapeHtml(checkbox.dataset.managerName || '');
-        const workerId = escapeHtml(checkbox.value || '');
-        return [
-          '<button type="button" class="inline-flex items-center gap-2 rounded-lg border border-brand-100 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700" data-remove-selected-bot="', workerId, '">',
-          '  <span>', botName, '</span>',
-          managerName ? '  <span class="text-slate-400">•</span><span class="text-slate-500">' + managerName + '</span>' : '',
-          '  <i data-lucide="x" class="h-3.5 w-3.5 text-slate-400"></i>',
-          '</button>'
-        ].join('');
-      }).join('');
-
-      if (window.lucide && typeof window.lucide.createIcons === 'function') {
-        window.lucide.createIcons({ attrs: { 'stroke-width': 1.75 } });
-      }
-      return selectedBots.length;
-    }
-
-    function syncBotPoolState() {
-      const searchTerm = String(availableBotSearch ? availableBotSearch.value : '').trim().toLowerCase();
-      const selectedUserId = assignmentUserSelect ? assignmentUserSelect.value || '' : '';
-      const hasDirectUserTarget = Boolean(selectedUserId);
-      let visibleCount = 0;
-
-      if (hasDirectUserTarget) {
-        let firstChecked = null;
-        availableBotCheckboxes.forEach(function (checkbox) {
-          if (!checkbox.checked) {
-            return;
-          }
-          if (!firstChecked) {
-            firstChecked = checkbox;
-            return;
-          }
-          checkbox.checked = false;
-        });
-      }
-
-      availableBotCards.forEach(function (card) {
-        const haystack = String(card.dataset.searchText || '').toLowerCase();
-        const matchesSearch = !searchTerm || haystack.includes(searchTerm);
-        card.hidden = !matchesSearch;
-        if (matchesSearch) {
-          visibleCount += 1;
-        }
-      });
-
-      if (visibleBotCountNode) {
-        visibleBotCountNode.textContent = String(visibleCount);
-      }
-      if (availableBotEmptyFiltered) {
-        availableBotEmptyFiltered.classList.toggle('hidden', visibleCount > 0);
-      }
-      if (selectAllVisibleButton) {
-        selectAllVisibleButton.disabled = visibleCount === 0;
-        selectAllVisibleButton.innerHTML = hasDirectUserTarget
-          ? '<i data-lucide="arrow-right" class="h-3.5 w-3.5"></i> Chọn 1 BOT'
-          : '<i data-lucide="check-check" class="h-3.5 w-3.5"></i> Chọn đang hiện';
-      }
-      if (clearSelectionButton) {
-        clearSelectionButton.disabled = getSelectedBotCheckboxes().length === 0;
-      }
-      if (assignmentModeNote) {
-        assignmentModeNote.textContent = hasDirectUserTarget
-          ? 'Đang cấp trực tiếp cho user. Hệ thống chỉ giữ 1 BOT, BOT cũ của user sẽ được trả về kho manager sau khi lưu.'
-          : 'Có thể chọn nhiều BOT trống để chuyển về kho manager.';
-      }
-
-      const selectedCount = renderSelectedBotSummary();
-      const managerId = assignmentManagerSelect ? assignmentManagerSelect.value || '' : '';
-      if (assignmentSubmit) {
-        assignmentSubmit.disabled = !managerId || selectedCount === 0;
-      }
-
-      if (window.lucide && typeof window.lucide.createIcons === 'function') {
-        window.lucide.createIcons({ attrs: { 'stroke-width': 1.75 } });
-      }
-    }
-
-    function syncAssignmentOptions(preserveSelection) {
-      if (!assignmentForm || !assignmentManagerSelect) {
-        return;
-      }
-      const managerId = assignmentManagerSelect.value || '';
-      if (assignmentUserSelect) {
-        filterUserOptions(assignmentUserSelect, managerId, preserveSelection);
-      }
-      syncBotPoolState();
+      const parts = raw.split(/\s+/);
+      return {
+        date: parts[0] || '--',
+        time: parts.slice(1).join(' ') || '--'
+      };
     }
 
     function buildWorkerRowMarkup(worker) {
-      const loadPercent = clampPercent(worker.load_percent);
+      const ramPercent = clampPercent(worker.ram_percent);
+      const ramText = escapeHtml(worker.ram_text || '--');
       const workerId = escapeHtml(worker.id);
       const workerName = escapeHtml(worker.name);
       const rawWorkerName = escapeHtml(worker.raw_name || worker.name);
+      const workerGroup = escapeHtml(worker.group || worker.manager_name || '');
       const workerIdParam = encodeURIComponent(String(worker.id || ''));
       const workerNameParam = encodeURIComponent(String(worker.raw_name || worker.name || ''));
-      const managerName = escapeHtml(worker.manager_name);
+      const managerName = escapeHtml(worker.manager_name || '-');
       const managerId = escapeHtml(worker.manager_id || '');
       const assignedUserId = escapeHtml(worker.assigned_user_id || '');
-      const assignedUserName = escapeHtml(worker.assigned_user_name || 'BOT trống');
       const statusLabel = escapeHtml(worker.status_label);
       const statusClass = escapeHtml(worker.status_class);
       const threadText = escapeHtml(worker.thread_text || '1/1');
-      const bandwidthText = escapeHtml(worker.bandwidth_text);
-      const diskText = escapeHtml(worker.disk_text);
-      const totalChannels = escapeHtml(worker.total_channels);
+      const bandwidthText = escapeHtml(worker.bandwidth_text || '0.00KB/s');
+      const diskText = escapeHtml(worker.disk_text || '--');
+      const createdAt = splitDateTime(worker.created_at);
+      const totalChannels = escapeHtml(worker.total_channels || 0);
+      const totalUsers = escapeHtml(worker.total_users || 0);
       const searchText = escapeHtml(buildWorkerSearchText(worker));
 
       return [
@@ -480,42 +353,39 @@
         '  <td>',
         '    <div>',
         '      <p class="text-[13px] font-semibold text-slate-900">', workerName, '</p>',
-        '      <p class="table-meta">Manager ', managerName, '</p>',
+        '      <p class="table-meta">', managerName, '</p>',
         '    </div>',
         '  </td>',
-        '  <td>',
-        '    <p class="text-[12px] font-medium text-slate-800">', assignedUserName, '</p>',
-        '    <p class="table-meta">', totalChannels, ' k&#234;nh tr&#234;n VPS n&#224;y</p>',
-        '  </td>',
+        '  <td class="text-[12px] font-medium text-slate-700">', workerGroup, '</td>',
+        '  <td class="table-mono text-slate-600"><p>', escapeHtml(createdAt.date), '</p><p class="mt-1 text-[11px] text-slate-500">', escapeHtml(createdAt.time), '</p></td>',
+        '  <td>', renderCountBadge(totalChannels, 'border-brand-100 bg-brand-50 text-brand-700', 'k&#234;nh'), '</td>',
+        '  <td>', renderCountBadge(totalUsers, 'border-sky-100 bg-sky-50 text-sky-700', 'user'), '</td>',
         '  <td><span class="', statusClass, '">', statusLabel, '</span></td>',
         '  <td>',
-        '    <p class="table-mono font-semibold text-slate-800">', String(loadPercent), '%</p>',
+        '    <p class="table-mono font-semibold text-slate-800">', String(ramPercent), '%</p>',
+        '    <p class="mt-1 text-[11px] text-slate-500">', ramText, '</p>',
         '    <div class="mt-2 h-1.5 w-24 overflow-hidden rounded-full bg-slate-100">',
-        '      <div class="h-full rounded-full bg-brand-500" style="width: ', String(loadPercent), '%;"></div>',
+        '      <div class="h-full rounded-full bg-brand-500" style="width: ', String(ramPercent), '%;"></div>',
         '    </div>',
         '  </td>',
-        '  <td class="table-mono text-slate-700">', diskText, '</td>',
-        '  <td class="table-mono text-slate-700">', bandwidthText, '</td>',
-        '  <td>',
-        '    <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-700">',
-               threadText,
-        '    </span>',
-        '  </td>',
-        '  <td>',
-        '    <div class="flex items-center justify-end gap-2">',
-        '      <a href="/admin/channel/bot?botId=', workerIdParam, '&botName=', workerNameParam, '" class="action-btn action-btn-sky">',
+        '  <td class="table-mono whitespace-nowrap text-[11px] leading-tight tracking-[-0.01em] text-slate-700">', diskText, '</td>',
+        '  <td class="table-mono whitespace-nowrap text-[11px] leading-tight tracking-[-0.01em] text-slate-700">', bandwidthText, '</td>',
+        '  <td><span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-700">', threadText, '</span></td>',
+        '  <td class="align-middle">',
+        '    <div class="flex flex-wrap items-center justify-end gap-2 xl:flex-nowrap">',
+        '      <a href="/admin/channel/bot?botId=', workerIdParam, '&botName=', workerNameParam, '" class="action-btn action-btn-sky whitespace-nowrap">',
         '        <i data-lucide="link-2" class="h-3.5 w-3.5"></i>',
         '        DS k&#234;nh',
         '      </a>',
-        '      <a href="/admin/bot/userofbot?botId=', workerIdParam, '&botName=', workerNameParam, '" class="action-btn action-btn-primary">',
+        '      <a href="/admin/bot/userofbot?botId=', workerIdParam, '&botName=', workerNameParam, '" class="action-btn action-btn-primary whitespace-nowrap">',
         '        <i data-lucide="users" class="h-3.5 w-3.5"></i>',
         '        DS user',
         '      </a>',
-        '      <button type="button" class="action-btn action-btn-emerald" data-dialog-open="edit-bot-dialog" data-worker-id="', workerId, '" data-worker-name="', rawWorkerName, '" data-manager-id="', managerId, '" data-user-id="', assignedUserId, '">',
+        '      <button type="button" class="action-btn action-btn-emerald whitespace-nowrap" data-dialog-open="edit-bot-dialog" data-worker-id="', workerId, '" data-worker-name="', rawWorkerName, '" data-worker-group="', workerGroup, '" data-manager-id="', managerId, '" data-user-id="', assignedUserId, '">',
         '        <i data-lucide="pencil" class="h-3.5 w-3.5"></i>',
         '        S&#7917;a',
         '      </button>',
-        '      <button type="button" class="action-btn action-btn-rose" data-dialog-open="delete-bot-dialog" data-worker-id="', workerId, '" data-worker-name="', workerName, '">',
+        '      <button type="button" class="action-btn action-btn-rose whitespace-nowrap" data-dialog-open="delete-bot-dialog" data-worker-id="', workerId, '" data-worker-name="', workerName, '">',
         '        <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>',
         '        X&#243;a',
         '      </button>',
@@ -536,11 +406,10 @@
       if (button.matches('[data-dialog-open="edit-bot-dialog"]')) {
         document.getElementById('edit-bot-id').value = button.dataset.workerId || '';
         document.getElementById('edit-bot-name').value = button.dataset.workerName || '';
-        const inferredManagerId = button.dataset.managerId || resolveManagerIdFromUser(editUserSelect, button.dataset.userId || '');
-        if (editManagerSelect) {
-          editManagerSelect.value = inferredManagerId;
+        document.getElementById('edit-bot-group').value = button.dataset.workerGroup || '';
+        if (editManagerSelect && editManagerSelect.tagName === 'SELECT') {
+          editManagerSelect.value = button.dataset.managerId || '';
           editManagerSelect.dispatchEvent(new Event('change', { bubbles: true }));
-          syncEditBotUserOptions(false);
         }
         if (editUserSelect) {
           editUserSelect.value = button.dataset.userId || '';
@@ -559,130 +428,14 @@
       const dialogButton = event.target.closest('[data-dialog-open]');
       if (dialogButton) {
         fillDialogFields(dialogButton);
-        return;
-      }
-
-      const removeSelectedButton = event.target.closest('[data-remove-selected-bot]');
-      if (removeSelectedButton) {
-        const workerId = removeSelectedButton.dataset.removeSelectedBot || '';
-        const checkbox = availableBotCheckboxes.find(function (item) {
-          return item.value === workerId;
-        });
-        if (checkbox) {
-          checkbox.checked = false;
-          syncBotPoolState();
-        }
       }
     });
 
-    if (editManagerSelect) {
-      editManagerSelect.addEventListener('change', function () {
-        syncEditBotUserOptions(true);
-      });
-    }
-    if (editUserSelect) {
-      editUserSelect.addEventListener('change', function () {
-        if (!editManagerSelect) {
-          return;
-        }
-        const nextManagerId = resolveManagerIdFromUser(editUserSelect, editUserSelect.value);
-        if (nextManagerId && editManagerSelect.value !== nextManagerId) {
-          editManagerSelect.value = nextManagerId;
-          syncEditBotUserOptions(true);
-        }
-      });
-    }
-
-    if (assignmentManagerSelect) {
-      assignmentManagerSelect.addEventListener('change', function () {
-        syncAssignmentOptions(false);
-      });
-    }
-    if (assignmentUserSelect) {
-      assignmentUserSelect.addEventListener('change', function () {
-        if (assignmentManagerSelect) {
-          const nextManagerId = resolveManagerIdFromUser(assignmentUserSelect, assignmentUserSelect.value);
-          if (nextManagerId && assignmentManagerSelect.value !== nextManagerId && !assignmentManagerSelect.disabled) {
-            assignmentManagerSelect.value = nextManagerId;
-          }
-        }
-        syncAssignmentOptions(false);
-      });
-    }
-
-    if (availableBotSearch) {
-      availableBotSearch.addEventListener('input', function () {
-        syncBotPoolState();
-      });
-    }
-
-    availableBotCheckboxes.forEach(function (checkbox) {
-      checkbox.addEventListener('change', function () {
-        const hasDirectUserTarget = Boolean(assignmentUserSelect && assignmentUserSelect.value);
-        if (hasDirectUserTarget && checkbox.checked) {
-          availableBotCheckboxes.forEach(function (candidate) {
-            if (candidate !== checkbox) {
-              candidate.checked = false;
-            }
-          });
-        }
-        syncBotPoolState();
-      });
-    });
-
-    if (selectAllVisibleButton) {
-      selectAllVisibleButton.addEventListener('click', function () {
-        const visibleCheckboxes = availableBotCards
-          .filter(function (card) { return !card.hidden; })
-          .map(function (card) { return card.querySelector('[data-assignment-worker-checkbox]'); })
-          .filter(Boolean);
-        const hasDirectUserTarget = Boolean(assignmentUserSelect && assignmentUserSelect.value);
-        if (hasDirectUserTarget) {
-          availableBotCheckboxes.forEach(function (checkbox) {
-            checkbox.checked = false;
-          });
-          if (visibleCheckboxes[0]) {
-            visibleCheckboxes[0].checked = true;
-          }
-        } else {
-          visibleCheckboxes.forEach(function (checkbox) {
-            checkbox.checked = true;
-          });
-        }
-        syncBotPoolState();
-      });
-    }
-
-    if (clearSelectionButton) {
-      clearSelectionButton.addEventListener('click', function () {
-        availableBotCheckboxes.forEach(function (checkbox) {
-          checkbox.checked = false;
-        });
-        syncBotPoolState();
-      });
-    }
-
-    syncEditBotUserOptions(true);
-    if (assignmentManagerSelect) {
-      const defaultManagerId = assignmentForm ? assignmentForm.dataset.defaultManagerId || '' : '';
-      if (defaultManagerId && !assignmentManagerSelect.disabled) {
-        assignmentManagerSelect.value = defaultManagerId;
-      }
-      if (assignmentUserSelect) {
-        const defaultUserId = assignmentForm ? assignmentForm.dataset.defaultUserId || '' : '';
-        if (defaultUserId) {
-          assignmentUserSelect.value = defaultUserId;
-        }
-      }
-      syncAssignmentOptions(true);
-    } else {
-      syncBotPoolState();
+    if (!table || !tbody) {
+      return;
     }
 
     async function fetchLiveWorkers() {
-      if (!table || !tbody) {
-        return;
-      }
       if (document.hidden || document.querySelector('dialog[open]')) {
         return;
       }
@@ -736,13 +489,37 @@
       }, pollMs);
     }
 
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden) {
+        fetchLiveWorkers().catch(function (error) {
+          if (!error || error.name !== 'AbortError') {
+            console.error(error);
+          }
+        });
+      }
+    });
+
+    window.addEventListener('focus', function () {
+      fetchLiveWorkers().catch(function (error) {
+        if (!error || error.name !== 'AbortError') {
+          console.error(error);
+        }
+      });
+    });
+
     lastPayloadSignature = JSON.stringify(
       Array.from(tbody.querySelectorAll(':scope > tr')).map(function (row) {
         return row.textContent.replace(/\s+/g, ' ').trim();
       })
     );
 
-    scheduleLivePoll();
+    fetchLiveWorkers()
+      .catch(function (error) {
+        if (!error || error.name !== 'AbortError') {
+          console.error(error);
+        }
+      })
+      .finally(scheduleLivePoll);
   });
 </script>
 {% endblock %}

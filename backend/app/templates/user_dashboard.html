@@ -180,6 +180,41 @@
       box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
     }
 
+    .channel-select-search-shell {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-bottom: 1px solid rgb(241 245 249);
+      background: rgb(248 250 252);
+    }
+
+    .channel-select-search-input {
+      width: 100%;
+      border: 0;
+      background: transparent;
+      color: rgb(15 23 42);
+      font-size: 13px;
+      outline: none;
+    }
+
+    .channel-select-list {
+      max-height: 248px;
+      overflow-y: auto;
+    }
+
+    .channel-select-empty {
+      display: none;
+      padding: 12px 14px;
+      border-top: 1px solid rgb(241 245 249);
+      color: rgb(100 116 139);
+      font-size: 12px;
+    }
+
+    .channel-select-empty[data-visible="true"] {
+      display: block;
+    }
+
     .channel-option {
       width: 100%;
       display: flex;
@@ -236,6 +271,10 @@
       border-top: 1px solid rgb(241 245 249);
     }
 
+    .channel-option.is-hidden {
+      display: none;
+    }
+
     .channel-option:hover {
       background: rgb(248 250 252);
     }
@@ -260,6 +299,101 @@
 
     .channel-option.is-active .channel-option-check {
       opacity: 1;
+    }
+
+    .my-channel-scroll {
+      flex: 1;
+      min-height: 0;
+      max-height: 480px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .toast-stack {
+      position: fixed;
+      top: 88px;
+      right: 24px;
+      z-index: 90;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      width: min(360px, calc(100vw - 32px));
+      pointer-events: none;
+    }
+
+    .app-toast {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      border: 1px solid rgb(226 232 240);
+      border-radius: 12px;
+      background: white;
+      padding: 12px 14px;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+      pointer-events: auto;
+      transition: opacity 180ms ease, transform 180ms ease, max-height 180ms ease, margin 180ms ease, padding 180ms ease, border-width 180ms ease;
+    }
+
+    .app-toast[data-type="success"] {
+      border-color: rgb(167 243 208);
+      background: rgb(236 253 245);
+      color: rgb(6 95 70);
+    }
+
+    .app-toast[data-type="error"] {
+      border-color: rgb(254 205 211);
+      background: rgb(255 241 242);
+      color: rgb(190 24 93);
+    }
+
+    .app-toast[data-type="info"] {
+      border-color: rgb(199 210 254);
+      background: rgb(238 242 255);
+      color: rgb(67 56 202);
+    }
+
+    .app-toast-copy {
+      min-width: 0;
+      flex: 1;
+      font-size: 13px;
+      font-weight: 500;
+      line-height: 1.45;
+    }
+
+    .app-toast-dismiss {
+      display: inline-flex;
+      width: 30px;
+      height: 30px;
+      flex-shrink: 0;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      background: transparent;
+      color: inherit;
+      opacity: 0.72;
+      transition: background-color 120ms ease, border-color 120ms ease, opacity 120ms ease;
+    }
+
+    .app-toast-dismiss:hover,
+    .app-toast-dismiss:focus-visible {
+      opacity: 1;
+      outline: none;
+      background: rgba(255, 255, 255, 0.78);
+      border-color: rgba(226, 232, 240, 0.92);
+    }
+
+    .transient-hide {
+      opacity: 0 !important;
+      transform: translateY(-4px) !important;
+      max-height: 0 !important;
+      margin-top: 0 !important;
+      margin-bottom: 0 !important;
+      padding-top: 0 !important;
+      padding-bottom: 0 !important;
+      border-width: 0 !important;
+      pointer-events: none !important;
+      overflow: hidden !important;
     }
 
     .upload-action {
@@ -305,7 +439,7 @@
     }
 
     .panel-input {
-      height: 40px;
+      height: 42px;
     }
 
     .panel-textarea {
@@ -551,6 +685,29 @@
     }
     .nav-item.active i,
     .nav-item.active span { color: white !important; }
+    body.admin-shell .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 0 12px;
+      padding: 10px 14px;
+      border-radius: 10px;
+      color: rgb(71 85 105);
+      transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+    }
+    body.admin-shell .nav-item:hover {
+      background: rgb(248 250 252);
+      color: rgb(15 23 42);
+    }
+    body.admin-shell .nav-item.active {
+      background: linear-gradient(135deg, #5d67df 0%, #4b56c9 100%);
+      color: #ffffff;
+      box-shadow: 0 8px 18px rgba(93, 103, 223, 0.18);
+    }
+    body.admin-shell .nav-item.active i,
+    body.admin-shell .nav-item.active span {
+      color: #ffffff !important;
+    }
     .frosted-header {
       background: rgba(255,255,255,0.82);
       backdrop-filter: blur(12px);
@@ -758,9 +915,9 @@
     }
   </style>
 </head>
-<body class="font-sans antialiased text-slate-800 bg-[#f3f5f9] min-h-screen flex overflow-hidden">
+<body class="font-sans antialiased text-slate-800 bg-[#f3f5f9] min-h-screen flex overflow-hidden{% if dashboard.admin_shell %} admin-shell{% endif %}">
 
-  <aside class="w-64 bg-gradient-to-b from-white to-slate-50/80 border-r border-slate-200/70 flex flex-col shrink-0 z-10 hidden md:flex">
+  <aside class="w-64 {% if dashboard.admin_shell %}bg-white border-r border-slate-200{% else %}bg-gradient-to-b from-white to-slate-50/80 border-r border-slate-200/70{% endif %} flex flex-col shrink-0 z-10 hidden md:flex">
     <div class="h-16 flex items-center px-6 border-b border-slate-200">
       <div class="flex items-center gap-3">
         <div class="w-10 h-10 text-[#ff5528] flex items-center justify-center shrink-0">
@@ -781,53 +938,31 @@
     </div>
 
     <nav class="flex-1 py-4 overflow-y-auto">
-      <div class="px-6 mb-2">
+      {% if dashboard.admin_shell %}
+      <div class="mb-2 px-6">
         <p class="text-[11px] font-medium text-slate-400">&#272;i&#7873;u h&#432;&#7899;ng</p>
       </div>
-
       <div class="space-y-0.5">
-        <a href="#" class="nav-item flex items-center gap-3 text-slate-600 hover:text-slate-900">
-          <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
-          <span class="text-[13px] font-medium">T&#7893;ng quan h&#7879; th&#7889;ng</span>
+      {% else %}
+      <div class="space-y-0.5 px-3">
+      {% endif %}
+        {% for item in dashboard.nav_items %}
+        <a href="{{ item.href | e }}" class="nav-item {% if dashboard.active_page == item.key %}active{% endif %}{% if not dashboard.admin_shell %} flex items-center gap-3{% endif %}">
+          <i data-lucide="{{ item.icon | e }}" class="{% if dashboard.admin_shell %}h-4 w-4{% else %}w-4 h-4{% endif %}"></i>
+          <span class="text-[13px] {% if dashboard.active_page == item.key %}font-semibold{% else %}font-medium{% endif %}">{{ item.label | e }}</span>
         </a>
-        <a href="#" class="nav-item active flex items-center gap-3">
-          <i data-lucide="layers" class="w-4 h-4"></i>
-          <span class="text-[13px] font-semibold">&#272;i&#7873;u ph&#7889;i Render</span>
-        </a>
-        <a href="#" class="nav-item flex items-center gap-3 text-slate-600 hover:text-slate-900">
-          <i data-lucide="play-square" class="w-4 h-4"></i>
-          <span class="text-[13px] font-medium">Qu&#7843;n l&#253; K&#234;nh</span>
-        </a>
-        <a href="#" class="nav-item flex items-center gap-3 text-slate-600 hover:text-slate-900">
-          <i data-lucide="hard-drive" class="w-4 h-4"></i>
-          <span class="text-[13px] font-medium">Qu&#7843;n l&#253; Ngu&#7891;n File</span>
-        </a>
-      </div>
-
-      <div class="px-6 mt-8 mb-2">
-        <p class="text-[11px] font-medium text-slate-400">Qu&#7843;n tr&#7883;</p>
-      </div>
-
-      <div class="space-y-0.5">
-        <a href="#" class="nav-item flex items-center gap-3 text-slate-600 hover:text-slate-900">
-          <i data-lucide="settings" class="w-4 h-4"></i>
-          <span class="text-[13px] font-medium">C&#7845;u h&#236;nh VPS / Bot</span>
-        </a>
-        <a href="#" class="nav-item flex items-center gap-3 text-slate-600 hover:text-slate-900">
-          <i data-lucide="users" class="w-4 h-4"></i>
-          <span class="text-[13px] font-medium">Ph&#226;n quy&#7873;n User</span>
-        </a>
+        {% endfor %}
       </div>
     </nav>
 
     <div class="border-t border-slate-200 p-4">
-      <div class="flex items-center gap-3 px-2 py-2 rounded-md hover:bg-slate-50 cursor-pointer transition-colors">
-        <div class="w-9 h-9 rounded-full bg-slate-200 flex items-center justify-center shrink-0">
-          <i data-lucide="user" class="w-4 h-4 text-slate-500"></i>
+      <div class="flex items-center gap-3 {% if dashboard.admin_shell %}rounded-xl{% else %}rounded-md hover:bg-slate-50 cursor-pointer transition-colors{% endif %} px-2 py-2">
+        <div class="{% if dashboard.admin_shell %}flex h-10 w-10{% else %}w-9 h-9{% endif %} rounded-full bg-slate-100 flex items-center justify-center shrink-0">
+          <i data-lucide="{% if dashboard.admin_shell %}shield{% else %}user{% endif %}" class="w-4 h-4 text-slate-500"></i>
         </div>
-        <div class="overflow-hidden">
+        <div class="{% if dashboard.admin_shell %}min-w-0{% else %}overflow-hidden{% endif %}">
           <p class="text-[13px] font-semibold text-slate-900 truncate">{{ dashboard.user_name | e }}</p>
-          <p class="text-[11px] text-slate-500 truncate">{{ dashboard.user_role | e }}</p>
+          <p class="text-[11px] text-slate-500 truncate">{% if dashboard.admin_shell %}{{ dashboard.user_role | capitalize | e }}{% else %}{{ dashboard.user_role | e }}{% endif %}</p>
         </div>
       </div>
     </div>
@@ -850,10 +985,10 @@
     <div class="min-w-0 flex-1 overflow-y-auto w-full pb-16">
       <div class="min-w-0 w-full px-8 py-6 space-y-6">
         {% if dashboard.notice %}
-        <div id="dashboardNotice" data-transient-notice data-notice-autohide="{% if dashboard.notice_level == 'error' %}8000{% else %}5000{% endif %}" class="elevated-card px-5 py-4 border transition-all duration-200 {% if dashboard.notice_level == 'error' %}border-rose-200 bg-rose-50/80{% else %}border-emerald-200 bg-emerald-50/80{% endif %}">
+        <div id="dashboardNotice" data-transient-notice data-notice-autohide="5000" class="elevated-card px-5 py-4 border transition-all duration-200 {% if dashboard.notice_level == 'error' %}border-rose-200 bg-rose-50/80{% else %}border-emerald-200 bg-emerald-50/80{% endif %}">
           <div class="flex items-start gap-3">
             <div class="mt-0.5 {% if dashboard.notice_level == 'error' %}text-rose-600{% else %}text-emerald-600{% endif %}">
-              <i data-lucide="{% if dashboard.notice_level == 'error' %}shield-alert{% else %}badge-check{% endif %}" class="w-4 h-4"></i>
+              <i data-lucide="{% if dashboard.notice_level == 'error' %}shield-alert{% else %}circle-check{% endif %}" class="w-4 h-4"></i>
             </div>
             <div class="min-w-0 flex-1">
               <p class="text-[13px] font-semibold {% if dashboard.notice_level == 'error' %}text-rose-700{% else %}text-emerald-700{% endif %}">
@@ -890,21 +1025,32 @@
 
         <form
           id="job-form"
-          class="elevated-card-panel grid grid-cols-1 lg:grid-cols-4 overflow-visible"
+          class="elevated-card-panel grid grid-cols-1 lg:grid-cols-5 overflow-visible"
           data-max-upload-bytes="{{ dashboard.upload_capabilities.max_local_upload_bytes }}"
           data-chunk-bytes="{{ dashboard.upload_capabilities.resumable_chunk_bytes }}"
           data-allowed-extensions="{{ dashboard.upload_capabilities.allowed_extensions | join(',') }}"
         >
-            <div class="lg:col-span-2 p-6 flex flex-col lg:border-r border-slate-200/80 relative bg-gradient-to-br from-white via-brand-50/10 to-white shadow-[inset_0_4px_24px_rgba(93,103,223,0.02)] rounded-tl-2xl rounded-bl-2xl">
+            <div class="lg:col-span-3 p-6 flex flex-col lg:border-r border-slate-200/80 relative bg-gradient-to-br from-white via-brand-50/10 to-white shadow-[inset_0_4px_24px_rgba(93,103,223,0.02)] rounded-tl-2xl rounded-bl-2xl">
               <div class="absolute top-0 left-6 h-1 w-16 bg-brand-500 rounded-b-full"></div>
-              <div class="flex items-start gap-3 pb-4 border-b border-slate-100/80 mb-6 relative">
-                 <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-50 to-white border border-brand-100/50 shadow-sm flex items-center justify-center shrink-0">
-                   <i data-lucide="sliders-horizontal" class="w-4 h-4 text-brand-600"></i>
-                 </div>
-                 <div>
-                   <h3 class="font-display font-bold text-[16px] text-slate-900 tracking-tight">Render Config</h3>
-                   <p class="text-[11px] text-slate-500 mt-0.5">Thi&#7871;t l&#7853;p ngu&#7891;n &#273;&#7847;u v&#224;o, file loop v&#224; k&#234;nh xu&#7845;t b&#7843;n.</p>
-                 </div>
+              <div class="flex items-start justify-between gap-3 pb-4 border-b border-slate-100/80 mb-6 relative">
+                <div class="flex items-start gap-3 min-w-0">
+                  <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-50 to-white border border-brand-100/50 shadow-sm flex items-center justify-center shrink-0">
+                     <i data-lucide="sliders-horizontal" class="w-5 h-5 text-brand-600"></i>
+                  </div>
+                  <div>
+                    <h3 class="font-display font-bold text-[16px] text-slate-900 tracking-tight">Render Config</h3>
+                    <p class="text-[11px] text-slate-500 mt-0.5">Thi&#7871;t l&#7853;p ngu&#7891;n &#273;&#7847;u v&#224;o, file loop v&#224; k&#234;nh xu&#7845;t b&#7843;n.</p>
+                  </div>
+                </div>
+                <button
+                  id="toggleIntroSlot"
+                  type="button"
+                  aria-controls="introSlotPanel"
+                  aria-expanded="false"
+                  class="shrink-0 -mr-1 px-2.5 py-1.5 text-[12px] font-semibold text-brand-600 hover:text-brand-700 hover:bg-brand-50 rounded-lg transition-all"
+                >
+                  + Th&#234;m Intro
+                </button>
               </div>
               <div class="space-y-5 flex-1">
                 <div>
@@ -922,62 +1068,94 @@
                       <i data-lucide="chevron-down" class="channel-select-icon w-4 h-4 text-slate-400 transition-all shrink-0"></i>
                     </button>
                     <div class="channel-select-menu" role="listbox" aria-label="Ch&#7885;n k&#234;nh">
-                      {% for channel in dashboard.channels %}
-                      <button
-                        type="button"
-                        class="channel-option{% if channel.is_active %} is-active{% endif %}"
-                        data-value="{{ channel.value | e }}"
-                        data-label="{{ channel.label | e }}"
-                        data-meta="{{ channel.meta | default('', true) | e }}"
-                        data-avatar="{{ channel.avatar | e }}"
-                        data-avatar-url="{{ channel.avatar_url | default('', true) | e }}"
-                        data-avatar-class="{{ channel.avatar_class | e }}"
-                        role="option"
-                        aria-selected="{{ 'true' if channel.is_active else 'false' }}"
-                      >
-                        <span class="channel-option-leading">
-                          {% if channel.avatar_url %}
-                          <img src="{{ channel.avatar_url | e }}" alt="{{ channel.label | e }}" class="channel-select-avatar channel-avatar-media object-cover" loading="lazy" referrerpolicy="no-referrer">
-                          {% elif channel.avatar %}
-                          <span class="channel-select-avatar {{ channel.avatar_class | e }}">{{ channel.avatar | e }}</span>
-                          {% endif %}
-                          <span class="channel-option-copy">
-                            <span class="channel-option-name">{{ channel.label | e }}</span>
-                            {% if channel.meta %}
-                            <span class="channel-option-meta">{{ channel.meta | e }}</span>
+                      <div class="channel-select-search-shell">
+                        <i data-lucide="search" class="w-4 h-4 text-slate-400"></i>
+                        <input type="search" class="channel-select-search-input" data-channel-search placeholder="T&#236;m k&#234;nh nhanh..." autocomplete="off">
+                      </div>
+                      <div class="channel-select-list">
+                        {% for channel in dashboard.channels %}
+                        <button
+                          type="button"
+                          class="channel-option{% if channel.is_active %} is-active{% endif %}"
+                          data-value="{{ channel.value | e }}"
+                          data-label="{{ channel.label | e }}"
+                          data-meta="{{ channel.meta | default('', true) | e }}"
+                          data-avatar="{{ channel.avatar | e }}"
+                          data-avatar-url="{{ channel.avatar_url | default('', true) | e }}"
+                          data-avatar-class="{{ channel.avatar_class | e }}"
+                          data-search="{{ (channel.label ~ ' ' ~ (channel.meta | default('', true))) | lower | e }}"
+                          role="option"
+                          aria-selected="{{ 'true' if channel.is_active else 'false' }}"
+                        >
+                          <span class="channel-option-leading">
+                            {% if channel.avatar_url %}
+                            <img src="{{ channel.avatar_url | e }}" alt="{{ channel.label | e }}" class="channel-select-avatar channel-avatar-media object-cover" loading="lazy" referrerpolicy="no-referrer">
+                            {% elif channel.avatar %}
+                            <span class="channel-select-avatar {{ channel.avatar_class | e }}">{{ channel.avatar | e }}</span>
                             {% endif %}
+                            <span class="channel-option-copy">
+                              <span class="channel-option-name">{{ channel.label | e }}</span>
+                              {% if channel.meta %}
+                              <span class="channel-option-meta">{{ channel.meta | e }}</span>
+                              {% endif %}
+                            </span>
                           </span>
-                        </span>
-                        {% if not channel.is_placeholder %}
-                        <i data-lucide="check" class="channel-option-check w-4 h-4"></i>
-                        {% endif %}
-                      </button>
-                      {% endfor %}
-                    </div>
-                  </div>
+                          {% if not channel.is_placeholder %}
+                          <i data-lucide="check" class="channel-option-check w-4 h-4"></i>
+                          {% endif %}
+                        </button>
+                        {% endfor %}
+                      </div>
+                      <div class="channel-select-empty" data-channel-empty>Kh&#244;ng t&#236;m th&#7845;y k&#234;nh ph&#249; h&#7907;p.</div>
+                   </div>
+                 </div>
+               </div>
+
+                <div>
+                  <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">T&#234;n video</label>
+                  <input
+                    id="jobTitle"
+                    name="title"
+                    type="text"
+                    maxlength="100"
+                    pattern="[A-Za-z0-9 ]+"
+                    autocomplete="off"
+                    spellcheck="false"
+                    inputmode="text"
+                    title="Chỉ nhận chữ cái không dấu, số và khoảng trắng"
+                    class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-4 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 placeholder:text-slate-400 text-[13px] transition-all shadow-sm shadow-slate-100/50"
+                    placeholder="Nh&#7853;p t&#234;n video..."
+                    value="{{ dashboard.quick_settings.video_title | e }}"
+                  >
                 </div>
 
-                <div data-upload-slot="intro">
-                  <div class="upload-slot-head mb-1.5">
-                    <label class="block text-slate-600 text-[12px] font-semibold">Link video Intro</label>
-                    <div data-upload-status="intro" class="upload-slot-status" aria-live="polite"></div>
-                  </div>
-                  <div class="flex min-h-[42px] items-stretch border border-slate-200 rounded-md bg-white focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/15 transition-all overflow-hidden shadow-sm shadow-slate-100/50 hover:border-slate-300">
-                    <input type="text" id="introPath" name="intro_url" placeholder="Link video Intro..." class="h-11 flex-1 bg-transparent px-4 py-0 text-slate-900 text-[13px] outline-none placeholder:text-slate-400">
-                    <button type="button" class="upload-action" data-upload-trigger="intro" data-state="idle" aria-label="Ch&#7885;n file local cho intro">
-                      <span class="upload-action-idle"><i data-lucide="upload" class="w-[15px] h-[15px]"></i></span>
-                      <span class="upload-action-progress" aria-hidden="true">
-                        <svg viewBox="0 0 20 20" class="w-[18px] h-[18px]">
-                          <circle class="upload-action-ring-bg" cx="10" cy="10" r="7"></circle>
-                          <circle class="upload-action-ring-value" data-upload-ring="intro" cx="10" cy="10" r="7" stroke-dasharray="43.98" stroke-dashoffset="43.98"></circle>
-                        </svg>
-                        <span class="upload-action-center" data-upload-center="intro">
-                          <i data-lucide="x" class="upload-action-center-icon upload-action-center-icon--cancel"></i>
-                          <i data-lucide="check" class="upload-action-center-icon upload-action-center-icon--check"></i>
+                <div
+                  id="introSlotPanel"
+                  class="overflow-hidden !mt-0 transition-[max-height,opacity,transform] duration-300 ease-out"
+                  style="max-height: 0; opacity: 0; transform: translateY(-8px); pointer-events: none;"
+                >
+                  <div data-upload-slot="intro">
+                    <div class="upload-slot-head mb-1.5">
+                      <label class="block text-slate-600 text-[12px] font-semibold">Link video Intro</label>
+                      <div data-upload-status="intro" class="upload-slot-status" aria-live="polite"></div>
+                    </div>
+                    <div class="flex min-h-[42px] items-stretch border border-slate-200 rounded-md bg-white focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/15 transition-all overflow-hidden shadow-sm shadow-slate-100/50 hover:border-slate-300">
+                      <input type="text" id="introPath" name="intro_url" placeholder="Link video Intro..." class="h-[40px] flex-1 bg-transparent px-4 py-0 text-slate-900 text-[13px] outline-none placeholder:text-slate-400">
+                      <button type="button" class="upload-action" data-upload-trigger="intro" data-state="idle" aria-label="Ch&#7885;n file local cho intro">
+                        <span class="upload-action-idle"><i data-lucide="upload" class="w-[15px] h-[15px]"></i></span>
+                        <span class="upload-action-progress" aria-hidden="true">
+                          <svg viewBox="0 0 20 20" class="w-[18px] h-[18px]">
+                            <circle class="upload-action-ring-bg" cx="10" cy="10" r="7"></circle>
+                            <circle class="upload-action-ring-value" data-upload-ring="intro" cx="10" cy="10" r="7" stroke-dasharray="43.98" stroke-dashoffset="43.98"></circle>
+                          </svg>
+                          <span class="upload-action-center" data-upload-center="intro">
+                            <i data-lucide="x" class="upload-action-center-icon upload-action-center-icon--cancel"></i>
+                            <i data-lucide="check" class="upload-action-center-icon upload-action-center-icon--check"></i>
+                          </span>
                         </span>
-                      </span>
-                    </button>
-                    <input type="file" id="introFileInput" class="hidden file-input" name="intro_file" data-target="introPath" data-upload-input="intro" accept="video/*">
+                      </button>
+                      <input type="file" id="introFileInput" class="hidden file-input" name="intro_file" data-target="introPath" data-upload-input="intro" accept="video/*">
+                    </div>
                   </div>
                 </div>
 
@@ -990,7 +1168,7 @@
                     <div data-upload-status="video_loop" class="upload-slot-status" aria-live="polite"></div>
                   </div>
                   <div class="flex min-h-[42px] items-stretch border border-slate-200 rounded-md bg-white focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/15 transition-all overflow-hidden shadow-sm shadow-slate-100/50 hover:border-slate-300">
-                    <input type="text" id="videoLoopPath" name="video_loop_url" placeholder="Link video loop..." class="h-11 flex-1 bg-transparent px-4 py-0 text-slate-900 text-[13px] outline-none placeholder:text-slate-400">
+                    <input type="text" id="videoLoopPath" name="video_loop_url" placeholder="Link video loop..." class="h-[40px] flex-1 bg-transparent px-4 py-0 text-slate-900 text-[13px] outline-none placeholder:text-slate-400">
                     <button type="button" class="upload-action" data-upload-trigger="video_loop" data-state="idle" aria-label="Ch&#7885;n file local cho video loop">
                       <span class="upload-action-idle"><i data-lucide="upload" class="w-[15px] h-[15px]"></i></span>
                       <span class="upload-action-progress" aria-hidden="true">
@@ -1014,7 +1192,7 @@
                     <div data-upload-status="audio_loop" class="upload-slot-status" aria-live="polite"></div>
                   </div>
                   <div class="flex min-h-[42px] items-stretch border border-slate-200 rounded-md bg-white focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/15 transition-all overflow-hidden shadow-sm shadow-slate-100/50 hover:border-slate-300">
-                    <input type="text" id="audioLoopPath" name="audio_loop_url" placeholder="Link audio loop..." class="h-11 flex-1 bg-transparent px-4 py-0 text-slate-900 text-[13px] outline-none placeholder:text-slate-400">
+                    <input type="text" id="audioLoopPath" name="audio_loop_url" placeholder="Link audio loop..." class="h-[40px] flex-1 bg-transparent px-4 py-0 text-slate-900 text-[13px] outline-none placeholder:text-slate-400">
                     <button type="button" class="upload-action" data-upload-trigger="audio_loop" data-state="idle" aria-label="Ch&#7885;n file local cho audio loop">
                       <span class="upload-action-idle"><i data-lucide="upload" class="w-[15px] h-[15px]"></i></span>
                       <span class="upload-action-progress" aria-hidden="true">
@@ -1032,66 +1210,15 @@
                   </div>
                 </div>
 
-                <div data-upload-slot="outro">
-                  <div class="upload-slot-head mb-1.5">
-                    <label class="block text-slate-600 text-[12px] font-semibold">Link Outro</label>
-                    <div data-upload-status="outro" class="upload-slot-status" aria-live="polite"></div>
-                  </div>
-                  <div class="flex min-h-[42px] items-stretch border border-slate-200 rounded-md bg-white focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/15 transition-all overflow-hidden shadow-sm shadow-slate-100/50 hover:border-slate-300">
-                    <input type="text" id="outroPath" name="outro_url" placeholder="Link Outro..." class="h-11 flex-1 bg-transparent px-4 py-0 text-slate-900 text-[13px] outline-none placeholder:text-slate-400">
-                    <button type="button" class="upload-action" data-upload-trigger="outro" data-state="idle" aria-label="Ch&#7885;n file local cho outro">
-                      <span class="upload-action-idle"><i data-lucide="upload" class="w-[15px] h-[15px]"></i></span>
-                      <span class="upload-action-progress" aria-hidden="true">
-                        <svg viewBox="0 0 20 20" class="w-[18px] h-[18px]">
-                          <circle class="upload-action-ring-bg" cx="10" cy="10" r="7"></circle>
-                          <circle class="upload-action-ring-value" data-upload-ring="outro" cx="10" cy="10" r="7" stroke-dasharray="43.98" stroke-dashoffset="43.98"></circle>
-                        </svg>
-                        <span class="upload-action-center" data-upload-center="outro">
-                          <i data-lucide="x" class="upload-action-center-icon upload-action-center-icon--cancel"></i>
-                          <i data-lucide="check" class="upload-action-center-icon upload-action-center-icon--check"></i>
-                        </span>
-                      </span>
-                    </button>
-                    <input type="file" id="outroFileInput" class="hidden file-input" name="outro_file" data-target="outroPath" data-upload-input="outro" accept="video/*">
-                  </div>
-                </div>
-
-              </div>
-            </div>
-
-            <div class="lg:col-span-1 p-6 flex flex-col border-t lg:border-t-0 lg:border-r border-slate-200/80 relative">
-              <div class="absolute top-0 left-6 h-1 w-16 bg-amber-500 rounded-b-full shadow-[0_2px_8px_rgba(245,158,11,0.4)]"></div>
-              <div class="flex items-start gap-3 pb-4 border-b border-slate-100/80 mb-4 relative">
-                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-50 to-white border border-amber-100/50 shadow-sm flex items-center justify-center shrink-0">
-                  <i data-lucide="calendar-range" class="w-4 h-4 text-amber-500"></i>
-                </div>
-                <div>
-                  <h3 class="font-display font-bold text-[16px] text-slate-900 tracking-tight">Quick Settings</h3>
-                  <p class="text-[11px] text-slate-500 mt-0.5 leading-relaxed">C&#7845;u h&#236;nh metadata, th&#7901;i l&#432;&#7907;ng v&#224; l&#7883;ch &#273;&#259;ng cho job.</p>
-                </div>
-              </div>
-
-              <div class="space-y-4 flex-1 flex flex-col">
-                <div>
-                  <label class="block text-slate-600 text-[12px] font-semibold mb-1">T&#234;n video</label>
-                  <input id="jobTitle" name="title" type="text" class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-4 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/15 placeholder:text-slate-400 text-[13px] transition-all shadow-sm shadow-slate-100/50" placeholder="Nh&#7853;p t&#234;n video..." value="{{ dashboard.quick_settings.video_title | e }}">
-                  <div class="text-right text-slate-400 font-mono text-[10px] mt-0.5">0/100</div>
-                </div>
-
-                <div class="flex-1 flex flex-col">
-                  <label class="block text-slate-600 text-[12px] font-semibold mb-1">M&#244; t&#7843;</label>
-                  <textarea id="jobDescription" name="description" class="panel-textarea w-full flex-1 bg-white border border-slate-200 text-slate-900 px-4 py-3 rounded-lg outline-none hover:border-slate-300 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/15 placeholder:text-slate-400 text-[13px] resize-none transition-all shadow-sm shadow-slate-100/50" placeholder="M&#244; t&#7843; video s&#7869; upload l&#234;n YouTube...">{{ dashboard.quick_settings.description_text | e }}</textarea>
-                </div>
-
-                <div class="grid grid-cols-2 gap-3">
+                <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div>
-                    <label class="block text-slate-600 text-[12px] font-semibold mb-1">Th&#7901;i l&#432;&#7907;ng render</label>
-                    <input id="timeRenderString" name="time_render_string" type="text" placeholder="00:30:00" value="{{ dashboard.quick_settings.duration | e }}" class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-3 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/15 shadow-sm shadow-slate-100/50 font-mono text-[13px] font-medium transition-all text-center">
+                    <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">Th&#7901;i l&#432;&#7907;ng render</label>
+                    <input id="timeRenderString" name="time_render_string" type="text" placeholder="00:30:00" value="{{ dashboard.quick_settings.duration | e }}" class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-3 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 shadow-sm shadow-slate-100/50 font-mono text-[13px] font-medium transition-all text-center">
                   </div>
                   <div>
-                    <label class="block text-slate-600 text-[12px] font-semibold mb-1">H&#7865;n l&#7883;ch &#273;&#259;ng</label>
+                    <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">H&#7865;n l&#7883;ch &#273;&#259;ng</label>
                     <div class="datetime-field">
-                      <input id="scheduleAt" name="schedule_time" type="text" value="{{ dashboard.quick_settings.schedule_at | e }}" placeholder="dd/mm/yyyy HH:mm" class="panel-input w-full bg-white border border-slate-200 text-slate-700 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/15 shadow-sm shadow-slate-100/50 text-[12px] transition-all pl-3 pr-8 font-mono">
+                      <input id="scheduleAt" name="schedule_time" type="text" value="{{ dashboard.quick_settings.schedule_at | e }}" placeholder="dd/mm/yyyy HH:mm" class="panel-input w-full bg-white border border-slate-200 text-slate-700 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 shadow-sm shadow-slate-100/50 text-[12px] transition-all px-8 text-center font-mono">
                       <span class="datetime-field-icon bg-slate-50 border-slate-200">
                         <i data-lucide="calendar-days" class="w-3.5 h-3.5 text-slate-400"></i>
                       </span>
@@ -1103,39 +1230,44 @@
                 <input type="hidden" id="introAssetId" name="intro_asset_id" value="">
                 <input type="hidden" id="videoLoopAssetId" name="video_loop_asset_id" value="">
                 <input type="hidden" id="audioLoopAssetId" name="audio_loop_asset_id" value="">
-                <input type="hidden" id="outroAssetId" name="outro_asset_id" value="">
-                <div class="mt-auto border-t border-slate-100/80 pt-4 flex items-center justify-end gap-2">
-                  <div id="jobFormMessage" class="hidden text-[12px] font-medium"></div>
-                  <div class="flex gap-2">
-                      <button id="resetJobForm" type="button" class="panel-action-button inline-flex min-w-[108px] px-4 bg-white hover:bg-slate-50 text-slate-600 font-semibold transition-all border border-slate-200 rounded-lg text-[13px] hover:shadow-sm">&#272;&#7863;t l&#7841;i</button>
-                      <button id="submitJobButton" type="submit" class="panel-action-button inline-flex min-w-[126px] bg-gradient-to-tr from-brand-600 to-brand-500 hover:from-brand-700 hover:to-brand-600 text-white font-semibold px-6 rounded-lg transition-transform text-[13px] whitespace-nowrap shadow-[0_4px_12px_rgba(93,103,223,0.3)] hover:shadow-[0_6px_16px_rgba(93,103,223,0.4)] border border-brand-500/50 hover:-translate-y-0.5 relative overflow-hidden group">
-                        <span class="absolute top-0 left-0 h-full w-full -translate-x-full -skew-x-12 bg-white/20 transition-transform duration-500 ease-in-out group-hover:translate-x-full"></span>
-                        Render Job
-                      </button>
+                <div class="mt-auto border-t border-slate-100/80 pt-4">
+                  <div id="jobFormMessage" class="hidden mb-3 text-[12px] font-medium"></div>
+                  <div class="flex items-center justify-end gap-2">
+                    <button id="resetJobForm" type="button" class="panel-action-button inline-flex min-w-[108px] px-4 bg-white hover:bg-slate-50 text-slate-600 font-semibold transition-all border border-slate-200 rounded-lg text-[13px] hover:shadow-sm">&#272;&#7863;t l&#7841;i</button>
+                    <button id="submitJobButton" type="submit" class="panel-action-button inline-flex min-w-[126px] bg-gradient-to-tr from-brand-600 to-brand-500 hover:from-brand-700 hover:to-brand-600 text-white font-semibold px-6 rounded-lg transition-transform text-[13px] whitespace-nowrap shadow-[0_4px_12px_rgba(93,103,223,0.3)] hover:shadow-[0_6px_16px_rgba(93,103,223,0.4)] border border-brand-500/50 hover:-translate-y-0.5 relative overflow-hidden group">
+                      <span class="absolute top-0 left-0 h-full w-full -translate-x-full -skew-x-12 bg-white/20 transition-transform duration-500 ease-in-out group-hover:translate-x-full"></span>
+                      Render Job
+                    </button>
                   </div>
                 </div>
               </div>
             </div>
 
-            <div class="lg:col-span-1 p-6 flex flex-col border-t lg:border-t-0 border-slate-200/80 relative bg-gradient-to-b from-slate-50/50 to-white rounded-tr-2xl rounded-br-2xl">
+            <div class="lg:col-span-2 p-6 flex flex-col border-t lg:border-t-0 border-slate-200/80 relative bg-gradient-to-b from-slate-50/50 to-white rounded-tr-2xl rounded-br-2xl">
               <div class="absolute top-0 left-6 h-1 w-16 bg-emerald-500 rounded-b-full shadow-[0_2px_8px_rgba(16,185,129,0.3)]"></div>
-              <div class="flex items-start justify-between gap-3 pb-4 border-b border-slate-100/80 mb-4 relative">
-                <div class="flex items-start gap-3 min-w-0">
+              <div class="flex justify-between gap-4 pb-4 border-b border-slate-100/80 mb-4 relative">
+                <div class="flex items-start gap-3 shrink-0 min-w-0">
                   <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-50 to-white border border-emerald-100/50 shadow-sm flex items-center justify-center shrink-0">
-                    <i data-lucide="link-2" class="w-4 h-4 text-emerald-600"></i>
+                    <i data-lucide="link-2" class="w-5 h-5 text-emerald-600"></i>
                   </div>
                   <div>
                     <h3 class="font-display font-bold text-[16px] text-slate-900 tracking-tight">My Channel</h3>
-                    <p class="text-[11px] text-slate-500 mt-0.5 leading-relaxed">Danh s&#225;ch k&#234;nh &#273;&#227; k&#7871;t n&#7889;i<br/>v&#224; tr&#7841;ng th&#225;i s&#7861;n s&#224;ng.</p>
+                    <p class="text-[11px] text-slate-500 mt-0.5 leading-relaxed">Danh s&#225;ch k&#234;nh &#273;&#227; OAuth<br/>v&#224; tr&#7841;ng th&#225;i s&#7861;n s&#224;ng.</p>
                   </div>
                 </div>
-                <button id="connectYouTubeButton" type="button" class="shrink-0 -mr-1 px-2.5 py-1.5 text-[12px] font-semibold text-brand-600 hover:text-brand-700 hover:bg-brand-50 rounded-lg transition-all">
-                  {% if dashboard.browser_session %}
-                  Ti&#7871;p t&#7909;c &#273;&#259;ng nh&#7853;p
-                  {% else %}
-                  + Th&#234;m K&#234;nh
-                  {% endif %}
-                </button>
+                <div class="flex flex-1 flex-col items-end self-start">
+                  <button id="connectYouTubeButton" type="button" class="shrink-0 -mr-1 px-0 py-0 text-[12px] font-semibold text-brand-600 hover:text-brand-700 transition-colors whitespace-nowrap mb-2">
+                    {% if dashboard.browser_session %}
+                    Ti&#7871;p t&#7909;c &#273;&#259;ng nh&#7853;p
+                    {% else %}
+                    + Th&#234;m K&#234;nh
+                    {% endif %}
+                  </button>
+                  <div class="relative w-full max-w-[260px]">
+                    <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"></i>
+                    <input id="connectedChannelSearchInput" type="search" placeholder="T&#236;m k&#234;nh..." autocomplete="off" class="w-full bg-white border border-slate-300 text-slate-900 pl-9 pr-3 py-2 rounded-lg outline-none hover:border-slate-400 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20 text-[12px] transition-all placeholder:text-slate-500/80 shadow-sm">
+                  </div>
+                </div>
               </div>
 
               {% if dashboard.browser_session %}
@@ -1154,9 +1286,9 @@
               </div>
               {% endif %}
 
-              <div class="my-channel-scroll space-y-3">
+              <div id="connectedChannelList" class="my-channel-scroll space-y-3">
                 {% for channel in dashboard.connected_channels %}
-                <div class="channel-row group flex items-center gap-3 p-2.5 border-l-2 border-y border-r border-slate-200/70 rounded-xl bg-white min-w-0 transition-all cursor-pointer" data-channel-id="{{ channel.id | e }}">
+                <div class="channel-row group flex items-center gap-3 p-2.5 border-l-2 border-y border-r border-slate-200/70 rounded-xl bg-white min-w-0 transition-all cursor-pointer" data-channel-id="{{ channel.id | e }}" data-channel-search="{{ channel.search_text | e }}">
                   <a href="{{ channel.public_url | e }}" target="_blank" rel="noopener noreferrer" class="channel-avatar-shell focus:outline-none">
                     <span class="channel-avatar-inner">
                       {% if channel.avatar_url %}
@@ -1170,8 +1302,17 @@
                     <div class="channel-row-head">
                       <a href="{{ channel.public_url | e }}" target="_blank" rel="noopener noreferrer" class="channel-row-title hover:text-brand-700 transition-colors">{{ channel.title | e }}</a>
                     </div>
-                    <div class="flex min-w-0 items-center gap-2 text-[10px] text-slate-500 font-mono">
+                    <div class="flex min-w-0 items-center gap-1.5 text-[10px] font-mono">
                       <a href="{{ channel.public_url | e }}" target="_blank" rel="noopener noreferrer" class="channel-row-meta-link truncate">{{ channel.channel_id | e }}</a>
+                      {% if channel.worker_label %}
+                      <span class="text-slate-300">|</span>
+                      <span class="inline-flex max-w-full items-center gap-1.5 rounded-full border border-rose-100 bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-600">
+                        <span class="h-1.5 w-1.5 rounded-full {{ channel.worker_status_dot_class | e }} shrink-0"></span>
+                        <span class="truncate text-rose-600">{{ channel.worker_label | e }}</span>
+                        <span class="shrink-0 text-rose-600">&#8226;</span>
+                        <span class="shrink-0 text-rose-600">{{ channel.worker_channel_count }} k&#234;nh</span>
+                      </span>
+                      {% endif %}
                     </div>
                   </div>
                   <div class="channel-row-action">
@@ -1211,8 +1352,8 @@
             <table class="render-table w-full text-left text-sm whitespace-nowrap" data-page-size="10">
               <thead class="text-slate-600 text-[11px] font-semibold tracking-wide bg-slate-50/70">
                 <tr>
-                  <th class="px-6 py-4 border-b border-slate-200 w-12 text-left">
-                    <button type="button" class="sortable-button" data-sort="stt">STT <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5 sort-up"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px] sort-down"></i></span></button>
+                  <th class="px-4 py-4 border-b border-slate-200 w-16 text-center">
+                    <button type="button" class="sortable-button center" data-sort="stt">STT <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5 sort-up"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px] sort-down"></i></span></button>
                   </th>
                   <th class="px-6 py-4 border-b border-slate-200 w-[25%]">
                     <button type="button" class="sortable-button" data-sort="job">Th&#244;ng Tin Job <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5 sort-up"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px] sort-down"></i></span></button>
@@ -1240,7 +1381,7 @@
               <tbody class="divide-y divide-slate-200/70 text-slate-700">
                 {% for job in dashboard.render_jobs %}
                 <tr class="hover:bg-slate-50 transition-colors group" data-job-id="{{ job.id | e }}">
-                  <td class="px-6 py-5 text-left font-mono text-[13px] text-slate-500">{{ job.index }}</td>
+                  <td class="px-4 py-5 text-center font-mono text-[13px] text-slate-500">{{ job.index }}</td>
                   <td class="px-6 py-5">
                     <div class="flex items-center gap-3 min-w-0">
                       {% if job.preview_url %}
@@ -1340,11 +1481,6 @@
                   </td>
                   <td class="px-6 py-4 text-right">
                     <div class="flex flex-nowrap items-center justify-end gap-2 whitespace-nowrap">
-                        {% if job.youtube_watch_url %}
-                        <a href="{{ job.youtube_watch_url | e }}" target="_blank" rel="noopener noreferrer" class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-sky-700 bg-sky-50 border border-sky-200 rounded-lg hover:bg-sky-100 hover:text-sky-800 hover:shadow-sm transition-all" title="M&#7903; YouTube">
-                          <i data-lucide="external-link" class="w-3 h-3"></i> Xem
-                        </a>
-                        {% endif %}
                         <button type="button" class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 rounded-lg hover:bg-emerald-100 hover:text-emerald-900 hover:shadow-sm transition-all" title="S&#7917;a"><i data-lucide="edit-2" class="w-3 h-3"></i> S&#7917;a</button>
                         {% if job.can_cancel %}
                         <button type="button" data-job-action="cancel" data-job-id="{{ job.id | e }}" class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 hover:text-amber-800 hover:shadow-sm transition-all" title="Hu&#7927;"><i data-lucide="x-circle" class="w-3 h-3"></i> Hu&#7927;</button>
@@ -1380,6 +1516,50 @@
     </div>
   </main>
 
+  <div id="browserWorkerPickerModal" class="fixed inset-0 z-[68] hidden">
+    <div class="absolute inset-0 bg-slate-950/30"></div>
+    <div class="relative flex min-h-screen items-center justify-center px-4 py-8">
+      <div class="w-full max-w-[620px] rounded-2xl border border-slate-200 bg-white shadow-[0_18px_48px_rgba(15,23,42,0.18)]">
+        <div class="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5">
+          <div>
+            <p class="text-[16px] font-display font-semibold text-slate-900">Chọn VPS để thêm kênh</p>
+            <p class="mt-1 text-[12px] leading-relaxed text-slate-500">Chọn VPS để tạo phiên đăng nhập Google / YouTube Studio cho kênh mới.</p>
+          </div>
+          <button id="closeBrowserWorkerPickerModal" type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-900">
+            <i data-lucide="x" class="h-4 w-4"></i>
+          </button>
+        </div>
+
+        <div class="px-6 py-5">
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {% for worker in dashboard.browser_workers %}
+            <button
+              type="button"
+              class="group rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition-all {% if worker.disabled %}cursor-not-allowed opacity-60{% else %}hover:border-brand-300 hover:bg-brand-50/40{% endif %}"
+              data-browser-worker-card
+              data-worker-id="{{ worker.id | e }}"
+              {% if worker.disabled %}disabled{% endif %}
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="inline-flex h-2.5 w-2.5 shrink-0 rounded-full {{ worker.status_dot_class | e }}"></span>
+                    <span class="truncate text-[15px] font-semibold text-slate-900">{{ worker.name | e }}</span>
+                  </div>
+                  <p class="mt-2 text-[12px] text-slate-500">{{ worker.label | e }} • {{ worker.channel_text | e }}</p>
+                </div>
+                <span class="inline-flex shrink-0 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold {% if worker.disabled %}text-slate-400{% else %}text-slate-600{% endif %}">
+                  {{ worker.status_text | e }}
+                </span>
+              </div>
+            </button>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="browserSessionModal" class="fixed inset-0 z-[70] hidden">
     <div class="absolute inset-0 bg-slate-950/35"></div>
     <div class="relative flex min-h-screen items-center justify-center px-4 py-8">
@@ -1404,6 +1584,10 @@
                 <p id="browserSessionStatus" class="mt-0.5 font-semibold text-slate-900">Ch&#432;a kh&#7903;i t&#7841;o</p>
               </div>
               <div>
+                <p class="text-slate-500">VPS</p>
+                <p id="browserSessionWorker" class="mt-0.5 font-mono text-slate-700">-</p>
+              </div>
+              <div>
                 <p class="text-slate-500">H&#7871;t h&#7841;n</p>
                 <p id="browserSessionExpiry" class="mt-0.5 font-mono text-slate-700">-</p>
               </div>
@@ -1425,6 +1609,8 @@
           <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] leading-relaxed text-amber-900">
             Sau khi v&#224;o &#273;&#250;ng trang <strong>YouTube Studio</strong>, h&#227;y quay l&#7841;i tab app. App s&#7869; t&#7921; x&#225;c nh&#7853;n v&#224; &#273;&#243;ng phi&#234;n; n&#7871;u popup kh&#244;ng t&#7921; &#273;&#243;ng h&#227;y &#7845;n <strong>&#272;&#227; &#273;&#259;ng nh&#7853;p</strong> &#273;&#7875; x&#225;c nh&#7853;n.
           </div>
+
+          <div id="browserSessionError" class="hidden rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-[12px] text-rose-700"></div>
         </div>
 
         <div class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-6 py-4">
@@ -1443,8 +1629,9 @@
       </div>
     </div>
   </div>
+  <div id="toastStack" class="toast-stack" aria-live="polite" aria-atomic="false"></div>
   <script id="dashboard-seed" type="application/json">{{ dashboard | tojson }}</script>
 
-  <script src="/static/js/user_dashboard.js?v=20260331-browser-upload-copy"></script>
+<script src="/static/js/user_dashboard.js?v=20260404-user-session-fetch-v1"></script>
   </body>
 </html>

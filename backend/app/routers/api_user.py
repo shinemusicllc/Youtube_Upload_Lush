@@ -9,14 +9,17 @@ from fastapi import APIRouter, Body, File, Form, HTTPException, Request, UploadF
 from fastapi.responses import FileResponse
 
 from ..auth import require_app_access
-from ..schemas import JobCreatePayload, UploadSessionCreateRequest
+from ..schemas import BrowserSessionCreateRequest, JobCreatePayload, UploadSessionCreateRequest
 from ..store import store
 
 router = APIRouter(tags=["user"])
 
 
+JOB_TITLE_ALLOWED_PATTERN = re.compile(r"^[A-Za-z0-9 ]+$")
+
+
 def _current_app_user_id(request: Request) -> str:
-    return require_app_access(request, "user").id
+    return require_app_access(request, "user", "manager", "admin").id
 
 
 def _clean_optional(value: str | None) -> str | None:
@@ -50,6 +53,20 @@ def _is_supported_google_drive_url(value: str | None) -> bool:
     if query_id and query_id[0]:
         return True
     return bool(re.search(r"/file/d/([^/]+)", parsed.path))
+
+
+def _validate_job_title(value: str) -> str:
+    cleaned = re.sub(r"\s+", " ", str(value or "").strip())
+    if not cleaned:
+        raise HTTPException(status_code=422, detail="Ten video la bat buoc.")
+    if len(cleaned) > 100:
+        raise HTTPException(status_code=422, detail="Ten video chi duoc toi da 100 ky tu.")
+    if not JOB_TITLE_ALLOWED_PATTERN.fullmatch(cleaned):
+        raise HTTPException(
+            status_code=422,
+            detail="Ten video chi duoc dung chu cai khong dau, so va khoang trang.",
+        )
+    return cleaned
 
 
 @router.get("/user/bootstrap")
@@ -118,9 +135,15 @@ async def start_user_oauth(request: Request):
 
 
 @router.post("/user/browser-sessions")
-async def create_user_browser_session(request: Request):
+async def create_user_browser_session(
+    request: Request,
+    payload: BrowserSessionCreateRequest | None = Body(default=None),
+):
     try:
-        return store.create_browser_session(_current_app_user_id(request))
+        return store.create_browser_session(
+            _current_app_user_id(request),
+            worker_id=(payload.worker_id if payload else None),
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -201,6 +224,7 @@ async def create_user_job(
     title: str = Form(...),
     description: str | None = Form(default=None),
     source_mode: str | None = Form(default=None),
+    visibility: str = Form(default="draft"),
     time_render_string: str = Form(default="00:30:00"),
     schedule_time: str | None = Form(default=None),
     intro_url: str | None = Form(default=None),
@@ -248,6 +272,8 @@ async def create_user_job(
     )
     resolved_source_mode = source_mode or derived_source_mode
     parsed_schedule_time = _parse_schedule_time(schedule_time)
+    normalized_title = _validate_job_title(title)
+    normalized_visibility = "draft"
 
     if not channel_id.strip():
         raise HTTPException(status_code=422, detail="channel_id la bat buoc.")
@@ -267,9 +293,10 @@ async def create_user_job(
 
     payload = JobCreatePayload(
         channel_id=channel_id,
-        title=title,
+        title=normalized_title,
         description=description,
         source_mode=resolved_source_mode,  # type: ignore[arg-type]
+        visibility=normalized_visibility,  # type: ignore[arg-type]
         intro_url=_clean_optional(intro_url),
         video_loop_url=_clean_optional(video_loop_url),
         audio_loop_url=_clean_optional(audio_loop_url),

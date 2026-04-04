@@ -34,6 +34,12 @@ class WorkerConfig:
     ffprobe_bin: str
     youtube_upload_enabled: bool
     youtube_upload_chunk_bytes: int
+    browser_public_base_url: str
+    browser_session_enabled: bool
+    browser_display_base: int
+    browser_vnc_port_base: int
+    browser_web_port_base: int
+    browser_debug_port_base: int
 
 
 def load_config() -> WorkerConfig:
@@ -59,4 +65,10 @@ def load_config() -> WorkerConfig:
         ffprobe_bin=os.getenv("FFPROBE_BIN", "ffprobe").strip() or "ffprobe",
         youtube_upload_enabled=os.getenv("WORKER_UPLOAD_TO_YOUTUBE", "false").strip().lower() in {"1", "true", "yes", "on"},
         youtube_upload_chunk_bytes=int(os.getenv("YOUTUBE_UPLOAD_CHUNK_BYTES", "8388608")),
+        browser_public_base_url=os.getenv("BROWSER_SESSION_PUBLIC_BASE_URL", "").strip().rstrip("/"),
+        browser_session_enabled=os.getenv("BROWSER_SESSION_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"},
+        browser_display_base=int(os.getenv("BROWSER_SESSION_DISPLAY_BASE", "90")),
+        browser_vnc_port_base=int(os.getenv("BROWSER_SESSION_VNC_PORT_BASE", "5990")),
+        browser_web_port_base=int(os.getenv("BROWSER_SESSION_WEB_PORT_BASE", "6090")),
+        browser_debug_port_base=int(os.getenv("BROWSER_SESSION_DEBUG_PORT_BASE", "9222")),
     )

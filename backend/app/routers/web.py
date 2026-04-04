@@ -149,7 +149,7 @@ def _redirect_bot_page_with_scope(
     user_id: str | None = None,
     page: str = "list",
 ):
-    base_path = "/admin/bot/assignment" if page == "assignment" else "/admin/ManagerBOT/index"
+    base_path = "/admin/ManagerBOT/index"
     query: list[tuple[str, str]] = [("notice", message), ("notice_level", level)]
     for manager_id in manager_ids or []:
         if manager_id:
@@ -210,6 +210,46 @@ def _enforce_user_scope(current_user: AdminSessionUser, user_id: str) -> None:
         raise HTTPException(status_code=403, detail="Manager khong duoc thao tac admin.")
     if user.role == "user" and user.manager_name != current_user.username:
         raise HTTPException(status_code=403, detail="Khong du quyen thao tac user khac manager.")
+
+
+def _enforce_worker_scope(current_user: AdminSessionUser, worker_id: str) -> None:
+    if current_user.role != "manager":
+        return
+    worker = store._find_worker(worker_id)
+    if worker.manager_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Khong du quyen thao tac BOT ngoai scope manager.")
+
+
+def _enforce_channel_scope(current_user: AdminSessionUser, channel_id: str) -> None:
+    if current_user.role != "manager":
+        return
+    channel = store._find_channel(channel_id)
+    if store._resolve_channel_manager_id(channel) != current_user.id:
+        raise HTTPException(status_code=403, detail="Khong du quyen thao tac kenh ngoai scope manager.")
+
+
+def _enforce_job_scope(current_user: AdminSessionUser, job_id: str) -> None:
+    if current_user.role != "manager":
+        return
+    job = store._find_job(job_id)
+    if store._resolve_job_manager_id(job) != current_user.id:
+        raise HTTPException(status_code=403, detail="Khong du quyen thao tac job ngoai scope manager.")
+
+
+def _scoped_job_ids(current_user: AdminSessionUser, *, channel_id: str | None = None) -> list[str]:
+    jobs = list(store.jobs)
+    if current_user.role == "manager":
+        jobs = [job for job in jobs if store._resolve_job_manager_id(job) == current_user.id]
+    if channel_id:
+        jobs = [job for job in jobs if job.channel_id == channel_id]
+    return [job.id for job in jobs]
+
+
+def _enforce_user_bot_mapping_scope(current_user: AdminSessionUser, user_id: str, mapping_id: int) -> None:
+    _enforce_user_scope(current_user, user_id)
+    mapping = next((item for item in store.user_worker_links if int(item.get("id") or 0) == mapping_id), None)
+    if mapping is None or str(mapping.get("user_id") or "").strip() != user_id:
+        raise HTTPException(status_code=403, detail="Khong du quyen thao tac mapping BOT nay.")
 
 
 def _admin_forbidden_redirect(path: str = "/admin/user/index") -> RedirectResponse:
@@ -439,6 +479,7 @@ async def app_login_submit(request: Request):
 
 @router.post("/logout")
 async def app_logout(request: Request):
+    clear_admin_session(request)
     clear_app_session(request)
     return RedirectResponse(url="/login", status_code=303)
 
@@ -450,8 +491,21 @@ async def user_dashboard(
     notice_level: str = "success",
 ):
     current_user = get_app_session_user(request)
-    if not current_user and get_admin_session_user(request):
-        return RedirectResponse(url="/admin/user/index", status_code=302)
+    admin_user = get_admin_session_user(request)
+    if admin_user and (
+        not current_user
+        or current_user.id != admin_user.id
+        or current_user.role != admin_user.role
+    ):
+        store.assert_admin_session_user(admin_user.id, admin_user.role)
+        current_user = AppSessionUser(
+            id=admin_user.id,
+            username=admin_user.username,
+            display_name=admin_user.display_name,
+            role=admin_user.role,
+            manager_name=admin_user.manager_name,
+        )
+        set_app_session_user(request, current_user)
     if not current_user:
         return RedirectResponse(url="/login?next=/app", status_code=302)
     store.assert_app_session_user(current_user.id, current_user.role)
@@ -513,6 +567,7 @@ async def admin_login_submit(request: Request):
 
 @router.post("/admin/logout")
 async def admin_logout(request: Request):
+    clear_app_session(request)
     clear_admin_session(request)
     return RedirectResponse(url="/login", status_code=303)
 
@@ -553,7 +608,12 @@ async def admin_user_create(
     notice_level: str = "success",
 ):
     current_admin = require_admin_access(request)
-    dashboard = store.get_admin_user_create_context(notice=notice, notice_level=notice_level)
+    dashboard = store.get_admin_user_create_context(
+        viewer_role=current_admin.role,
+        viewer_id=current_admin.id,
+        notice=notice,
+        notice_level=notice_level,
+    )
     if current_admin.role == "manager":
         dashboard["manager_candidates"] = [
             item for item in dashboard["manager_candidates"] if item["id"] == current_admin.id
@@ -588,6 +648,8 @@ async def admin_user_create_submit(request: Request):
         )
     except ValueError as exc:
         dashboard = store.get_admin_user_create_context(
+            viewer_role=current_admin.role,
+            viewer_id=current_admin.id,
             form_data={
                 "username": username,
                 "manager_id": manager_id or "",
@@ -617,6 +679,8 @@ async def admin_user_edit_page(
         request,
         store.get_admin_user_edit_context(
             user_id=userId,
+            viewer_role=current_admin.role,
+            viewer_id=current_admin.id,
             notice=notice,
             notice_level=notice_level,
         ),
@@ -633,18 +697,14 @@ async def admin_user_update(request: Request):
     username = str(form.get("UserName") or form.get("username") or "").strip() or (
         target_user.username if target_user else ""
     )
-    display_name = str(form.get("DisplayName") or form.get("display_name") or "").strip() or (
-        target_user.display_name if target_user else ""
-    )
-    telegram = str(form.get("Telegram") or form.get("link_telegram") or "").strip() or None
+    password = str(form.get("Password") or form.get("password") or "").strip() or None
     manager_id = _force_manager_binding(current_admin, str(form.get("UserIdManager") or form.get("manager_id") or "").strip() or None)
 
     try:
         updated_user = store.update_admin_user(
             user_id=user_id,
             username=username,
-            display_name=display_name,
-            telegram=telegram,
+            password=password,
             manager_id=manager_id,
             actor_role=current_admin.role,
             updated_by=current_admin.username,
@@ -663,16 +723,9 @@ async def admin_user_reset_page(
     notice: str | None = None,
     notice_level: str = "success",
 ):
-    current_admin = require_admin_access(request)
-    _enforce_user_scope(current_admin, userId)
-    return _render(
-        request,
-        store.get_admin_user_reset_context(
-            user_id=userId,
-            notice=notice,
-            notice_level=notice_level,
-        ),
-    )
+    require_admin_access(request)
+    query = {"userId": userId, "notice": notice or "Đổi mật khẩu đã được gộp vào Sửa user.", "notice_level": notice_level}
+    return RedirectResponse(url=f"/admin/user/edit?{urlencode(query)}", status_code=302)
 
 
 @router.post("/admin/user/resetpassword")
@@ -680,12 +733,11 @@ async def admin_user_reset_password(request: Request):
     current_admin = require_admin_access(request)
     form = await request.form()
     user_id = str(form.get("userId") or form.get("user_id") or "").strip()
-    _enforce_user_scope(current_admin, user_id)
-    password = str(form.get("Password") or form.get("password") or "").strip()
-
+    if not user_id:
+        return _redirect_with_notice("/admin/user/index", "Đổi mật khẩu đã được gộp vào Sửa user.", "info")
     try:
-        store.reset_admin_user_password(user_id, password, updated_by=current_admin.username)
-        return _redirect_with_notice("/admin/user/index", "Đã reset mật khẩu user.", "success")
+        _enforce_user_scope(current_admin, user_id)
+        return _redirect_with_notice("/admin/user/edit", "Đổi mật khẩu đã được gộp vào Sửa user.", "info", userId=user_id)
     except (KeyError, ValueError) as exc:
         return _redirect_with_notice("/admin/user/index", str(exc), "error")
 
@@ -774,6 +826,8 @@ async def admin_user_manager_bot(
         request,
         store.get_admin_user_bot_context(
             user_id=userId,
+            viewer_role=current_admin.role,
+            viewer_id=current_admin.id,
             notice=notice,
             notice_level=notice_level,
         ),
@@ -784,51 +838,50 @@ async def admin_user_add_bot(request: Request):
     current_admin = require_admin_access(request)
     form = await request.form()
     user_id = str(form.get("user_id") or form.get("UserId") or "").strip()
-    _enforce_user_scope(current_admin, user_id)
-    worker_id = str(form.get("worker_id") or form.get("WorkerId") or "").strip()
-    threads = int(str(form.get("number_of_threads") or form.get("Threads") or "1"))
-    bot_type = str(form.get("bot_type") or "1080p").strip() or "1080p"
-
     try:
-        store.add_user_bot(user_id, worker_id, threads, bot_type=bot_type)
-        store._save_state()
-        return _redirect_with_notice("/admin/user/managerbot", "Đã gán BOT cho user.", "success", userId=user_id)
+        if user_id:
+            _enforce_user_scope(current_admin, user_id)
+        return _redirect_bot_page_with_scope(
+            "Luồng gán BOT cũ đã được gộp vào Danh sách BOT.",
+            "info",
+            user_id=user_id or None,
+        )
     except (KeyError, ValueError) as exc:
-        return _redirect_with_notice("/admin/user/managerbot", str(exc), "error", userId=user_id)
+        return _redirect_bot_page_with_scope(str(exc), "error", user_id=user_id or None)
 
 
 @router.post("/admin/user/deletebot")
 async def admin_user_delete_bot(request: Request):
     current_admin = require_admin_access(request)
     form = await request.form()
-    assignment_id = int(str(form.get("assignment_id") or form.get("id") or "0"))
     user_id = str(form.get("user_id") or form.get("userId") or "").strip()
-    _enforce_user_scope(current_admin, user_id)
-
     try:
-        store.delete_user_bot(assignment_id)
-        store._save_state()
-        return _redirect_with_notice("/admin/user/managerbot", "Đã xóa mapping BOT.", "success", userId=user_id)
+        if user_id:
+            _enforce_user_scope(current_admin, user_id)
+        return _redirect_bot_page_with_scope(
+            "Luồng xóa mapping BOT cũ đã được gộp vào Danh sách BOT.",
+            "info",
+            user_id=user_id or None,
+        )
     except (KeyError, ValueError) as exc:
-        return _redirect_with_notice("/admin/user/managerbot", str(exc), "error", userId=user_id)
+        return _redirect_bot_page_with_scope(str(exc), "error", user_id=user_id or None)
 
 
 @router.post("/admin/user/updatebotuser")
 async def admin_user_update_bot(request: Request):
     current_admin = require_admin_access(request)
     form = await request.form()
-    assignment_id = int(str(form.get("assignment_id") or form.get("Id") or "0"))
     user_id = str(form.get("user_id") or form.get("UserId") or "").strip()
-    _enforce_user_scope(current_admin, user_id)
-    threads = int(str(form.get("number_of_threads") or form.get("Threads") or "1"))
-    bot_type = str(form.get("bot_type") or "").strip() or None
-
     try:
-        store.update_user_bot(assignment_id, threads, bot_type=bot_type)
-        store._save_state()
-        return _redirect_with_notice("/admin/user/managerbot", "Đã cập nhật mapping BOT.", "success", userId=user_id)
+        if user_id:
+            _enforce_user_scope(current_admin, user_id)
+        return _redirect_bot_page_with_scope(
+            "Luồng sửa mapping BOT cũ đã được gộp vào Danh sách BOT.",
+            "info",
+            user_id=user_id or None,
+        )
     except (KeyError, ValueError) as exc:
-        return _redirect_with_notice("/admin/user/managerbot", str(exc), "error", userId=user_id)
+        return _redirect_bot_page_with_scope(str(exc), "error", user_id=user_id or None)
 
 
 @router.get("/admin/ManagerBOT/index", response_class=HTMLResponse)
@@ -875,16 +928,11 @@ async def admin_bot_assignment(
     selected_manager_ids = _resolve_bot_scope_manager_ids(selected_manager_ids, userId)
     if current_admin.role == "manager" and not selected_manager_ids:
         selected_manager_ids = [current_admin.id]
-    return _render(
-        request,
-        store.get_admin_bot_assignment_context(
-            manager_ids=selected_manager_ids,
-            viewer_role=current_admin.role,
-            viewer_id=current_admin.id,
-            focus_user_id=userId,
-            notice=notice,
-            notice_level=notice_level,
-        ),
+    return _redirect_bot_page_with_scope(
+        notice or "Cấp phát BOT đã được gộp vào Danh sách BOT.",
+        notice_level or "info",
+        manager_ids=selected_manager_ids,
+        user_id=userId,
     )
 
 
@@ -892,52 +940,30 @@ async def admin_bot_assignment(
 async def admin_bot_assign(request: Request):
     current_admin = require_admin_access(request)
     form = await request.form()
-    worker_ids = [str(value).strip() for value in form.getlist("worker_ids") if str(value).strip()]
-    fallback_worker_id = str(form.get("worker_id") or form.get("Id") or "").strip()
-    if fallback_worker_id and fallback_worker_id not in worker_ids:
-        worker_ids.append(fallback_worker_id)
     user_id = str(form.get("user_id") or form.get("UserId") or "").strip() or None
-    manager_id = _force_manager_binding(
-        current_admin,
-        str(form.get("manager_id") or form.get("UserIdManager") or "").strip() or None,
-    )
-    return_page = str(form.get("return_page") or "").strip().lower()
-    if return_page not in {"assignment", "list"}:
-        return_page = "list"
     return_user_id = str(form.get("return_user_id") or "").strip() or None
     return_manager_ids = [str(value).strip() for value in form.getlist("return_manager_ids") if str(value).strip()]
 
-    if user_id:
-        _enforce_user_scope(current_admin, user_id)
+    redirect_user_id = return_user_id or user_id
+    scoped_manager_ids = return_manager_ids or _resolve_bot_scope_manager_ids([], redirect_user_id)
+    if current_admin.role == "manager" and not scoped_manager_ids:
+        scoped_manager_ids = [current_admin.id]
 
     try:
-        assigned_count = store.assign_available_bots(
-            worker_ids,
-            manager_id,
-            assigned_user_id=user_id,
-            updated_by=current_admin.username,
-        )
-        scoped_manager_ids = return_manager_ids or _resolve_bot_scope_manager_ids([], return_user_id or user_id)
-        success_message = (
-            "Đã cấp BOT cho user."
-            if user_id
-            else f"Đã chuyển {assigned_count} BOT trống về kho manager."
-        )
+        if user_id:
+            _enforce_user_scope(current_admin, user_id)
         return _redirect_bot_page_with_scope(
-            success_message,
-            "success",
+            "Màn Cấp phát BOT cũ đã được gộp vào Danh sách BOT.",
+            "info",
             manager_ids=scoped_manager_ids,
-            user_id=return_user_id,
-            page=return_page,
+            user_id=redirect_user_id,
         )
     except (KeyError, ValueError) as exc:
-        scoped_manager_ids = return_manager_ids or _resolve_bot_scope_manager_ids([], return_user_id or user_id)
         return _redirect_bot_page_with_scope(
             str(exc),
             "error",
             manager_ids=scoped_manager_ids,
-            user_id=return_user_id,
-            page=return_page,
+            user_id=redirect_user_id,
         )
 
 
@@ -946,14 +972,27 @@ async def admin_bot_update(request: Request):
     current_admin = require_admin_access(request)
     form = await request.form()
     worker_id = str(form.get("Id") or form.get("worker_id") or "").strip()
+    _enforce_worker_scope(current_admin, worker_id)
     name = str(form.get("Name") or form.get("name") or "").strip()
+    group = str(form.get("Group") or form.get("group") or "").strip() or None
     manager_id = _force_manager_binding(current_admin, str(form.get("UserIdManager") or form.get("manager_id") or "").strip() or None)
-    user_id = str(form.get("UserId") or form.get("user_id") or "").strip() or None
+    assigned_user_id = str(form.get("UserId") or form.get("user_id") or "").strip() or None
     return_user_id = str(form.get("return_user_id") or "").strip() or None
     return_manager_ids = [str(value).strip() for value in form.getlist("return_manager_ids") if str(value).strip()]
+    if assigned_user_id:
+        _enforce_user_scope(current_admin, assigned_user_id)
 
     try:
-        store.update_bot(worker_id, name, manager_id, assigned_user_id=user_id, updated_by=current_admin.username)
+        store.update_bot(
+            worker_id,
+            name,
+            group,
+            manager_id,
+            assigned_user_id=assigned_user_id,
+            viewer_role=current_admin.role,
+            viewer_id=current_admin.id,
+            updated_by=current_admin.username,
+        )
         return _redirect_bot_page_with_scope(
             "Đã cập nhật BOT.",
             "success",
@@ -971,9 +1010,10 @@ async def admin_bot_update(request: Request):
 
 @router.post("/admin/managerbot/delete")
 async def admin_bot_delete(request: Request):
-    require_admin_access(request)
+    current_admin = require_admin_access(request)
     form = await request.form()
     worker_id = str(form.get("Id") or form.get("worker_id") or "").strip()
+    _enforce_worker_scope(current_admin, worker_id)
     return_user_id = str(form.get("return_user_id") or "").strip() or None
     return_manager_ids = [str(value).strip() for value in form.getlist("return_manager_ids") if str(value).strip()]
     try:
@@ -996,15 +1036,16 @@ async def admin_bot_delete(request: Request):
 @router.post("/admin/bot/updatethread")
 @router.post("/admin/bot/updateThread")
 async def admin_bot_update_thread(request: Request):
-    require_admin_access(request)
+    current_admin = require_admin_access(request)
     form = await request.form()
     worker_id = str(form.get("Id") or form.get("worker_id") or "").strip()
     try:
-        store.update_bot_thread(worker_id, 1)
+        if worker_id:
+            _enforce_worker_scope(current_admin, worker_id)
         return _redirect_with_notice(
             "/admin/ManagerBOT/index",
-            "Luồng BOT đang được khóa cố định 1 job active / VPS để giữ hệ thống ổn định.",
-            "success",
+            "Thiết lập luồng BOT cũ đã được bỏ khỏi UI điều phối hiện tại.",
+            "info",
         )
     except (KeyError, ValueError) as exc:
         return _redirect_with_notice("/admin/ManagerBOT/index", str(exc), "error")
@@ -1024,6 +1065,8 @@ async def admin_bot_of_user(
         request,
         store.get_admin_bots_of_user_context(
             user_id=userId,
+            viewer_role=current_admin.role,
+            viewer_id=current_admin.id,
             notice=notice,
             notice_level=notice_level,
         ),
@@ -1038,11 +1081,14 @@ async def admin_user_of_bot(
     notice: str | None = None,
     notice_level: str = "success",
 ):
-    require_admin_access(request)
+    current_admin = require_admin_access(request)
+    _enforce_worker_scope(current_admin, botId)
     return _render(
         request,
         store.get_admin_users_of_bot_context(
             worker_id=botId,
+            viewer_role=current_admin.role,
+            viewer_id=current_admin.id,
             notice=notice,
             notice_level=notice_level,
         ),
@@ -1058,6 +1104,11 @@ async def admin_channel_index(
     notice: str | None = None,
     notice_level: str = "success",
 ):
+    current_admin = require_admin_access(request)
+    if userId:
+        _enforce_user_scope(current_admin, userId)
+    if botId:
+        _enforce_worker_scope(current_admin, botId)
     selected_manager_ids = _resolve_manager_ids(request, manager_ids)
     return _render(
         request,
@@ -1065,6 +1116,8 @@ async def admin_channel_index(
             manager_ids=selected_manager_ids,
             user_id=userId,
             bot_id=botId,
+            viewer_role=current_admin.role,
+            viewer_id=current_admin.id,
             notice=notice,
             notice_level=notice_level,
         ),
@@ -1085,6 +1138,8 @@ async def admin_channel_of_user(
         request,
         store.get_admin_channels_of_user_context(
             user_id=userId,
+            viewer_role=current_admin.role,
+            viewer_id=current_admin.id,
             notice=notice,
             notice_level=notice_level,
         ),
@@ -1099,11 +1154,15 @@ async def admin_channel_of_bot(
     notice: str | None = None,
     notice_level: str = "success",
 ):
-    require_admin_access(request)
+    current_admin = require_admin_access(request)
+    _enforce_worker_scope(current_admin, botId)
     return _render(
         request,
         store.get_admin_channel_index_context(
             bot_id=botId,
+            viewer_role=current_admin.role,
+            viewer_id=current_admin.id,
+            manager_ids=[current_admin.id] if current_admin.role == "manager" else None,
             notice=notice,
             notice_level=notice_level,
         ),
@@ -1118,11 +1177,14 @@ async def admin_users_of_channel(
     notice: str | None = None,
     notice_level: str = "success",
 ):
-    require_admin_access(request)
+    current_admin = require_admin_access(request)
+    _enforce_channel_scope(current_admin, channelId)
     return _render(
         request,
         store.get_admin_users_of_channel_context(
             channel_id=channelId,
+            viewer_role=current_admin.role,
+            viewer_id=current_admin.id,
             notice=notice,
             notice_level=notice_level,
         ),
@@ -1169,9 +1231,10 @@ async def admin_channel_add_user(request: Request):
 @router.post("/admin/channel/updateprofile")
 @router.post("/admin/channel/UpdateProfile")
 async def admin_channel_update_profile(request: Request):
-    require_admin_access(request)
+    current_admin = require_admin_access(request)
     form = await request.form()
     channel_id = str(form.get("id") or form.get("channelId") or form.get("channel_id") or "").strip()
+    _enforce_channel_scope(current_admin, channel_id)
     redirect_to = str(form.get("redirect_to") or "/admin/channel/index").strip() or "/admin/channel/index"
     bot_id = str(form.get("botId") or "").strip()
     user_id = str(form.get("userId") or "").strip()
@@ -1198,8 +1261,11 @@ async def admin_channel_update_profile(request: Request):
 
 @router.get("/admin/channel/export")
 async def admin_channel_export(request: Request):
-    require_admin_access(request)
-    rows = store.get_channel_export_rows()
+    current_admin = require_admin_access(request)
+    selected_manager_ids = _resolve_manager_ids(request, [])
+    rows = store.get_channel_export_rows_filtered(
+        manager_ids=selected_manager_ids if current_admin.role == "manager" or selected_manager_ids else None
+    )
     fieldnames = [
         "Avatar",
         "ChannelName",
@@ -1229,7 +1295,10 @@ async def admin_channel_export(request: Request):
 
 @router.get("/admin/channel/delete")
 async def admin_channel_delete(request: Request, channelId: str, botId: str | None = None):
-    require_admin_access(request)
+    current_admin = require_admin_access(request)
+    _enforce_channel_scope(current_admin, channelId)
+    if botId:
+        _enforce_worker_scope(current_admin, botId)
     try:
         store.delete_channel(channelId)
         if botId:
@@ -1244,13 +1313,14 @@ async def admin_channel_delete(request: Request, channelId: str, botId: str | No
 @router.get("/admin/channel/deleteajax")
 @router.post("/admin/channel/deleteajax")
 async def admin_channel_delete_ajax(request: Request, id: str | None = None):
-    require_admin_access(request)
+    current_admin = require_admin_access(request)
     if request.method == "POST":
         form = await request.form()
         id = str(form.get("id") or form.get("channelId") or "").strip() or id
     if not id:
         return JSONResponse({"ok": False, "error": "Missing channel id"}, status_code=400)
     try:
+        _enforce_channel_scope(current_admin, id)
         store.delete_channel(id)
         return JSONResponse({"ok": True})
     except (KeyError, ValueError) as exc:
@@ -1264,11 +1334,14 @@ async def admin_render_index(
     notice: str | None = None,
     notice_level: str = "success",
 ):
+    current_admin = require_admin_access(request)
     selected_manager_ids = _resolve_manager_ids(request, manager_ids)
     return _render(
         request,
         store.get_admin_render_index_context(
             manager_ids=selected_manager_ids,
+            viewer_role=current_admin.role,
+            viewer_id=current_admin.id,
             notice=notice,
             notice_level=notice_level,
         ),
@@ -1284,12 +1357,16 @@ async def admin_render_of_channel(
     notice: str | None = None,
     notice_level: str = "success",
 ):
+    current_admin = require_admin_access(request)
+    _enforce_channel_scope(current_admin, channelId)
     selected_manager_ids = _resolve_manager_ids(request, manager_ids)
     return _render(
         request,
         store.get_admin_render_index_context(
             manager_ids=selected_manager_ids,
             channel_id=channelId,
+            viewer_role=current_admin.role,
+            viewer_id=current_admin.id,
             notice=notice,
             notice_level=notice_level,
         ),
@@ -1303,11 +1380,14 @@ async def admin_render_info(
     notice: str | None = None,
     notice_level: str = "success",
 ):
-    require_admin_access(request)
+    current_admin = require_admin_access(request)
+    _enforce_job_scope(current_admin, id)
     return _render(
         request,
         store.get_admin_render_detail_context(
             job_id=id,
+            viewer_role=current_admin.role,
+            viewer_id=current_admin.id,
             notice=notice,
             notice_level=notice_level,
         ),
@@ -1320,7 +1400,13 @@ async def admin_render_delete_all(request: Request):
     form = await request.form()
     channel_id = str(form.get("channelId") or "").strip()
     deleted_by = str(form.get("deleted_by") or current_admin.username).strip() or current_admin.username
-    store.delete_all_jobs(deleted_by=deleted_by)
+    if channel_id:
+        _enforce_channel_scope(current_admin, channel_id)
+    scoped_job_ids = _scoped_job_ids(current_admin, channel_id=channel_id or None)
+    if current_admin.role == "admin" and not channel_id:
+        store.delete_all_jobs(deleted_by=deleted_by)
+    else:
+        store.delete_jobs(scoped_job_ids)
     if channel_id:
         return _redirect_with_notice("/admin/render/channel", "Đã xóa toàn bộ dữ liệu render.", "success", channelId=channel_id)
     return _redirect_with_notice("/admin/render/index", "Đã xóa toàn bộ dữ liệu render.", "success")
@@ -1328,11 +1414,12 @@ async def admin_render_delete_all(request: Request):
 
 @router.post("/admin/render/deletejob")
 async def admin_render_delete_job(request: Request):
-    require_admin_access(request)
+    current_admin = require_admin_access(request)
     form = await request.form()
     job_id = str(form.get("id") or form.get("jobId") or "").strip()
     channel_id = str(form.get("channelId") or "").strip()
     try:
+        _enforce_job_scope(current_admin, job_id)
         store.delete_job(job_id)
         if channel_id:
             return _redirect_with_notice("/admin/render/channel", "Đã xóa job render.", "success", channelId=channel_id)

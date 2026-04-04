@@ -853,7 +853,7 @@
         <div id="dashboardNotice" data-transient-notice data-notice-autohide="{% if dashboard.notice_level == 'error' %}8000{% else %}5000{% endif %}" class="elevated-card px-5 py-4 border transition-all duration-200 {% if dashboard.notice_level == 'error' %}border-rose-200 bg-rose-50/80{% else %}border-emerald-200 bg-emerald-50/80{% endif %}">
           <div class="flex items-start gap-3">
             <div class="mt-0.5 {% if dashboard.notice_level == 'error' %}text-rose-600{% else %}text-emerald-600{% endif %}">
-              <i data-lucide="{% if dashboard.notice_level == 'error' %}shield-alert{% else %}badge-check{% endif %}" class="w-4 h-4"></i>
+              <i data-lucide="{% if dashboard.notice_level == 'error' %}shield-alert{% else %}circle-check{% endif %}" class="w-4 h-4"></i>
             </div>
             <div class="min-w-0 flex-1">
               <p class="text-[13px] font-semibold {% if dashboard.notice_level == 'error' %}text-rose-700{% else %}text-emerald-700{% endif %}">

@@ -12,7 +12,7 @@
                 </div>
                 <div>
                     <h2 class="section-title">{{ dashboard.heading }}</h2>
-                    <p class="section-note">Nhập username để cấp quyền nhanh và quản lý danh sách tài khoản đang có role {{ dashboard.role_label }}.</p>
+                    <p class="section-note">Nhập user có sẵn trong hệ thống để cấp quyền nhanh và quản lý danh sách tài khoản đang có role {{ dashboard.role_label }}.</p>
                 </div>
             </div>
             {% include "admin/_user_tabs.html" %}
@@ -21,7 +21,24 @@
 
     <div class="panel p-6">
         <form method="post" action="{{ dashboard.action_route }}" class="grid gap-3 md:grid-cols-[1fr_auto]">
-            <input class="toolbar-input" type="text" name="username" placeholder="Nhập username cần gán role {{ dashboard.role_label }}" autocomplete="off">
+            <select
+                class="toolbar-select"
+                name="userId"
+                data-admin-select-search="true"
+                data-admin-select-search-placeholder="Tìm user để gán role..."
+                required
+            >
+                <option value="">Chọn user trong hệ thống</option>
+                {% for user in dashboard.assignable_user_options %}
+                <option
+                    value="{{ user.id }}"
+                    data-search-text="{{ user.search_text }}"
+                    data-option-description="{{ user.description }}"
+                >
+                    {{ user.username }}
+                </option>
+                {% endfor %}
+            </select>
             <button type="submit" class="action-btn action-btn-emerald h-11 justify-center px-4 text-[13px]">
                 <i data-lucide="plus" class="h-4 w-4"></i>
                 Thêm role {{ dashboard.role_label }}
@@ -41,7 +58,7 @@
                     <tr>
                         <th class="w-14">STT</th>
                         <th>UserName</th>
-                        <th>Credential</th>
+                        <th>Mật khẩu</th>
                         <th>Meta</th>
                         <th class="text-right">Tác vụ</th>
                     </tr>

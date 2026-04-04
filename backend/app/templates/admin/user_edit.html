@@ -10,7 +10,7 @@
                 </div>
                 <div>
                     <h2 class="section-title">Cập nhật user</h2>
-                    <p class="section-note">Form này thay cho modal cũ, giữ trọng tâm vào tên đăng nhập, gán manager và metadata quản trị của user.</p>
+                    <p class="section-note">Sửa tên đăng nhập, pass và manager của user.</p>
                 </div>
             </div>
             {% include "admin/_user_tabs.html" %}
@@ -50,16 +50,11 @@
                 </div>
             </div>
 
-            <label class="block">
-                <span class="mb-2 block text-[12px] font-semibold text-slate-700">Tên hiển thị</span>
-                <input class="toolbar-input" type="text" name="display_name" value="{{ dashboard.user_record.display_name }}" required>
-            </label>
-
             {% if dashboard.user_record.role == 'user' %}
             <label class="block">
                 <span class="mb-2 block text-[12px] font-semibold text-slate-700">Manager phụ trách</span>
                 <select class="toolbar-select" name="manager_id">
-                    <option value="">-- Không gán manager --</option>
+                    <option value="">-- Chọn manager --</option>
                     {% for manager in dashboard.manager_candidates %}
                     <option value="{{ manager.id }}" {% if dashboard.user_record.manager_id == manager.id %}selected{% endif %}>{{ manager.username }}</option>
                     {% endfor %}
@@ -68,8 +63,8 @@
             {% endif %}
 
             <label class="block">
-                <span class="mb-2 block text-[12px] font-semibold text-slate-700">Link Telegram</span>
-                <input class="toolbar-input" type="text" name="link_telegram" value="{{ dashboard.user_record.link_telegram or '' }}" placeholder="@telegram_handle">
+                    <span class="mb-2 block text-[12px] font-semibold text-slate-700">Pass</span>
+                    <input class="toolbar-input" type="password" name="password" value="" placeholder="&#272;&#7875; tr&#7889;ng n&#7871;u kh&#244;ng &#273;&#7893;i" autocomplete="new-password" autocapitalize="off" spellcheck="false">
             </label>
 
             <div class="flex items-center justify-end gap-3 border-t border-slate-200 pt-4">

@@ -9,8 +9,8 @@
                     <i data-lucide="server" class="h-4.5 w-4.5 text-brand-600"></i>
                 </div>
                 <div>
-                    <h2 class="section-title">BOT của {{ dashboard.user_record.username }}</h2>
-                    <p class="section-note">Trang này chỉ giữ thông tin BOT hiện tại. Mọi thao tác cấp, đổi hoặc thu hồi BOT được gom về tab Cấp phát BOT để quản lý tập trung.</p>
+                    <h2 class="section-title">VPS của {{ dashboard.user_record.username }}</h2>
+                    <p class="section-note">Trang này dùng để theo dõi danh sách VPS đang gán cho user. Mọi thao tác đổi user hoặc quản lý BOT được thực hiện trực tiếp tại Danh sách BOT.</p>
                 </div>
             </div>
             {% include "admin/_user_tabs.html" %}
@@ -29,21 +29,24 @@
                 </div>
 
                 <div class="rounded-xl border border-slate-200 px-4 py-3">
-                    <p class="text-[12px] font-semibold text-slate-900">BOT hiện tại</p>
-                    <p class="mt-2 text-[13px] text-slate-700">
-                        {% if dashboard.assigned_worker %}
-                        {{ dashboard.assigned_worker.name }}
-                        {% else %}
-                        Chưa được cấp BOT.
-                        {% endif %}
-                    </p>
-                    <p class="mt-1 text-[11px] text-slate-500">Nếu cần đổi BOT, dùng nút bên dưới để sang tab cấp phát tập trung.</p>
+                    <p class="text-[12px] font-semibold text-slate-900">VPS hiện tại</p>
+                    {% if dashboard.assigned_workers %}
+                    <p class="mt-2 text-[12px] font-medium text-slate-700">{{ dashboard.assigned_worker_count }} VPS đang được cấp</p>
+                    <div class="mt-3 flex flex-wrap gap-2">
+                        {% for worker in dashboard.assigned_workers %}
+                        <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-700">{{ worker.name }}</span>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p class="mt-2 text-[13px] text-slate-700">Chưa được cấp VPS.</p>
+                    {% endif %}
+                    <p class="mt-2 text-[11px] text-slate-500">Nếu cần đổi user giữ BOT hoặc rà lại cụm VPS, dùng nút bên dưới để mở Danh sách BOT theo đúng scope của user này.</p>
                 </div>
 
                 <div class="flex flex-wrap gap-3 border-t border-slate-200 pt-4">
-                    <a href="/admin/bot/assignment?userId={{ dashboard.user_record.id }}" class="action-btn action-btn-emerald px-4 py-2 text-[13px]">
-                        <i data-lucide="arrow-right-left" class="h-4 w-4"></i>
-                        Mở Cấp phát BOT
+                    <a href="/admin/ManagerBOT/index?userId={{ dashboard.user_record.id }}" class="action-btn action-btn-emerald px-4 py-2 text-[13px]">
+                        <i data-lucide="server" class="h-4 w-4"></i>
+                        Mở Danh sách BOT
                     </a>
                     <a href="/admin/user/index" class="action-btn action-btn-slate px-4 py-2 text-[13px]">
                         Quay lại user
@@ -54,8 +57,8 @@
 
         <div class="panel overflow-hidden">
             <div class="border-b border-slate-200/80 px-5 py-4">
-                <h3 class="section-title">BOT đang gắn</h3>
-                <p class="section-note">Danh sách bên dưới chỉ còn vai trò thông tin. Không còn panel cấp hoặc đổi BOT ngay trong trang user.</p>
+                <h3 class="section-title">Danh sách VPS đang gắn</h3>
+                <p class="section-note">Danh sách bên dưới là trạng thái hiện tại của toàn bộ VPS đang được cấp cho user này.</p>
             </div>
 
             <div class="table-shell">
@@ -63,7 +66,7 @@
                     <thead>
                         <tr>
                             <th class="w-14">STT</th>
-                            <th>BOT</th>
+                            <th>VPS</th>
                             <th>Manager</th>
                             <th>Trạng thái</th>
                             <th>Loại</th>
@@ -90,6 +93,10 @@
                             <td>
                                 <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-700">1/1</span>
                             </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="8" class="px-6 py-10 text-center text-[13px] text-slate-500">User này chưa được cấp VPS nào.</td>
                         </tr>
                         {% endfor %}
                     </tbody>

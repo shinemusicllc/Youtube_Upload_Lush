@@ -547,7 +547,11 @@ document.addEventListener("DOMContentLoaded", function () {
         window.location.reload();
       } catch (error) {
         console.error(error);
-        window.alert("Không thể xóa trang hiện tại. Hãy thử lại.");
+        if (typeof window.showAdminToast === "function") {
+          window.showAdminToast("Không thể xóa trang hiện tại. Hãy thử lại.", "error");
+        } else {
+          window.alert("Không thể xóa trang hiện tại. Hãy thử lại.");
+        }
         deletePageButton.innerHTML = originalHtml;
         applyTableState();
       }

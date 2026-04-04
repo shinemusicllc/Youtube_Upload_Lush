@@ -1,6 +1,8 @@
 from pathlib import Path
+from urllib.parse import urlencode
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -45,6 +47,16 @@ def create_app() -> FastAPI:
         app.mount("/js", StaticFiles(directory=js_dir), name="js")
     if local_static_dir.exists():
         app.mount("/static", StaticFiles(directory=local_static_dir), name="static")
+
+    @app.exception_handler(HTTPException)
+    async def html_auth_exception_handler(request: Request, exc: HTTPException):
+        path = request.url.path
+        if exc.status_code == 401 and not path.startswith("/api/") and (path.startswith("/admin") or path.startswith("/app")):
+            next_path = path
+            if request.url.query:
+                next_path = f"{next_path}?{request.url.query}"
+            return RedirectResponse(url=f"/login?{urlencode({'next': next_path})}", status_code=302)
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
     @app.get("/api/health")
     async def health() -> dict[str, str]:

@@ -11,8 +11,8 @@
                     <i data-lucide="link" class="h-4.5 w-4.5 text-brand-600"></i>
                 </div>
                 <div>
-                    <h2 class="section-title">Danh sách kênh</h2>
-                    <p class="section-note">Quản lý OAuth channel, user được cấp quyền, BOT đang gắn và các thao tác điều phối.</p>
+                    <h2 class="section-title">Danh s&#225;ch k&#234;nh</h2>
+                    <p class="section-note">Qu&#7843;n l&#253; k&#234;nh &#273;&#227; k&#7871;t n&#7889;i, user &#273;&#432;&#7907;c c&#7845;p quy&#7873;n, BOT &#273;ang g&#7855;n v&#224; c&#225;c thao t&#225;c &#273;i&#7873;u ph&#7889;i.</p>
                 </div>
             </div>
 
@@ -30,12 +30,12 @@
         <div class="mt-4 flex flex-wrap items-center gap-3">
             {% if dashboard.filtered_user %}
             <div class="inline-flex items-center rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-[12px] font-medium text-sky-700">
-                Đang lọc kênh theo user: {{ dashboard.filtered_user.username }}
+                &#272;ang l&#7885;c k&#234;nh theo user: {{ dashboard.filtered_user.username }}
             </div>
             {% endif %}
             {% if dashboard.filtered_bot %}
             <div class="inline-flex items-center rounded-lg border border-brand-100 bg-brand-50 px-3 py-2 text-[12px] font-medium text-brand-700">
-                Đang lọc kênh theo BOT: {{ dashboard.filtered_bot.name }}
+                &#272;ang l&#7885;c k&#234;nh theo BOT: {{ dashboard.filtered_bot.name }}
             </div>
             {% endif %}
         </div>
@@ -46,8 +46,8 @@
     <div class="panel overflow-hidden">
         <div class="border-b border-slate-200/80 px-5 py-4">
             <div>
-                <h3 class="section-title">Danh sách kênh</h3>
-                <p class="section-note">Theo dõi kênh đã kết nối, user được cấp quyền, BOT đang gán và các thao tác điều phối chính.</p>
+                <h3 class="section-title">Danh s&#225;ch k&#234;nh</h3>
+                <p class="section-note">Theo d&#245;i k&#234;nh &#273;&#227; k&#7871;t n&#7889;i, user &#273;&#432;&#7907;c c&#7845;p quy&#7873;n, BOT &#273;ang g&#7855;n v&#224; c&#225;c thao t&#225;c &#273;i&#7873;u ph&#7889;i ch&#237;nh.</p>
             </div>
         </div>
 
@@ -56,15 +56,14 @@
                 <thead>
                     <tr>
                         <th class="w-14">STT</th>
-                        <th>Kênh</th>
-                        <th>OAuth</th>
+                        <th>K&#234;nh</th>
                         <th>Manager</th>
-                        <th>User được gán</th>
+                        <th>User &#273;&#432;&#7907;c g&#225;n</th>
                         <th>BOT</th>
-                        <th>Nhóm</th>
-                        <th>Trạng thái</th>
-                        <th>Kết nối lúc</th>
-                        <th class="text-right">Tác vụ</th>
+                        <th>Nh&#243;m</th>
+                        <th>Tr&#7841;ng th&#225;i</th>
+                        <th>K&#7871;t n&#7889;i l&#250;c</th>
+                        <th class="text-right">T&#225;c v&#7909;</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -87,10 +86,6 @@
                                 </div>
                             </div>
                         </td>
-                        <td>
-                            <p class="table-mono text-slate-700">{{ channel.gmail }}</p>
-                            <p class="table-meta">{{ channel.total_renders }} job render</p>
-                        </td>
                         <td class="text-[12px] font-medium text-slate-700">{{ channel.manager_name }}</td>
                         <td>
                             <div class="max-w-[240px] whitespace-normal text-[12px] leading-5 text-slate-700">
@@ -99,7 +94,7 @@
                                     <span class="mb-1 mr-1 inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-medium text-slate-600">{{ username }}</span>
                                     {% endfor %}
                                 {% else %}
-                                    <span class="text-slate-400">Chưa có user</span>
+                                    <span class="text-slate-400">Ch&#432;a c&#243; user</span>
                                 {% endif %}
                             </div>
                         </td>
@@ -128,12 +123,12 @@
                                     {% endif %}
                                     <button type="submit" class="action-btn action-btn-amber">
                                         <i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>
-                                        Cập nhật
+                                        C&#7853;p nh&#7853;t
                                     </button>
                                 </form>
-                                <a href="/admin/channel/delete?channelId={{ channel.id }}{% if dashboard.filtered_bot %}&botId={{ dashboard.filtered_bot.id }}{% endif %}" class="action-btn action-btn-rose" data-bulk-delete-link onclick="return confirm('Xóa kênh này khỏi hệ thống?');">
+                                <a href="/admin/channel/delete?channelId={{ channel.id }}{% if dashboard.filtered_bot %}&botId={{ dashboard.filtered_bot.id }}{% endif %}" class="action-btn action-btn-rose" data-bulk-delete-link onclick="return confirm('X&#243;a k&#234;nh n&#224;y kh&#7887;i h&#7879; th&#7889;ng?');">
                                     <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
-                                    Xóa
+                                    X&#243;a
                                 </a>
                             </div>
                         </td>

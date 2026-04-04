@@ -132,27 +132,28 @@ def _prepare_video_ts(
     config: WorkerConfig,
     source_path: Path,
     destination_path: Path,
+    *,
+    total_duration_seconds: float | None = None,
+    on_progress: Callable[[float], None] | None = None,
 ) -> None:
     _run_ffmpeg(
         config.ffmpeg_bin,
         ["-y", "-i", str(source_path), "-c", "copy", str(destination_path)],
         working_dir=destination_path.parent,
+        total_duration_seconds=total_duration_seconds,
+        on_progress=on_progress,
     )
 
 
-def _prepare_audio_mp3(
-    config: WorkerConfig,
+def _prepare_audio_asset(
     source_path: Path,
     destination_path: Path,
+    *,
+    on_progress: Callable[[float], None] | None = None,
 ) -> None:
-    if source_path.suffix.lower() == ".mp3":
-        shutil.copy2(source_path, destination_path)
-        return
-    _run_ffmpeg(
-        config.ffmpeg_bin,
-        ["-y", "-i", str(source_path), "-vn", "-codec:a", "libmp3lame", "-q:a", "2", str(destination_path)],
-        working_dir=destination_path.parent,
-    )
+    shutil.copy2(source_path, destination_path)
+    if on_progress:
+        on_progress(1.0)
 
 
 def _cut_media_copy(
@@ -261,25 +262,77 @@ def render_job_assets(
     if len(video_dimensions) > 1:
         raise ValueError("Các video không cùng kích thước khung hình.")
 
-    if progress_callback:
-        progress_callback(3, "Đang chuẩn bị fast-path render")
+    last_progress = 0
+
+    def _emit_render_progress(progress: int, message: str) -> None:
+        nonlocal last_progress
+        if not progress_callback:
+            return
+        bounded = max(last_progress, min(progress, 99))
+        last_progress = bounded
+        progress_callback(bounded, message)
+
+    _emit_render_progress(5, "Dang chuan bi render output")
+
+    prepare_steps: list[tuple[str, str, Path]] = [
+        *[("video", slot, path) for slot, path in video_sources.items()],
+        *[("audio", slot, path) for slot, path in audio_sources.items()],
+    ]
+    total_prepare_steps = max(len(prepare_steps), 1)
+    prepare_start = 8
+    prepare_end = 68
+
+    def _prepare_progress_handler(step_index: int, slot: str) -> tuple[int, int, Callable[[float], None]]:
+        step_start = prepare_start + int(((prepare_end - prepare_start) * step_index) / total_prepare_steps)
+        step_end = prepare_start + int(((prepare_end - prepare_start) * (step_index + 1)) / total_prepare_steps)
+
+        def _on_progress(ratio: float) -> None:
+            local_ratio = max(0.0, min(1.0, ratio))
+            _emit_render_progress(
+                step_start + int(local_ratio * max(step_end - step_start, 1)),
+                f"Dang chuan hoa {slot}",
+            )
+
+        return step_start, step_end, _on_progress
 
     video_ts_names: dict[str, str] = {}
-    for slot, source_path in video_sources.items():
+    for step_index, (kind, slot, source_path) in enumerate(prepare_steps):
+        if kind != "video":
+            continue
         target_name = f"{slot}.ts"
-        _prepare_video_ts(config, source_path, render_dir / target_name)
+        step_start, step_end, on_progress = _prepare_progress_handler(step_index, slot)
+        _emit_render_progress(step_start, f"Dang chuan hoa {slot}")
+        _prepare_video_ts(
+            config,
+            source_path,
+            render_dir / target_name,
+            total_duration_seconds=probed[slot].duration_seconds,
+            on_progress=on_progress,
+        )
+        _emit_render_progress(step_end, f"Da chuan hoa xong {slot}")
         video_ts_names[slot] = target_name
 
-    audio_mp3_names: dict[str, str] = {}
+    audio_asset_names: dict[str, str] = {}
     if "audio_loop" in audio_sources:
-        for slot, source_path in audio_sources.items():
-            target_name = f"{slot}.mp3"
-            _prepare_audio_mp3(config, source_path, render_dir / target_name)
-            audio_mp3_names[slot] = target_name
+        for step_index, (kind, slot, source_path) in enumerate(prepare_steps):
+            if kind != "audio":
+                continue
+            target_name = f"{slot}{source_path.suffix.lower() or '.mp3'}"
+            step_start, step_end, on_progress = _prepare_progress_handler(step_index, slot)
+            _emit_render_progress(step_start, f"Dang chuan bi {slot}")
+            _prepare_audio_asset(
+                source_path,
+                render_dir / target_name,
+                on_progress=on_progress,
+            )
+            _emit_render_progress(step_end, f"Da san sang {slot}")
+            audio_asset_names[slot] = target_name
 
+    _emit_render_progress(70, "Dang lap sequence render")
     video_durations = {name: probe_media(config.ffprobe_bin, render_dir / name).duration_seconds for name in video_ts_names.values()}
-    audio_durations = {name: probe_media(config.ffprobe_bin, render_dir / name).duration_seconds for name in audio_mp3_names.values()}
+    audio_durations = {name: probe_media(config.ffprobe_bin, render_dir / name).duration_seconds for name in audio_asset_names.values()}
 
+    _emit_render_progress(73, "Dang lap sequence video")
     video_sequence = _build_sequence(
         intro_name=video_ts_names.get("intro"),
         loop_name=video_ts_names["video_loop"],
@@ -296,14 +349,16 @@ def render_job_assets(
     )
 
     audio_sequence: list[str] = []
-    if "audio_loop" in audio_mp3_names:
+    if "audio_loop" in audio_asset_names:
+        _emit_render_progress(77, "Dang lap sequence audio")
+        audio_loop_suffix = Path(audio_asset_names["audio_loop"]).suffix or ".mp3"
         audio_sequence = _build_sequence(
-            intro_name=audio_mp3_names.get("intro"),
-            loop_name=audio_mp3_names["audio_loop"],
-            outro_name=audio_mp3_names.get("outro"),
+            intro_name=audio_asset_names.get("intro"),
+            loop_name=audio_asset_names["audio_loop"],
+            outro_name=audio_asset_names.get("outro"),
             target_seconds=target_seconds,
             duration_lookup=audio_durations,
-            partial_name_factory=lambda index: f"audio-cut-{index}.mp3",
+            partial_name_factory=lambda index: f"audio-cut-{index}{audio_loop_suffix}",
             partial_builder=lambda source_name, target_name, duration: _cut_media_copy(
                 config,
                 render_dir / source_name,
@@ -323,8 +378,7 @@ def render_job_assets(
     output_name = f"{_safe_name(str(job.get('title') or job.get('id') or 'out'))}.mp4"
     output_path = render_dir / output_name
 
-    if progress_callback:
-        progress_callback(35, "Đang concat output")
+    _emit_render_progress(80, "Dang concat output")
 
     if audios_txt:
         ffmpeg_args = [
@@ -366,9 +420,7 @@ def render_job_assets(
         ]
 
     def _on_concat_progress(ratio: float) -> None:
-        if not progress_callback:
-            return
-        progress_callback(35 + int(ratio * 60), "Đang render output")
+        _emit_render_progress(80 + int(max(0.0, min(1.0, ratio)) * 18), "Dang render output")
 
     _run_ffmpeg(
         config.ffmpeg_bin,
@@ -378,7 +430,6 @@ def render_job_assets(
         on_progress=_on_concat_progress,
     )
 
-    if progress_callback:
-        progress_callback(98, "Đã render xong file output")
+    _emit_render_progress(98, "Da render xong file output")
 
     return RenderResult(output_path=output_path)

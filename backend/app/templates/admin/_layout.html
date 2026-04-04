@@ -140,6 +140,11 @@
         outline: none;
       }
 
+      .admin-select-shell[data-open="true"] .admin-select-button {
+        border-bottom-left-radius: 0;
+        border-bottom-right-radius: 0;
+      }
+
       .admin-select-button:disabled {
         background: rgb(248 250 252);
         color: rgb(100 116 139);
@@ -179,6 +184,17 @@
         border-radius: 10px;
         background: #ffffff;
         box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+        overflow: hidden;
+      }
+
+      .admin-select-shell[data-open="true"] .admin-select-menu[data-direction="down"] {
+        border-top-left-radius: 0;
+        border-top-right-radius: 0;
+      }
+
+      .admin-select-shell[data-open="true"] .admin-select-menu[data-direction="up"] {
+        border-bottom-left-radius: 0;
+        border-bottom-right-radius: 0;
       }
 
       .admin-select-shell[data-open="true"] .admin-select-menu {
@@ -896,6 +912,8 @@
         border: 1px solid rgb(226 232 240);
         padding: 14px 16px;
         font-size: 13px;
+        overflow: hidden;
+        transition: opacity 180ms ease, transform 180ms ease, max-height 180ms ease, margin 180ms ease, padding 180ms ease, border-width 180ms ease;
       }
 
       .notice-success {
@@ -908,6 +926,96 @@
         border-color: rgb(254 205 211);
         background: rgb(255 241 242);
         color: rgb(159 18 57);
+      }
+
+      .notice-close {
+        display: inline-flex;
+        width: 30px;
+        height: 30px;
+        flex-shrink: 0;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        color: inherit;
+        background: transparent;
+        opacity: 0.72;
+        transition: background-color 120ms ease, border-color 120ms ease, opacity 120ms ease;
+      }
+
+      .notice-close:hover {
+        opacity: 1;
+        background: rgba(255, 255, 255, 0.72);
+        border-color: rgba(226, 232, 240, 0.92);
+      }
+
+      .notice-close:focus-visible {
+        opacity: 1;
+        outline: none;
+        background: rgba(255, 255, 255, 0.82);
+        border-color: rgba(148, 163, 184, 0.9);
+      }
+
+      .transient-hide {
+        opacity: 0 !important;
+        transform: translateY(-4px) !important;
+        max-height: 0 !important;
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+        border-width: 0 !important;
+        pointer-events: none !important;
+      }
+
+      .admin-toast-stack {
+        position: fixed;
+        top: 84px;
+        right: 24px;
+        z-index: 140;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        width: min(360px, calc(100vw - 32px));
+        pointer-events: none;
+      }
+
+      .admin-toast {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        border: 1px solid rgb(226 232 240);
+        border-radius: 12px;
+        background: #ffffff;
+        padding: 12px 14px;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+        pointer-events: auto;
+        transition: opacity 180ms ease, transform 180ms ease, max-height 180ms ease, margin 180ms ease, padding 180ms ease, border-width 180ms ease;
+      }
+
+      .admin-toast[data-type="success"] {
+        border-color: rgb(167 243 208);
+        background: rgb(236 253 245);
+        color: rgb(6 95 70);
+      }
+
+      .admin-toast[data-type="error"] {
+        border-color: rgb(254 205 211);
+        background: rgb(255 241 242);
+        color: rgb(159 18 57);
+      }
+
+      .admin-toast[data-type="info"] {
+        border-color: rgb(199 210 254);
+        background: rgb(238 242 255);
+        color: rgb(67 56 202);
+      }
+
+      .admin-toast-copy {
+        min-width: 0;
+        flex: 1;
+        font-size: 13px;
+        font-weight: 500;
       }
 
       .field-label {
@@ -1121,19 +1229,22 @@
               selected.forEach(function (checkbox) {
                 const option = checkbox.closest('[data-manager-option]');
                 const name = option ? option.querySelector('.manager-picker-name') : null;
-                const tag = document.createElement('span');
-                tag.className = 'manager-picker-tag';
-                tag.innerHTML =
-                  '<span class="manager-picker-tag-label"></span>' +
-                  '<span class="manager-picker-tag-remove" role="button" tabindex="0" aria-label="Bỏ chọn">&times;</span>';
-                tag.querySelector('.manager-picker-tag-label').textContent = name ? name.textContent.trim() : checkbox.value;
-                bindInlineAction(tag.querySelector('.manager-picker-tag-remove'), function () {
-                  checkbox.checked = false;
-                  syncHiddenInputs();
-                  syncSummary();
-                  submitFilterForm();
-                });
-                tagsNode.appendChild(tag);
+              const tag = document.createElement('span');
+              tag.className = 'manager-picker-tag';
+              tag.innerHTML =
+                '<span class="manager-picker-tag-label"></span>' +
+                '<span class="manager-picker-tag-remove" role="button" tabindex="0" aria-label="Bỏ chọn"><i data-lucide="x" class="h-3.5 w-3.5" aria-hidden="true"></i></span>';
+              tag.querySelector('.manager-picker-tag-label').textContent = name ? name.textContent.trim() : checkbox.value;
+              bindInlineAction(tag.querySelector('.manager-picker-tag-remove'), function () {
+                checkbox.checked = false;
+                syncHiddenInputs();
+                syncSummary();
+                submitFilterForm();
+              });
+              tagsNode.appendChild(tag);
+              if (window.lucide) {
+                window.lucide.createIcons({ attrs: { 'stroke-width': 1.75 } });
+              }
               });
             }
 
@@ -1295,11 +1406,13 @@
             }
 
             if (openUpwards) {
+              menu.dataset.direction = 'up';
               menu.style.top = 'auto';
-              menu.style.bottom = Math.max(12, viewportHeight - buttonRect.top + 8) + 'px';
+              menu.style.bottom = Math.max(12, viewportHeight - buttonRect.top) + 'px';
             } else {
+              menu.dataset.direction = 'down';
               menu.style.bottom = 'auto';
-              menu.style.top = Math.max(12, buttonRect.bottom + 8) + 'px';
+              menu.style.top = Math.max(12, buttonRect.bottom - 1) + 'px';
             }
           }
 
@@ -1327,6 +1440,9 @@
               if (option.hidden) {
                 return;
               }
+              if (!option.value) {
+                return;
+              }
               const optionText = (option.textContent || '').trim();
               const haystack = String(option.dataset.searchText || optionText).toLowerCase();
               if (normalizedFilter && !haystack.includes(normalizedFilter)) {
@@ -1337,9 +1453,6 @@
               item.className = 'admin-select-option';
               if (option.selected) {
                 item.classList.add('is-active');
-              }
-              if (!option.value) {
-                item.classList.add('is-placeholder');
               }
               if (option.disabled) {
                 item.disabled = true;
@@ -1418,6 +1531,96 @@
           syncButton();
         });
       });
+
+      function clearTransientNoticeParams() {
+        const url = new URL(window.location.href);
+        let changed = false;
+        ['notice', 'notice_level'].forEach(function (key) {
+          if (url.searchParams.has(key)) {
+            url.searchParams.delete(key);
+            changed = true;
+          }
+        });
+        if (!changed) {
+          return;
+        }
+        const search = url.searchParams.toString();
+        const nextUrl = url.pathname + (search ? '?' + search : '') + url.hash;
+        window.history.replaceState({}, document.title, nextUrl);
+      }
+
+      function initTransientNotices(root) {
+        (root || document).querySelectorAll('[data-transient-notice]').forEach(function (notice) {
+          if (notice.dataset.noticeReady === 'true') {
+            return;
+          }
+
+          notice.dataset.noticeReady = 'true';
+          let dismissed = false;
+
+          function dismiss() {
+            if (dismissed) {
+              return;
+            }
+            dismissed = true;
+            notice.classList.add('transient-hide');
+            window.setTimeout(function () {
+              notice.remove();
+              if (notice.getAttribute('data-server-notice') === 'true') {
+                clearTransientNoticeParams();
+              }
+            }, 220);
+          }
+
+          const closeButton = notice.querySelector('[data-notice-close]');
+          if (closeButton) {
+            closeButton.addEventListener('click', dismiss);
+          }
+
+          const autoHideMs = Number(notice.getAttribute('data-notice-autohide') || 5000);
+          if (autoHideMs > 0) {
+            window.setTimeout(dismiss, autoHideMs);
+          }
+        });
+      }
+
+      function ensureAdminToastStack() {
+        let stack = document.getElementById('adminToastStack');
+        if (stack) {
+          return stack;
+        }
+
+        stack = document.createElement('div');
+        stack.id = 'adminToastStack';
+        stack.className = 'admin-toast-stack';
+        stack.setAttribute('aria-live', 'polite');
+        stack.setAttribute('aria-atomic', 'false');
+        document.body.appendChild(stack);
+        return stack;
+      }
+
+      window.showAdminToast = function (message, type) {
+        const stack = ensureAdminToastStack();
+        const toast = document.createElement('div');
+        toast.className = 'admin-toast';
+        toast.dataset.type = type || 'info';
+        toast.setAttribute('data-transient-notice', '');
+        toast.setAttribute('data-notice-autohide', '5000');
+        toast.innerHTML =
+          '<div class="admin-toast-copy"></div>' +
+          '<button type="button" class="notice-close" data-notice-close aria-label="Đóng thông báo"><i data-lucide="x" class="h-4 w-4" aria-hidden="true"></i></button>';
+        toast.querySelector('.admin-toast-copy').textContent = String(message || '');
+        stack.appendChild(toast);
+        if (window.lucide) {
+          window.lucide.createIcons({ attrs: { 'stroke-width': 1.75 } });
+        }
+        initTransientNotices(stack);
+      };
+
+      initTransientNotices(document);
+      if (!document.querySelector('[data-server-notice="true"]')) {
+        clearTransientNoticeParams();
+      }
 
       function reloadPage() {
         location.reload();

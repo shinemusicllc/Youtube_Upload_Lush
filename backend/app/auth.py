@@ -124,7 +124,7 @@ def require_app_access(request: Request, *roles: str) -> AppSessionUser:
     session_user = getattr(request.state, "app_user", None) or get_app_session_user(request)
     if not isinstance(session_user, AppSessionUser):
         raise HTTPException(status_code=401, detail="User session required.")
-    allowed_roles = set(roles or ("user",))
+    allowed_roles = set(roles or ("user", "manager", "admin"))
     if session_user.role not in allowed_roles:
         raise HTTPException(status_code=403, detail="Khong du quyen truy cap workspace.")
     return session_user

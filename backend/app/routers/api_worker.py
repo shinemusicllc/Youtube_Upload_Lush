@@ -4,6 +4,7 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from ..schemas import (
+    WorkerBrowserProfileCleanupAckPayload,
     WorkerBrowserSessionSyncPayload,
     WorkerAuthPayload,
     WorkerHeartbeatPayload,
@@ -50,7 +51,27 @@ async def claim_worker_job(payload: WorkerAuthPayload):
 async def poll_worker_browser_sessions(payload: WorkerAuthPayload):
     try:
         sessions = store.get_worker_browser_sessions(payload.worker_id, payload.shared_secret)
-        return {"ok": True, "sessions": [session.model_dump(mode="json") for session in sessions]}
+        cleanup_profiles = store.get_worker_browser_profile_cleanup_tasks(payload.worker_id, payload.shared_secret)
+        return {
+            "ok": True,
+            "sessions": [session.model_dump(mode="json") for session in sessions],
+            "cleanup_profiles": cleanup_profiles,
+        }
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Worker chÆ°a Ä‘Æ°á»£c Ä‘Äƒng kÃ½.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.post("/workers/browser-profiles/cleanup-ack")
+async def ack_worker_browser_profile_cleanup(payload: WorkerBrowserProfileCleanupAckPayload):
+    try:
+        cleared = store.ack_worker_browser_profile_cleanup_tasks(
+            worker_id=payload.worker_id,
+            shared_secret=payload.shared_secret,
+            profile_keys=payload.profile_keys,
+        )
+        return {"ok": True, "cleared": cleared}
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Worker chÆ°a Ä‘Æ°á»£c Ä‘Äƒng kÃ½.") from exc
     except ValueError as exc:

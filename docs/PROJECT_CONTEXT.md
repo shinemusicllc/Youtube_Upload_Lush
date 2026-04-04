@@ -3,6 +3,14 @@
 ## Overview
 Du an dang duoc rebuild lai theo huong `FastAPI + Python backend` va UI HTML/CSS co san, thay vi tiep tuc frontend React/Vite cu.
 
+## Memory Transition
+- Tu 2026-04-02, bootstrap mac dinh cho `Project Task` la:
+  - `AGENTS.md`
+  - `docs/PROJECT_BRIEF.md`
+  - `docs/MEMORY_INDEX.md`
+- `docs/PROJECT_CONTEXT.md` duoc giu lai nhu extended context/compatibility layer, khong con la file bat buoc phai doc full truoc moi task.
+- `docs/DECISIONS.md` va `docs/WORKLOG.md` van la ledger lich su, nhung task moi khong nen doc full mac dinh; uu tien `docs/DECISIONS_INDEX.md` va `docs/modules/*.md`.
+
 ## Current Reset State
 - Root workspace da bi don sach phan lon frontend/backend prototype cu va repo .NET tham chieu da duoc loai bo khoi source chinh.
 - Hien co:
@@ -38,7 +46,8 @@ Du an dang duoc rebuild lai theo huong `FastAPI + Python backend` va UI HTML/CSS
 - `/`, `/app`, `/admin`, `/api/health` da tra duoc response local.
 - OAuth Google da co flow that: start URL, validate `state`, callback, `code -> token`, lay `userinfo + channels.list(mine=true)` va cap nhat kenh vao SQLite bootstrap.
 - Browser session onboarding da duoc doi tu `control plane launch local` sang `worker-owned session`: control plane tao session request theo `worker_id` duoc gan cho user, worker agent poll/sync session, UI mo noVNC URL cua chinh worker, va backend confirm kenh bang URL Chromium do worker bao ve.
-- Rule hien tai cho workspace user: `1 user -> 1 assigned worker/VPS` tai mot thoi diem. Kenh moi, browser session, render job va upload deu phai bam theo VPS do; neu manager doi VPS thi user can reconnect kenh tren VPS moi thay vi copy browser profile giua cac may.
+- Rule hien tai cho workspace user: `1 user -> nhieu assigned worker/VPS` la hop le. Moi channel, browser session, render job va upload van phai bam theo dung VPS da gan/da chon; khi user bam `+ Them Kenh`, neu co tu 2 VPS tro len thi dashboard se mo popup chon VPS truoc khi tao browser session + noVNC tren may do.
+- Admin assignment workspace da duoc nang len cung model `1 user -> nhieu assigned worker/VPS`: man `Cấp phát BOT` luu toan bo `worker_ids` cho user, panel phai nap day du danh sach VPS hien co cua user, va cac man chi tiet VPS cua user khong con chi doc worker dau tien.
 - Tren host Ubuntu `82.197.71.6`, browser runtime da duoc verify tao/close session that; ban fix `--no-sandbox --disable-setuid-sandbox` duoc giu lai cho moi worker VPS neu worker service chay bang `root`.
 - Local upload da duoc nang cap len huong `resumable chunk upload`: backend co upload session API, frontend upload chunk truoc roi moi tao job, va fallback direct upload da doi sang stream-to-disk.
 - Da co worker control scaffold toi thieu: `POST /api/workers/register`, `POST /api/workers/heartbeat`, `POST /api/workers/claim`, `POST /api/workers/jobs/{job_id}/progress|complete|fail`, `workers/agent/main.py`, va bo infra `Dockerfile / docker-compose / Caddyfile / systemd`.

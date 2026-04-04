@@ -13,7 +13,7 @@
                 </div>
                 <div>
                     <h2 class="section-title">Danh sách người dùng</h2>
-                    <p class="section-note">Manager filter, KPI strip, reset password, edit manager và gán BOT theo user.</p>
+                    <p class="section-note">Manager filter, cập nhật user và gán BOT theo user.</p>
                 </div>
             </div>
             <form method="get" action="/admin/user/index" class="grid gap-3 lg:min-w-[560px] lg:grid-cols-[1fr_auto]" data-manager-auto-submit="true">
@@ -58,9 +58,7 @@
                                     {{ user.avatar_initials }}
                                 </div>
                                 <div>
-                                    <p class="text-[13px] font-semibold text-slate-900">{{ user.display_name }}</p>
-                                    <p class="table-meta table-mono">{{ user.username }}</p>
-                                    <p class="table-meta">{{ user.telegram or 'Chưa có Telegram' }}</p>
+                                    <p class="text-[13px] font-semibold text-slate-900">{{ user.username }}</p>
                                 </div>
                             </div>
                         </td>
@@ -84,30 +82,18 @@
                                     Kênh
                                 </a>
                                 <a
-                                    href="{% if user.role == 'manager' %}/admin/bot/assignment?manager_ids={{ user.id }}{% elif user.role == 'user' %}/admin/bot/assignment?userId={{ user.id }}{% else %}/admin/bot/assignment{% endif %}"
+                                    href="{% if user.role == 'manager' %}/admin/ManagerBOT/index?manager_ids={{ user.id }}{% elif user.role == 'user' %}/admin/ManagerBOT/index?userId={{ user.id }}{% else %}/admin/ManagerBOT/index{% endif %}"
                                     class="action-btn action-btn-primary"
                                 >
                                     <i data-lucide="server" class="h-3.5 w-3.5"></i>
-                                    {% if user.role == 'manager' %}Gán BOT{% else %}BOT{% endif %}
+                                    BOT
                                 </a>
-                                <button
-                                    type="button"
-                                    class="action-btn action-btn-amber"
-                                    data-dialog-open="reset-password-dialog"
-                                    data-user-id="{{ user.id }}"
-                                    data-username="{{ user.username }}"
-                                >
-                                    <i data-lucide="key-round" class="h-3.5 w-3.5"></i>
-                                    Reset pass
-                                </button>
                                 <button
                                     type="button"
                                     class="action-btn action-btn-emerald"
                                     data-dialog-open="edit-user-dialog"
                                     data-user-id="{{ user.id }}"
                                     data-username="{{ user.username }}"
-                                    data-display-name="{{ user.display_name }}"
-                                    data-telegram="{{ user.telegram }}"
                                     data-manager-id="{{ user.manager_id }}"
                                     data-role="{{ user.role }}"
                                     data-can-edit-username="{{ 'true' if dashboard.current_user.role == 'admin' or (dashboard.current_user.role == 'manager' and user.role == 'user') else 'false' }}"
@@ -143,7 +129,7 @@
         <form method="post" action="/admin/user/updatetelegram">
             <div class="border-b border-slate-200 px-5 py-4">
                 <h3 class="section-title">Cập nhật user</h3>
-                <p class="section-note">Sửa tên đăng nhập, tên hiển thị, Telegram và manager của user.</p>
+                <p class="section-note">Sửa tên đăng nhập, pass và manager của user.</p>
             </div>
             <div class="space-y-4 px-5 py-5">
                 <input type="hidden" name="UserId" id="edit-user-id">
@@ -153,52 +139,33 @@
                     <p id="edit-username-note" class="mt-2 text-[11px] text-slate-500">Tên đăng nhập dùng cho đăng nhập hệ thống.</p>
                 </div>
                 <div>
-                    <label class="field-label" for="edit-display-name">Tên hiển thị</label>
-                    <input class="toolbar-input" id="edit-display-name" name="DisplayName" required>
-                </div>
-                <div>
-                    <label class="field-label" for="edit-telegram">Telegram</label>
-                    <input class="toolbar-input" id="edit-telegram" name="Telegram" placeholder="@username">
+                    <label class="field-label" for="edit-password">Pass</label>
+                    <input class="toolbar-input" id="edit-password" name="Password" type="password" value="" placeholder="&#272;&#7875; tr&#7889;ng n&#7871;u kh&#244;ng &#273;&#7893;i" autocomplete="new-password" autocapitalize="off" spellcheck="false">
                 </div>
                 <div id="edit-manager-wrap">
                     <label class="field-label" for="edit-manager-id">Manager</label>
+                    {% if dashboard.current_user.role == 'manager' and dashboard.manager_form_options %}
+                    <input type="hidden" name="UserIdManager" value="{{ dashboard.manager_form_options[0].id }}">
+                    <input
+                        class="toolbar-input bg-slate-50 text-slate-500"
+                        id="edit-manager-display"
+                        value="{{ dashboard.manager_form_options[0].label }}"
+                        readonly
+                        tabindex="-1"
+                    >
+                    {% else %}
                     <select class="toolbar-select" id="edit-manager-id" name="UserIdManager">
                         <option value="">-- Chọn manager --</option>
                         {% for manager in dashboard.manager_form_options %}
                         <option value="{{ manager.id }}">{{ manager.label }}</option>
                         {% endfor %}
                     </select>
+                    {% endif %}
                 </div>
             </div>
             <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
                 <button type="button" class="action-btn action-btn-slate" data-dialog-close>Đóng</button>
                 <button type="submit" class="action-btn action-btn-emerald">Lưu thay đổi</button>
-            </div>
-        </form>
-    </div>
-</dialog>
-
-<dialog id="reset-password-dialog" class="admin-dialog">
-    <div class="panel">
-        <form method="post" action="/admin/user/resetpassword">
-            <div class="border-b border-slate-200 px-5 py-4">
-                <h3 class="section-title">Reset mật khẩu</h3>
-                <p class="section-note">Mật khẩu mới sẽ áp dụng ngay cho tài khoản được chọn.</p>
-            </div>
-            <div class="space-y-4 px-5 py-5">
-                <input type="hidden" name="userId" id="reset-user-id">
-                <div>
-                    <label class="field-label">UserName</label>
-                    <input class="toolbar-input bg-slate-50" id="reset-username" readonly>
-                </div>
-                <div>
-                    <label class="field-label" for="reset-password-value">Password mới</label>
-                    <input class="toolbar-input" id="reset-password-value" name="Password" type="password" required>
-                </div>
-            </div>
-            <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
-                <button type="button" class="action-btn action-btn-slate" data-dialog-close>Đóng</button>
-                <button type="submit" class="action-btn action-btn-amber">Reset password</button>
             </div>
         </form>
     </div>
@@ -227,22 +194,26 @@
 {% block page_scripts %}
 <script>
   document.addEventListener('DOMContentLoaded', function () {
-    const editDialog = document.getElementById('edit-user-dialog');
-    const resetDialog = document.getElementById('reset-password-dialog');
-    const deleteDialog = document.getElementById('delete-user-dialog');
     const editManagerWrap = document.getElementById('edit-manager-wrap');
     const editUsernameInput = document.getElementById('edit-username');
     const editUsernameNote = document.getElementById('edit-username-note');
+    const editPasswordInput = document.getElementById('edit-password');
+    const managerSelect = document.getElementById('edit-manager-id');
+    const managerDisplay = document.getElementById('edit-manager-display');
+    const managerLocked = {{ 'true' if dashboard.current_user.role == 'manager' else 'false' }};
 
     document.querySelectorAll('[data-dialog-open="edit-user-dialog"]').forEach(function (button) {
       button.addEventListener('click', function () {
         document.getElementById('edit-user-id').value = button.dataset.userId || '';
         editUsernameInput.value = button.dataset.username || '';
-        document.getElementById('edit-display-name').value = button.dataset.displayName || '';
-        document.getElementById('edit-telegram').value = button.dataset.telegram || '';
-        const managerSelect = document.getElementById('edit-manager-id');
-        managerSelect.value = button.dataset.managerId || '';
-        managerSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        editPasswordInput.value = '';
+        if (managerSelect && managerSelect.tagName === 'SELECT' && !managerLocked) {
+          managerSelect.value = button.dataset.managerId || managerSelect.value || '';
+          managerSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        if (managerDisplay && managerLocked) {
+          managerDisplay.value = managerDisplay.value || '';
+        }
         const role = button.dataset.role || 'user';
         const canEditUsername = button.dataset.canEditUsername === 'true';
         editUsernameInput.readOnly = !canEditUsername;
@@ -252,13 +223,9 @@
           ? 'Tên đăng nhập dùng cho đăng nhập hệ thống.'
           : 'Username của tài khoản này chỉ admin mới được phép đổi.';
         editManagerWrap.style.display = role === 'user' ? 'block' : 'none';
-      });
-    });
-
-    document.querySelectorAll('[data-dialog-open="reset-password-dialog"]').forEach(function (button) {
-      button.addEventListener('click', function () {
-        document.getElementById('reset-user-id').value = button.dataset.userId || '';
-        document.getElementById('reset-username').value = button.dataset.username || '';
+        if (managerSelect && managerSelect.tagName === 'SELECT') {
+          managerSelect.disabled = managerLocked || role !== 'user';
+        }
       });
     });
 

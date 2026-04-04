@@ -14,13 +14,12 @@ router = APIRouter(tags=["admin"])
 class AdminUserCreatePayload(BaseModel):
     username: str
     password: str
-    display_name: str | None = None
     manager_id: str | None = None
 
 
 class AdminUserUpdatePayload(BaseModel):
-    display_name: str
-    telegram: str | None = None
+    username: str
+    password: str | None = None
     manager_id: str | None = None
 
 
@@ -41,14 +40,9 @@ class AdminUserBotUpdatePayload(BaseModel):
 
 class AdminBotUpdatePayload(BaseModel):
     name: str
+    group: str | None = None
     manager_id: str | None = None
-    user_id: str | None = None
-
-
-class AdminBotAssignPayload(BaseModel):
-    worker_ids: list[str]
-    manager_id: str | None = None
-    user_id: str | None = None
+    assigned_user_id: str | None = None
 
 
 class AdminBotThreadPayload(BaseModel):
@@ -90,6 +84,50 @@ def _enforce_user_scope(request: Request, user_id: str) -> None:
         raise HTTPException(status_code=403, detail="Khong du quyen thao tac user khac manager.")
 
 
+def _enforce_worker_scope(request: Request, worker_id: str) -> None:
+    current_user = require_admin_access(request)
+    if current_user.role != "manager":
+        return
+    worker = store._find_worker(worker_id)
+    if worker.manager_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Khong du quyen thao tac BOT ngoai scope manager.")
+
+
+def _enforce_channel_scope(request: Request, channel_id: str) -> None:
+    current_user = require_admin_access(request)
+    if current_user.role != "manager":
+        return
+    channel = store._find_channel(channel_id)
+    if store._resolve_channel_manager_id(channel) != current_user.id:
+        raise HTTPException(status_code=403, detail="Khong du quyen thao tac kenh ngoai scope manager.")
+
+
+def _enforce_job_scope(request: Request, job_id: str) -> None:
+    current_user = require_admin_access(request)
+    if current_user.role != "manager":
+        return
+    job = store._find_job(job_id)
+    if store._resolve_job_manager_id(job) != current_user.id:
+        raise HTTPException(status_code=403, detail="Khong du quyen thao tac job ngoai scope manager.")
+
+
+def _enforce_user_bot_mapping_scope(request: Request, user_id: str, assignment_id: int) -> None:
+    _enforce_user_scope(request, user_id)
+    mapping = next((item for item in store.user_worker_links if int(item.get("id") or 0) == assignment_id), None)
+    if mapping is None or str(mapping.get("user_id") or "").strip() != user_id:
+        raise HTTPException(status_code=403, detail="Khong du quyen thao tac mapping BOT nay.")
+
+
+def _scoped_job_ids(request: Request, *, channel_id: str | None = None) -> list[str]:
+    current_user = require_admin_access(request)
+    jobs = list(store.jobs)
+    if current_user.role == "manager":
+        jobs = [job for job in jobs if store._resolve_job_manager_id(job) == current_user.id]
+    if channel_id:
+        jobs = [job for job in jobs if job.channel_id == channel_id]
+    return [job.id for job in jobs]
+
+
 @router.get("/admin/session")
 async def get_admin_session(request: Request):
     return {"current_user": _current_user_payload(request)}
@@ -103,20 +141,61 @@ async def update_admin_manager_filter(request: Request, payload: ManagerFilterPa
 
 @router.get("/admin/dashboard")
 async def get_admin_dashboard(request: Request):
-    _manager_ids_from_request(request, [])
-    return store.get_admin_dashboard()
+    current_user = require_admin_access(request)
+    selected_manager_ids = _manager_ids_from_request(request, [])
+    effective_manager_ids = store._effective_manager_scope_ids(
+        viewer_role=current_user.role,
+        viewer_id=current_user.id,
+        manager_ids=selected_manager_ids,
+    )
+    scoped_users = store._build_user_rows(
+        effective_manager_ids,
+        viewer_role=current_user.role,
+        viewer_id=current_user.id,
+    )
+    workers = [
+        row
+        for row in store.get_admin_bot_index_context(
+            manager_ids=effective_manager_ids,
+            viewer_role=current_user.role,
+            viewer_id=current_user.id,
+        ).get("workers", [])
+    ]
+    channels = store.get_admin_channel_index_context(
+        manager_ids=effective_manager_ids,
+        viewer_role=current_user.role,
+        viewer_id=current_user.id,
+    ).get("channels", [])
+    renders = store.get_admin_render_index_context(
+        manager_ids=effective_manager_ids,
+        viewer_role=current_user.role,
+        viewer_id=current_user.id,
+    ).get("renders", [])
+    return {
+        "summary": store._scoped_admin_summary(
+            viewer_role=current_user.role,
+            viewer_id=current_user.id,
+            manager_ids=effective_manager_ids,
+        ),
+        "users": scoped_users,
+        "workers": workers,
+        "channels": channels,
+        "jobs": renders,
+    }
 
 
 @router.get("/admin/users")
 async def get_admin_users(request: Request, manager_ids: list[str] | None = None):
     selected_manager_ids = _manager_ids_from_request(request, manager_ids)
-    return {"items": store._build_user_rows(selected_manager_ids)}
+    current_user = require_admin_access(request)
+    return {"items": store._build_user_rows(selected_manager_ids, viewer_role=current_user.role, viewer_id=current_user.id)}
 
 
 @router.get("/admin/users/{user_id}")
 async def get_admin_user_detail(request: Request, user_id: str):
     _enforce_user_scope(request, user_id)
-    return store.get_admin_user_edit_context(user_id=user_id)
+    current_user = require_admin_access(request)
+    return store.get_admin_user_edit_context(user_id=user_id, viewer_role=current_user.role, viewer_id=current_user.id)
 
 
 @router.post("/admin/users")
@@ -125,7 +204,7 @@ async def create_admin_user(request: Request, payload: AdminUserCreatePayload):
     manager_id = current_user.id if current_user.role == "manager" else payload.manager_id
     result = store.create_admin_user(
         username=payload.username,
-        display_name=(payload.display_name or payload.username),
+        display_name=payload.username,
         password=payload.password,
         role="user",
         manager_id=manager_id,
@@ -142,9 +221,10 @@ async def update_admin_user(request: Request, user_id: str, payload: AdminUserUp
     manager_id = current_user.id if current_user.role == "manager" else payload.manager_id
     store.update_admin_user(
         user_id=user_id,
-        display_name=payload.display_name,
-        telegram=payload.telegram,
+        username=payload.username,
+        password=payload.password,
         manager_id=manager_id,
+        actor_role=current_user.role,
         updated_by=current_user.username,
     )
     return {"ok": True}
@@ -168,31 +248,30 @@ async def delete_admin_user(request: Request, user_id: str):
 @router.get("/admin/users/{user_id}/bots")
 async def get_admin_user_bots(request: Request, user_id: str):
     _enforce_user_scope(request, user_id)
-    return store.get_admin_user_bot_context(user_id=user_id)
+    current_user = require_admin_access(request)
+    return store.get_admin_user_bot_context(
+        user_id=user_id,
+        viewer_role=current_user.role,
+        viewer_id=current_user.id,
+    )
 
 
 @router.post("/admin/users/{user_id}/bots")
 async def create_admin_user_bot(request: Request, user_id: str, payload: AdminUserBotPayload):
-    _enforce_user_scope(request, user_id)
-    store.add_user_bot(user_id, payload.worker_id, payload.threads, bot_type=payload.bot_type)
-    store._save_state()
-    return {"ok": True}
+    require_admin_access(request)
+    raise HTTPException(status_code=410, detail="Gán BOT đã được gộp vào Danh sách BOT.")
 
 
 @router.put("/admin/users/{user_id}/bots/{assignment_id}")
 async def update_admin_user_bot(request: Request, user_id: str, assignment_id: int, payload: AdminUserBotUpdatePayload):
-    _enforce_user_scope(request, user_id)
-    store.update_user_bot(assignment_id, payload.threads, bot_type=payload.bot_type)
-    store._save_state()
-    return {"ok": True}
+    require_admin_access(request)
+    raise HTTPException(status_code=410, detail="Sửa mapping BOT đã được gộp vào Danh sách BOT.")
 
 
 @router.delete("/admin/users/{user_id}/bots/{assignment_id}")
 async def delete_admin_user_bot(request: Request, user_id: str, assignment_id: int):
-    _enforce_user_scope(request, user_id)
-    store.delete_user_bot(assignment_id)
-    store._save_state()
-    return {"ok": True}
+    require_admin_access(request)
+    raise HTTPException(status_code=410, detail="Xóa mapping BOT đã được gộp vào Danh sách BOT.")
 
 
 @router.get("/admin/roles/managers")
@@ -258,41 +337,36 @@ async def get_admin_workers_legacy(request: Request, manager_ids: list[str] | No
 @router.put("/admin/bots/{bot_id}")
 async def update_admin_bot(request: Request, bot_id: str, payload: AdminBotUpdatePayload):
     current_user = require_admin_access(request)
+    _enforce_worker_scope(request, bot_id)
     manager_id = current_user.id if current_user.role == "manager" else payload.manager_id
-    store.update_bot(bot_id, payload.name, manager_id, assigned_user_id=payload.user_id, updated_by=current_user.username)
+    store.update_bot(
+        bot_id,
+        payload.name,
+        None,
+        manager_id,
+        assigned_user_id=payload.assigned_user_id,
+        viewer_role=current_user.role,
+        viewer_id=current_user.id,
+        updated_by=current_user.username,
+    )
     return {"ok": True}
 
 
 @router.post("/admin/bots/assign")
-async def assign_admin_bots(request: Request, payload: AdminBotAssignPayload):
-    current_user = require_admin_access(request)
-    manager_id = current_user.id if current_user.role == "manager" else payload.manager_id
-    if payload.user_id:
-        _enforce_user_scope(request, payload.user_id)
-    assigned_count = store.assign_available_bots(
-        payload.worker_ids,
-        manager_id=manager_id,
-        assigned_user_id=payload.user_id,
-        updated_by=current_user.username,
-    )
-    return {"ok": True, "assigned_count": assigned_count}
+async def assign_admin_bots(request: Request):
+    require_admin_access(request)
+    raise HTTPException(status_code=410, detail="Cấp phát BOT đã được gộp vào Danh sách BOT.")
 
 
 @router.post("/admin/bots/{bot_id}/threads")
 async def update_admin_bot_threads(request: Request, bot_id: str, payload: AdminBotThreadPayload):
     require_admin_access(request)
-    store.update_bot_thread(bot_id, 1)
-    return {
-        "ok": True,
-        "thread": 1,
-        "locked": True,
-        "message": "Luồng BOT đang được khóa cố định 1 job active / VPS.",
-    }
+    raise HTTPException(status_code=410, detail="Thiết lập luồng BOT cũ đã được bỏ khỏi UI điều phối hiện tại.")
 
 
 @router.delete("/admin/bots/{bot_id}")
 async def delete_admin_bot(request: Request, bot_id: str):
-    require_admin_access(request)
+    _enforce_worker_scope(request, bot_id)
     store.delete_bot(bot_id)
     return {"ok": True}
 
@@ -300,13 +374,23 @@ async def delete_admin_bot(request: Request, bot_id: str):
 @router.get("/admin/bots/of-user/{user_id}")
 async def get_admin_bots_of_user(request: Request, user_id: str):
     _enforce_user_scope(request, user_id)
-    return store.get_admin_bots_of_user_context(user_id=user_id)
+    current_user = require_admin_access(request)
+    return store.get_admin_bots_of_user_context(
+        user_id=user_id,
+        viewer_role=current_user.role,
+        viewer_id=current_user.id,
+    )
 
 
 @router.get("/admin/bots/{bot_id}/users")
 async def get_admin_users_of_bot(request: Request, bot_id: str):
-    require_admin_access(request)
-    return store.get_admin_users_of_bot_context(worker_id=bot_id)
+    _enforce_worker_scope(request, bot_id)
+    current_user = require_admin_access(request)
+    return store.get_admin_users_of_bot_context(
+        worker_id=bot_id,
+        viewer_role=current_user.role,
+        viewer_id=current_user.id,
+    )
 
 
 @router.get("/admin/channels")
@@ -317,25 +401,52 @@ async def get_admin_channels(
     bot_id: str | None = None,
 ):
     selected_manager_ids = _manager_ids_from_request(request, manager_ids)
-    return store.get_admin_channel_index_context(manager_ids=selected_manager_ids, user_id=user_id, bot_id=bot_id)
+    current_user = require_admin_access(request)
+    if user_id:
+        _enforce_user_scope(request, user_id)
+    if bot_id:
+        _enforce_worker_scope(request, bot_id)
+    return store.get_admin_channel_index_context(
+        manager_ids=selected_manager_ids,
+        user_id=user_id,
+        bot_id=bot_id,
+        viewer_role=current_user.role,
+        viewer_id=current_user.id,
+    )
 
 
 @router.get("/admin/channels/of-user/{user_id}")
 async def get_admin_channels_of_user(request: Request, user_id: str):
     _enforce_user_scope(request, user_id)
-    return store.get_admin_channels_of_user_context(user_id=user_id)
+    current_user = require_admin_access(request)
+    return store.get_admin_channels_of_user_context(
+        user_id=user_id,
+        viewer_role=current_user.role,
+        viewer_id=current_user.id,
+    )
 
 
 @router.get("/admin/channels/of-bot/{bot_id}")
 async def get_admin_channels_of_bot(request: Request, bot_id: str):
-    require_admin_access(request)
-    return store.get_admin_channel_index_context(bot_id=bot_id)
+    current_user = require_admin_access(request)
+    _enforce_worker_scope(request, bot_id)
+    return store.get_admin_channel_index_context(
+        bot_id=bot_id,
+        manager_ids=[current_user.id] if current_user.role == "manager" else None,
+        viewer_role=current_user.role,
+        viewer_id=current_user.id,
+    )
 
 
 @router.get("/admin/channels/{channel_id}/users")
 async def get_admin_channel_users(request: Request, channel_id: str):
-    require_admin_access(request)
-    return store.get_admin_users_of_channel_context(channel_id=channel_id)
+    current_user = require_admin_access(request)
+    _enforce_channel_scope(request, channel_id)
+    return store.get_admin_users_of_channel_context(
+        channel_id=channel_id,
+        viewer_role=current_user.role,
+        viewer_id=current_user.id,
+    )
 
 
 @router.post("/admin/channels/{channel_id}/users")
@@ -343,6 +454,7 @@ async def update_admin_channel_user(request: Request, channel_id: str, payload: 
     user_id = str(payload.get("user_id") or "").strip()
     if not user_id:
         raise HTTPException(status_code=422, detail="user_id la bat buoc.")
+    _enforce_channel_scope(request, channel_id)
     _enforce_user_scope(request, user_id)
     action = store.update_user_channel(user_id, channel_id)
     return {"ok": True, "action": action}
@@ -350,14 +462,14 @@ async def update_admin_channel_user(request: Request, channel_id: str, payload: 
 
 @router.patch("/admin/channels/{channel_id}/profile")
 async def update_admin_channel_profile(request: Request, channel_id: str):
-    require_admin_access(request)
+    _enforce_channel_scope(request, channel_id)
     store.update_channel_profile(channel_id)
     return {"ok": True}
 
 
 @router.delete("/admin/channels/{channel_id}")
 async def delete_admin_channel(request: Request, channel_id: str):
-    require_admin_access(request)
+    _enforce_channel_scope(request, channel_id)
     store.delete_channel(channel_id)
     return {"ok": True}
 
@@ -365,7 +477,12 @@ async def delete_admin_channel(request: Request, channel_id: str):
 @router.get("/admin/renders")
 async def get_admin_renders(request: Request, manager_ids: list[str] | None = None):
     selected_manager_ids = _manager_ids_from_request(request, manager_ids)
-    return store.get_admin_render_index_context(manager_ids=selected_manager_ids)
+    current_user = require_admin_access(request)
+    return store.get_admin_render_index_context(
+        manager_ids=selected_manager_ids,
+        viewer_role=current_user.role,
+        viewer_id=current_user.id,
+    )
 
 
 @router.get("/admin/jobs")
@@ -376,24 +493,42 @@ async def get_admin_jobs_legacy(request: Request, manager_ids: list[str] | None 
 @router.get("/admin/renders/of-channel/{channel_id}")
 async def get_admin_renders_of_channel(request: Request, channel_id: str, manager_ids: list[str] | None = None):
     selected_manager_ids = _manager_ids_from_request(request, manager_ids)
-    return store.get_admin_render_index_context(manager_ids=selected_manager_ids, channel_id=channel_id)
+    current_user = require_admin_access(request)
+    _enforce_channel_scope(request, channel_id)
+    return store.get_admin_render_index_context(
+        manager_ids=selected_manager_ids,
+        channel_id=channel_id,
+        viewer_role=current_user.role,
+        viewer_id=current_user.id,
+    )
 
 
 @router.get("/admin/renders/{job_id}")
 async def get_admin_render_detail(request: Request, job_id: str):
-    require_admin_access(request)
-    return store.get_admin_render_detail_context(job_id=job_id)
+    current_user = require_admin_access(request)
+    _enforce_job_scope(request, job_id)
+    return store.get_admin_render_detail_context(
+        job_id=job_id,
+        viewer_role=current_user.role,
+        viewer_id=current_user.id,
+    )
 
 
 @router.delete("/admin/renders/{job_id}")
 async def delete_admin_render_job(request: Request, job_id: str):
-    require_admin_access(request)
+    _enforce_job_scope(request, job_id)
     store.delete_job(job_id)
     return {"ok": True}
 
 
 @router.delete("/admin/renders")
-async def delete_admin_renders(request: Request):
+async def delete_admin_renders(request: Request, channel_id: str | None = None):
     current_user = require_admin_access(request)
-    store.delete_all_jobs(deleted_by=current_user.username)
+    if channel_id:
+        _enforce_channel_scope(request, channel_id)
+    scoped_job_ids = _scoped_job_ids(request, channel_id=channel_id)
+    if current_user.role == "admin" and not channel_id:
+        store.delete_all_jobs(deleted_by=current_user.username)
+    else:
+        store.delete_jobs(scoped_job_ids)
     return {"ok": True}

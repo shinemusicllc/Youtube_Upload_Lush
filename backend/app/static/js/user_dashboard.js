@@ -1,9 +1,11 @@
-(() => {
+﻿(() => {
   const renderTable = document.querySelector(".render-table");
   const renderSortButtons = renderTable ? Array.from(renderTable.querySelectorAll("thead .sortable-button[data-sort]")) : [];
   const renderTableBody = renderTable ? renderTable.querySelector("tbody") : null;
   const renderSortState = { key: null, direction: "asc" };
   const renderSearchInput = document.getElementById("jobSearchInput");
+  const connectedChannelSearchInput = document.getElementById("connectedChannelSearchInput");
+  const connectedChannelList = document.getElementById("connectedChannelList");
   const renderSummaryNode = document.getElementById("renderSummaryText");
   const renderPaginationNode = document.getElementById("renderPagination");
   const deleteVisibleJobsButton = document.getElementById("deleteVisibleJobsButton");
@@ -46,6 +48,12 @@
       .replace(/\"/g, "&quot;")
       .replace(/'/g, "&#39;");
 
+  const workspaceFetch = (input, init = {}) =>
+    fetch(input, {
+      ...init,
+      credentials: init.credentials ?? "include",
+    });
+
   const clampRenderPage = (page, totalPages) => {
     if (totalPages <= 0) return 1;
     return Math.min(Math.max(page, 1), totalPages);
@@ -87,13 +95,71 @@
     }
   };
 
+  const dismissTransientNode = (node) => {
+    if (!(node instanceof HTMLElement) || node.dataset.dismissed === "true") return;
+    node.dataset.dismissed = "true";
+    node.classList.add("transient-hide");
+    window.setTimeout(() => {
+      node.remove();
+      if (node.id === "dashboardNotice") {
+        clearTransientNoticeParams();
+      }
+    }, 220);
+  };
+
+  const initTransientNotices = (root = document) => {
+    root.querySelectorAll("[data-transient-notice]").forEach((notice) => {
+      if (!(notice instanceof HTMLElement) || notice.dataset.noticeReady === "true") return;
+      notice.dataset.noticeReady = "true";
+
+      const dismiss = () => {
+        dismissTransientNode(notice);
+      };
+
+      notice.querySelector("[data-notice-close]")?.addEventListener("click", dismiss);
+
+      const autoHideMs = Number(notice.getAttribute("data-notice-autohide") || 5000);
+      if (autoHideMs > 0) {
+        window.setTimeout(dismiss, autoHideMs);
+      }
+    });
+  };
+
+  const ensureToastStack = () => document.getElementById("toastStack");
+
+  const showToast = (message, type = "info") => {
+    const stack = ensureToastStack();
+    if (!(stack instanceof HTMLElement) || !message) return;
+
+    if (type === "info") {
+      stack.querySelectorAll('.app-toast[data-type="info"]').forEach((node) => {
+        dismissTransientNode(node);
+      });
+    }
+
+    const toast = document.createElement("div");
+    toast.className = "app-toast";
+    toast.dataset.type = type;
+    toast.setAttribute("data-transient-notice", "");
+    toast.setAttribute("data-notice-autohide", "5000");
+    toast.innerHTML =
+      '<div class="app-toast-copy"></div>' +
+      '<button type="button" class="app-toast-dismiss" data-notice-close aria-label="Đóng thông báo"><i data-lucide="x" class="h-4 w-4" aria-hidden="true"></i></button>';
+    toast.querySelector(".app-toast-copy").textContent = String(message);
+    stack.appendChild(toast);
+    if (window.lucide) {
+      window.lucide.createIcons({ attrs: { "stroke-width": 1.75 } });
+    }
+
+    while (stack.children.length > 4) {
+      dismissTransientNode(stack.firstElementChild);
+    }
+
+    initTransientNotices(stack);
+  };
+
   const showFormMessage = (message, type = "info") => {
-    const node = document.getElementById("jobFormMessage");
-    if (!node) return;
-    node.className = "text-[12px] font-medium";
-    node.classList.remove("hidden", "text-brand-600", "text-rose-600", "text-emerald-600");
-    node.classList.add(type === "error" ? "text-rose-600" : type === "success" ? "text-emerald-600" : "text-brand-600");
-    node.textContent = message;
+    showToast(message, type);
   };
 
   const getRenderSortValue = (job, key) => {
@@ -153,11 +219,43 @@
     const channelMeta = channelSelect.querySelector(".channel-select-meta");
     const channelOptions = Array.from(channelSelect.querySelectorAll(".channel-option"));
     const channelInput = channelSelect.querySelector("#selectedChannel");
+    const channelSearch = channelSelect.querySelector("[data-channel-search]");
+    const channelEmpty = channelSelect.querySelector("[data-channel-empty]");
     if (!channelTrigger || !channelAvatar || !channelValue || !channelMeta || !channelInput) return;
+
+    const filterChannelOptions = () => {
+      const query = String(channelSearch?.value || "").trim().toLowerCase();
+      let visibleCount = 0;
+      channelOptions.forEach((option) => {
+        const haystack = String(option.dataset.search || `${option.dataset.label || ""} ${option.dataset.meta || ""}`).toLowerCase();
+        const hidden = Boolean(query) && !haystack.includes(query);
+        option.classList.toggle("is-hidden", hidden);
+        if (!hidden) {
+          visibleCount += 1;
+        }
+      });
+      if (channelEmpty) {
+        channelEmpty.dataset.visible = visibleCount === 0 ? "true" : "false";
+      }
+    };
 
     const setChannelOpen = (open) => {
       channelSelect.dataset.open = open ? "true" : "false";
       channelTrigger.setAttribute("aria-expanded", open ? "true" : "false");
+      if (open) {
+        filterChannelOptions();
+        if (channelSearch instanceof HTMLInputElement) {
+          window.requestAnimationFrame(() => {
+            channelSearch.focus();
+            channelSearch.select();
+          });
+        }
+        return;
+      }
+      if (channelSearch instanceof HTMLInputElement) {
+        channelSearch.value = "";
+      }
+      filterChannelOptions();
     };
 
     const setChannelValue = (option) => {
@@ -209,10 +307,20 @@
       }
     });
 
+    if (channelSearch instanceof HTMLInputElement) {
+      channelSearch.addEventListener("input", filterChannelOptions);
+      channelSearch.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+        }
+      });
+    }
+
     const activeOption = channelOptions.find((option) => option.classList.contains("is-active")) || channelOptions[0];
     if (activeOption) {
       setChannelValue(activeOption);
     }
+    filterChannelOptions();
   };
 
   const initFlatpickr = () => {
@@ -377,19 +485,7 @@
     }
   };
 
-  const initFileInputs = () => {
-    document.querySelectorAll("[data-upload-trigger]").forEach((button) => {
-      button.addEventListener("click", () => {
-      const state = button.dataset.state || "idle";
-      if (state !== "idle") return;
-        const slot = button.getAttribute("data-upload-trigger");
-        const input = slot ? document.querySelector(`[data-upload-input="${slot}"]`) : null;
-        if (input instanceof HTMLInputElement) {
-          input.click();
-        }
-      });
-    });
-  };
+  const initFileInputs = () => {};
 
   const applyRenderSearch = () => {
     if (!renderTableBody) return;
@@ -445,15 +541,11 @@
 
   const renderJobActionsMarkup = (job) => `
     <div class="flex flex-nowrap items-center justify-end gap-2 whitespace-nowrap">
-      ${job.youtube_watch_url ? `
-        <a href="${escapeHtml(job.youtube_watch_url)}" target="_blank" rel="noopener noreferrer" class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-sky-700 bg-sky-50 border border-sky-200 rounded-lg hover:bg-sky-100 hover:text-sky-800 hover:shadow-sm transition-all" title="Mở YouTube">
-          <i data-lucide="external-link" class="w-3 h-3"></i> Xem
-        </a>
-      ` : ""}
-      <button type="button" class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 rounded-lg hover:bg-emerald-100 hover:text-emerald-900 hover:shadow-sm transition-all" title="Sửa"><i data-lucide="edit-2" class="w-3 h-3"></i> Sửa</button>
       ${job.can_cancel ? `
         <button type="button" data-job-action="cancel" data-job-id="${escapeHtml(job.id)}" class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 hover:text-amber-800 hover:shadow-sm transition-all" title="Hủy"><i data-lucide="x-circle" class="w-3 h-3"></i> Hủy</button>
-      ` : ""}
+      ` : `
+        <button type="button" disabled aria-disabled="true" class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-slate-400 bg-slate-100 border border-slate-200 rounded-lg cursor-not-allowed opacity-90" title="Đã hoàn tất"><i data-lucide="x-circle" class="w-3 h-3"></i> Hủy</button>
+      `}
       <button type="button" data-job-action="delete" data-job-id="${escapeHtml(job.id)}" class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 hover:text-rose-800 hover:shadow-sm transition-all" title="Xóa"><i data-lucide="trash" class="w-3 h-3"></i> Xóa</button>
     </div>
   `;
@@ -501,19 +593,14 @@
 
   const renderJobActionsRuntimeMarkup = (job) => `
     <div class="flex flex-nowrap items-center justify-end gap-2 whitespace-nowrap">
-      ${job.youtube_watch_url ? `
-        <a href="${escapeHtml(job.youtube_watch_url)}" target="_blank" rel="noopener noreferrer" class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-sky-700 bg-sky-50 border border-sky-200 rounded-lg hover:bg-sky-100 hover:text-sky-800 hover:shadow-sm transition-all" title="${renderCopy.openYoutube}">
-          <i data-lucide="external-link" class="w-3 h-3"></i> Xem
-        </a>
-      ` : ""}
-      <button type="button" class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 rounded-lg hover:bg-emerald-100 hover:text-emerald-900 hover:shadow-sm transition-all" title="${renderCopy.edit}"><i data-lucide="edit-2" class="w-3 h-3"></i> ${renderCopy.edit}</button>
       ${job.can_cancel ? `
         <button type="button" data-job-action="cancel" data-job-id="${escapeHtml(job.id)}" class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 hover:text-amber-800 hover:shadow-sm transition-all" title="${renderCopy.cancel}"><i data-lucide="x-circle" class="w-3 h-3"></i> ${renderCopy.cancel}</button>
-      ` : ""}
+      ` : `
+        <button type="button" disabled aria-disabled="true" class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-slate-400 bg-slate-100 border border-slate-200 rounded-lg cursor-not-allowed opacity-90" title="Đã hoàn tất"><i data-lucide="x-circle" class="w-3 h-3"></i> ${renderCopy.cancel}</button>
+      `}
       <button type="button" data-job-action="delete" data-job-id="${escapeHtml(job.id)}" class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 hover:text-rose-800 hover:shadow-sm transition-all" title="${renderCopy.delete}"><i data-lucide="trash" class="w-3 h-3"></i> ${renderCopy.delete}</button>
     </div>
   `;
-
   const renderJobTimelineMarkup = (job) => `
     ${job.scheduled_wait_at ? `<p class="truncate"><span class="text-amber-600">Hẹn:</span> <span class="font-semibold text-amber-700">${escapeHtml(job.scheduled_wait_at)}</span></p>` : ""}
     <p class="truncate${job.scheduled_wait_at ? " mt-0.5" : ""}"><span class="text-slate-500">${renderCopy.created}</span> <span class="text-slate-700">${escapeHtml(job.created_at)}</span></p>
@@ -523,7 +610,7 @@
 
   const renderJobRowMarkup = (job) => `
     <tr class="hover:bg-slate-50 transition-colors group" data-job-id="${escapeHtml(job.id)}">
-      <td class="px-6 py-5 text-left font-mono text-[13px] text-slate-500">${escapeHtml(job.index)}</td>
+      <td class="px-4 py-5 text-center font-mono text-[13px] text-slate-500">${escapeHtml(job.index)}</td>
       <td class="px-6 py-5">
         <div class="flex items-center gap-3 min-w-0">
           ${renderJobPreviewMarkup(job)}
@@ -880,7 +967,7 @@
             job.icon_class,
             job.channel_avatar,
             job.channel_avatar_url,
-            job.youtube_watch_url,
+
             job.can_cancel,
           ])
         : [],
@@ -927,7 +1014,7 @@
   };
 
   const fetchDashboardLivePayload = async () => {
-    const response = await fetch(`/api/user/dashboard/live?ts=${Date.now()}`, {
+    const response = await workspaceFetch(`/api/user/dashboard/live?ts=${Date.now()}`, {
       headers: { Accept: "application/json", "Cache-Control": "no-cache, no-store, max-age=0", Pragma: "no-cache" },
       cache: "no-store",
     });
@@ -996,7 +1083,6 @@
       intro: "introAssetId",
       video_loop: "videoLoopAssetId",
       audio_loop: "audioLoopAssetId",
-      outro: "outroAssetId",
     };
     const defaultStatus = "";
     const allowedExtensions = String(form.dataset.allowedExtensions || "")
@@ -1008,6 +1094,12 @@
     const uploadCircumference = 43.98;
     const uploadState = new Map();
     const remoteValidationTimers = new Map();
+    const titleInput = document.getElementById("jobTitle");
+    const titleRule = document.getElementById("jobTitleRule");
+    const TITLE_MAX_LENGTH = 100;
+    const TITLE_ALLOWED_PATTERN = /^[A-Za-z0-9 ]+$/;
+    const TITLE_INVALID_CHARS = /[^A-Za-z0-9 ]+/g;
+    let introSlotEnabled = false;
 
     const setSlotStatus = (slot, message, tone = "neutral") => {
       const node = document.querySelector(`[data-upload-status="${slot}"]`);
@@ -1029,6 +1121,102 @@
               : "text-slate-400"
       );
       node.textContent = message;
+    };
+
+    const setTitleRuleState = (tone = "neutral") => {
+      if (!(titleRule instanceof HTMLElement)) return;
+      titleRule.className = "mt-1.5 text-[11px]";
+      if (tone === "error") {
+        titleRule.classList.add("text-rose-600");
+        return;
+      }
+      if (tone === "success") {
+        titleRule.classList.add("text-emerald-600");
+        return;
+      }
+      titleRule.classList.add("text-slate-500");
+    };
+
+    const normalizeJobTitleValue = (value) => {
+      const cleaned = String(value || "")
+        .replace(TITLE_INVALID_CHARS, "")
+        .replace(/\s+/g, " ")
+        .slice(0, TITLE_MAX_LENGTH);
+      return cleaned.replace(/^\s+/, "");
+    };
+
+    const validateJobTitleValue = (value) => {
+      const normalized = String(value || "").trim().replace(/\s+/g, " ");
+      if (!normalized) {
+        return {
+          ok: false,
+          normalized,
+          message: "Tên video là bắt buộc.",
+        };
+      }
+      if (normalized.length > TITLE_MAX_LENGTH) {
+        return {
+          ok: false,
+          normalized: normalized.slice(0, TITLE_MAX_LENGTH),
+          message: "Tên video chỉ được tối đa 100 ký tự.",
+        };
+      }
+      if (!TITLE_ALLOWED_PATTERN.test(normalized)) {
+        return {
+          ok: false,
+          normalized,
+          message: "Tên video chỉ được dùng chữ cái không dấu, số và khoảng trắng.",
+        };
+      }
+      return {
+        ok: true,
+        normalized,
+        message: "",
+      };
+    };
+
+    const syncJobTitleInput = ({ announce = false } = {}) => {
+      if (!(titleInput instanceof HTMLInputElement)) {
+        return { ok: true, normalized: "", message: "" };
+      }
+      const normalized = normalizeJobTitleValue(titleInput.value);
+      if (titleInput.value !== normalized) {
+        titleInput.value = normalized;
+        if (announce) {
+          showFormMessage("Tên video chỉ nhận chữ cái không dấu, số và khoảng trắng.", "error");
+        }
+      }
+      const result = validateJobTitleValue(normalized);
+      setTitleRuleState(result.ok || !result.normalized ? "neutral" : "error");
+      return result;
+    };
+
+    const syncIntroToggleVisual = () => {
+      const introToggleButton = document.getElementById("toggleIntroSlot");
+      const introSlotPanel = document.getElementById("introSlotPanel");
+
+      if (introToggleButton) {
+        introToggleButton.setAttribute("aria-expanded", introSlotEnabled ? "true" : "false");
+        introToggleButton.textContent = introSlotEnabled ? "− Bỏ Intro" : "+ Thêm Intro";
+        introToggleButton.classList.toggle("text-brand-700", introSlotEnabled);
+        introToggleButton.classList.toggle("bg-brand-50", introSlotEnabled);
+      }
+      if (introSlotPanel) {
+        if (introSlotEnabled) {
+          introSlotPanel.classList.remove("!mt-0");
+          introSlotPanel.style.pointerEvents = "auto";
+          introSlotPanel.style.opacity = "1";
+          introSlotPanel.style.transform = "translateY(0)";
+          introSlotPanel.style.maxHeight = `${introSlotPanel.scrollHeight}px`;
+          return;
+        }
+
+        introSlotPanel.classList.add("!mt-0");
+        introSlotPanel.style.pointerEvents = "none";
+        introSlotPanel.style.opacity = "0";
+        introSlotPanel.style.transform = "translateY(-8px)";
+        introSlotPanel.style.maxHeight = "0px";
+      }
     };
 
     const formatBytes = (value) => {
@@ -1136,6 +1324,51 @@
       asset: document.getElementById(slotToAssetField[slot]),
     });
 
+    const openSlotFilePicker = (slot) => {
+      const nodes = getSlotNodes(slot);
+      if (!(nodes.input instanceof HTMLInputElement)) {
+        return;
+      }
+
+      try {
+        if (typeof nodes.input.showPicker === "function") {
+          nodes.input.showPicker();
+          return;
+        }
+      } catch (_error) {
+        // Fall through to click fallback below.
+      }
+
+      const hadHiddenClass = nodes.input.classList.contains("hidden");
+      const previousStyle = nodes.input.getAttribute("style");
+
+      if (hadHiddenClass) {
+        nodes.input.classList.remove("hidden");
+        nodes.input.style.position = "fixed";
+        nodes.input.style.left = "-9999px";
+        nodes.input.style.top = "0";
+        nodes.input.style.width = "1px";
+        nodes.input.style.height = "1px";
+        nodes.input.style.opacity = "0";
+        nodes.input.style.pointerEvents = "none";
+      }
+
+      try {
+        nodes.input.click();
+      } finally {
+        window.setTimeout(() => {
+          if (hadHiddenClass) {
+            nodes.input.classList.add("hidden");
+          }
+          if (previousStyle === null) {
+            nodes.input.removeAttribute("style");
+          } else {
+            nodes.input.setAttribute("style", previousStyle);
+          }
+        }, 0);
+      }
+    };
+
     const setUploadVisual = (slot, state, options = {}) => {
       const { progress = 0 } = options;
       const nodes = getSlotNodes(slot);
@@ -1159,7 +1392,7 @@
 
       if (!skipRemoteAbort && runtime?.sessionId) {
         try {
-          await fetch(`/api/user/uploads/sessions/${runtime.sessionId}`, { method: "DELETE" });
+          await workspaceFetch(`/api/user/uploads/sessions/${runtime.sessionId}`, { method: "DELETE" });
         } catch (_error) {
           // Ignore cleanup failure; UI should still recover locally.
         }
@@ -1177,6 +1410,22 @@
       setUploadVisual(slot, "idle", { progress: 0 });
     };
 
+    const disableIntroSlot = async () => {
+      introSlotEnabled = false;
+      syncIntroToggleVisual();
+      const validationTimer = remoteValidationTimers.get("intro");
+      if (validationTimer) {
+        window.clearTimeout(validationTimer);
+        remoteValidationTimers.delete("intro");
+      }
+      await clearSlotUpload("intro", { skipRemoteAbort: false });
+      const nodes = getSlotNodes("intro");
+      if (nodes.path instanceof HTMLInputElement) {
+        nodes.path.value = "";
+      }
+      setSlotStatus("intro", defaultStatus, "neutral");
+    };
+
     const validateLocalFile = (file) => {
       const extension = `.${String(file.name || "").split(".").pop() || ""}`.toLowerCase();
       if (allowedExtensions.length && !allowedExtensions.includes(extension)) {
@@ -1191,7 +1440,7 @@
       const storageKey = buildUploadStorageKey(slot, file);
       const cachedSessionId = window.localStorage.getItem(storageKey);
       if (cachedSessionId) {
-        const statusResponse = await fetch(`/api/user/uploads/sessions/${cachedSessionId}`, { signal });
+        const statusResponse = await workspaceFetch(`/api/user/uploads/sessions/${cachedSessionId}`, { signal });
         if (statusResponse.ok) {
           const payload = await statusResponse.json();
           if (payload.file_name === file.name || payload.file_name === file.name.replace(/[^A-Za-z0-9._-]+/g, "-")) {
@@ -1201,7 +1450,7 @@
         window.localStorage.removeItem(storageKey);
       }
 
-      const response = await fetch("/api/user/uploads/sessions", {
+      const response = await workspaceFetch("/api/user/uploads/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal,
@@ -1249,7 +1498,7 @@
           `${Math.floor((offset / file.size) * 100)}% · ${formatBytes(offset)}/${formatBytes(file.size)}`,
           "uploading"
         );
-        const response = await fetch(`/api/user/uploads/sessions/${session.session_id}`, {
+        const response = await workspaceFetch(`/api/user/uploads/sessions/${session.session_id}`, {
           method: "PATCH",
           headers: {
             "Content-Type": "application/octet-stream",
@@ -1346,11 +1595,16 @@
     });
 
     document.querySelectorAll("[data-upload-trigger]").forEach((button) => {
-      button.addEventListener("click", async () => {
+      button.addEventListener("click", async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
         const slot = button.getAttribute("data-upload-trigger");
         if (!slot) return;
         const state = button.dataset.state || "idle";
-        if (state === "idle") return;
+        if (state === "idle") {
+          openSlotFilePicker(slot);
+          return;
+        }
         await clearSlotUpload(slot, { skipRemoteAbort: false });
       });
     });
@@ -1385,10 +1639,38 @@
       });
     });
 
+    const introToggleButton = document.getElementById("toggleIntroSlot");
+    if (introToggleButton) {
+      introToggleButton.addEventListener("click", async () => {
+        if (introSlotEnabled) {
+          await disableIntroSlot();
+          return;
+        }
+        introSlotEnabled = true;
+        syncIntroToggleVisual();
+      });
+    }
+
     const setSubmitting = (submitting) => {
       submitButton.disabled = submitting;
-      submitButton.textContent = submitting ? "Đang tạo..." : "Tạo job render";
+      submitButton.textContent = submitting ? "Đang tạo..." : "Render Job";
     };
+
+    if (titleInput instanceof HTMLInputElement) {
+      titleInput.maxLength = TITLE_MAX_LENGTH;
+      titleInput.addEventListener("input", () => {
+        syncJobTitleInput({ announce: false });
+      });
+      titleInput.addEventListener("blur", () => {
+        const result = syncJobTitleInput({ announce: false });
+        if (result.ok) {
+          setTitleRuleState("success");
+          return;
+        }
+        setTitleRuleState(result.normalized ? "error" : "neutral");
+      });
+      syncJobTitleInput({ announce: false });
+    }
 
     resetButton.addEventListener("click", async () => {
       form.reset();
@@ -1400,7 +1682,15 @@
       if (placeholderOption) {
         placeholderOption.click();
       }
+      await disableIntroSlot();
+      if (titleInput instanceof HTMLInputElement) {
+        titleInput.value = "";
+        setTitleRuleState("neutral");
+      }
       for (const [slot, fieldId] of Object.entries(slotToAssetField)) {
+        if (slot === "intro") {
+          continue;
+        }
         const field = document.getElementById(fieldId);
         if (field) field.value = "";
         const validationTimer = remoteValidationTimers.get(slot);
@@ -1416,7 +1706,7 @@
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       const formData = new FormData(form);
-      const hasLocalFile = ["intro_file", "video_loop_file", "audio_loop_file", "outro_file"].some((field) => {
+      const hasLocalFile = ["intro_file", "video_loop_file", "audio_loop_file"].some((field) => {
         const file = formData.get(field);
         return file instanceof File && file.name;
       });
@@ -1428,7 +1718,18 @@
       }
 
       const title = String(formData.get("title") || "").trim();
-      if (!title) {
+      const titleValidation = validateJobTitleValue(title);
+      if (!titleValidation.ok) {
+        if (titleInput instanceof HTMLInputElement) {
+          titleInput.value = titleValidation.normalized;
+        }
+        setTitleRuleState("error");
+        showFormMessage(titleValidation.message, "error");
+        return;
+      }
+      formData.set("title", titleValidation.normalized);
+      setTitleRuleState("success");
+      if (false && !titleValidation.ok) {
         showFormMessage("Tên video là bắt buộc.", "error");
         return;
       }
@@ -1439,13 +1740,15 @@
       }
 
       const remoteSlots = [
-        { slot: "intro", label: "Link video Intro" },
+        { slot: "intro", label: "Link intro", optional: true },
         { slot: "video_loop", label: "Link video loop" },
         { slot: "audio_loop", label: "Link audio loop" },
-        { slot: "outro", label: "Link Outro" },
       ];
 
       for (const item of remoteSlots) {
+        if (item.slot === "intro" && !introSlotEnabled) {
+          continue;
+        }
         const nodes = getSlotNodes(item.slot);
         const remoteValue = nodes.path instanceof HTMLInputElement ? nodes.path.value.trim() : "";
         const hasLocalAsset = nodes.asset instanceof HTMLInputElement ? Boolean(nodes.asset.value) : false;
@@ -1465,19 +1768,28 @@
 
       try {
         const localFiles = [
-          { slot: "intro", field: "intro_file" },
+          { slot: "intro", field: "intro_file", optional: true },
           { slot: "video_loop", field: "video_loop_file" },
           { slot: "audio_loop", field: "audio_loop_file" },
-          { slot: "outro", field: "outro_file" },
         ];
 
         for (const item of localFiles) {
+          if (item.slot === "intro" && !introSlotEnabled) {
+            formData.delete(item.field);
+            continue;
+          }
           const file = formData.get(item.field);
           if (file instanceof File && file.name) {
             showFormMessage(`Đang upload file local cho ${item.slot}...`, "info");
             await uploadLocalFile(item.slot, file);
             formData.delete(item.field);
           }
+        }
+
+        if (!introSlotEnabled) {
+          formData.delete("intro_url");
+          formData.delete("intro_file");
+          formData.delete("intro_asset_id");
         }
 
         const hasUploadedAsset = Object.values(slotToAssetField).some((fieldId) => {
@@ -1494,7 +1806,7 @@
         });
 
         showFormMessage(hasUploadedAsset ? "Upload xong, đang tạo job..." : "Đang gửi job lên backend...", "info");
-        const response = await fetch("/api/user/jobs", {
+        const response = await workspaceFetch("/api/user/jobs", {
           method: "POST",
           body: formData,
         });
@@ -1511,6 +1823,8 @@
         setSubmitting(false);
       }
     });
+
+    syncIntroToggleVisual();
   };
 
   const initOAuthButton = () => {
@@ -1520,15 +1834,15 @@
     button.addEventListener("click", async () => {
       button.disabled = true;
       try {
-        const response = await fetch("/api/user/oauth/connect/start", { method: "POST" });
+        const response = await workspaceFetch("/api/user/oauth/connect/start", { method: "POST" });
         const payload = await response.json();
         if (payload.auth_url) {
           window.location.href = payload.auth_url;
           return;
         }
-        window.alert(payload.message || "OAuth chưa được cấu hình đầy đủ.");
+        showToast(payload.message || "OAuth chưa được cấu hình đầy đủ.", "error");
       } catch (error) {
-        window.alert(error.message || "Không thể khởi động OAuth.");
+        showToast(error.message || "Không thể khởi động OAuth.", "error");
       } finally {
         button.disabled = false;
       }
@@ -1539,13 +1853,20 @@
     const button = document.getElementById("connectYouTubeButton");
     if (!button) return;
 
-    if (!dashboardSeed.browser_worker) {
+    const browserWorkers = Array.isArray(dashboardSeed.browser_workers) ? dashboardSeed.browser_workers : [];
+    const selectableBrowserWorkers = browserWorkers.filter((worker) => !worker?.disabled);
+    const browserWorkersById = new Map(browserWorkers.map((worker) => [String(worker.id || ""), worker]));
+
+    if (!selectableBrowserWorkers.length) {
       button.addEventListener("click", () => {
-        window.alert(dashboardSeed.channel_connect_blocked_message || "Ban chua duoc cap VPS de them kenh.");
+        showToast(dashboardSeed.channel_connect_blocked_message || "Bạn chưa được cấp VPS để thêm kênh.", "error");
       });
       return;
     }
 
+    const workerPickerModal = document.getElementById("browserWorkerPickerModal");
+    const closeWorkerPickerButton = document.getElementById("closeBrowserWorkerPickerModal");
+    const workerCards = Array.from(document.querySelectorAll("[data-browser-worker-card]"));
     const modal = document.getElementById("browserSessionModal");
     const closeModalButton = document.getElementById("closeBrowserSessionModal");
     const closeSessionButton = document.getElementById("closeBrowserSessionButton");
@@ -1555,7 +1876,6 @@
     const workerNode = document.getElementById("browserSessionWorker");
     const expiryNode = document.getElementById("browserSessionExpiry");
     const currentUrlNode = document.getElementById("browserSessionCurrentUrl");
-    const detectedChannelNode = document.getElementById("browserSessionDetectedChannel");
     const errorNode = document.getElementById("browserSessionError");
     const launchPanel = document.getElementById("browserSessionLaunchPanel");
     const launchSpinner = document.getElementById("browserSessionLaunchSpinner");
@@ -1571,6 +1891,16 @@
     };
 
     let browserSessionAutoConfirmInFlight = false;
+    let workerPickerLaunchInFlight = false;
+    let pendingBrowserWorker = null;
+
+    const syncConnectButtonLabel = () => {
+      const hasPendingSession = !!(
+        activeBrowserSession?.session_id &&
+        ["launching", "awaiting_confirmation", "confirmed"].includes(activeBrowserSession.status)
+      );
+      button.textContent = hasPendingSession ? "Tiếp tục đăng nhập" : "+ Thêm Kênh";
+    };
 
     const setButtonLabel = () => {
       button.textContent = "+ Thêm Kênh";
@@ -1626,18 +1956,21 @@
 
     const renderBrowserSessionState = (session) => {
       activeBrowserSession = session || null;
-      setButtonLabel();
+      if (session?.target_worker_id) {
+        pendingBrowserWorker = browserWorkersById.get(String(session.target_worker_id || "")) || pendingBrowserWorker;
+      }
+      syncConnectButtonLabel();
       if (workerNode) {
-        workerNode.textContent = session?.target_worker_name || dashboardSeed.browser_worker?.name || "-";
+        workerNode.textContent =
+          session?.target_worker_name ||
+          pendingBrowserWorker?.name ||
+          dashboardSeed.browser_worker?.name ||
+          selectableBrowserWorkers[0]?.name ||
+          "-";
       }
       if (statusNode) statusNode.textContent = formatBrowserSessionStatus(session?.status);
       if (expiryNode) expiryNode.textContent = formatExpiry(session?.expires_at);
       if (currentUrlNode) currentUrlNode.textContent = session?.current_url || "Chưa có thông tin phiên.";
-      if (detectedChannelNode) {
-        detectedChannelNode.textContent = session?.detected_channel_id
-          ? `Đã nhận diện kênh: ${session.detected_channel_name || session.detected_channel_id} (${session.detected_channel_id})`
-          : "Chưa nhận diện được kênh. Sau khi vào đúng YouTube Studio, app sẽ tự xác nhận.";
-      }
       if (errorNode) {
         if (session?.last_error) {
           errorNode.textContent = session.last_error;
@@ -1671,9 +2004,33 @@
       stopBrowserSessionPolling();
     };
 
+    const openWorkerPickerModal = () => {
+      if (!workerPickerModal) return;
+      workerPickerModal.classList.remove("hidden");
+    };
+
+    const closeWorkerPickerModal = () => {
+      if (!workerPickerModal) return;
+      workerPickerModal.classList.add("hidden");
+    };
+
+    const setWorkerPickerBusy = (busy) => {
+      workerPickerLaunchInFlight = busy;
+      workerCards.forEach((card) => {
+        if (!(card instanceof HTMLButtonElement)) return;
+        const baseDisabled = card.getAttribute("data-base-disabled") === "true";
+        card.disabled = busy || baseDisabled;
+        card.classList.toggle("pointer-events-none", busy);
+        card.classList.toggle("opacity-70", busy && !baseDisabled);
+      });
+      if (closeWorkerPickerButton instanceof HTMLButtonElement) {
+        closeWorkerPickerButton.disabled = busy;
+      }
+    };
+
     const deleteBrowserSession = async (sessionId, { silent = false } = {}) => {
       if (!sessionId) return;
-      const response = await fetch(`/api/user/browser-sessions/${sessionId}`, {
+      const response = await workspaceFetch(`/api/user/browser-sessions/${sessionId}`, {
         method: "DELETE",
       });
       const payload = await response.json();
@@ -1687,7 +2044,7 @@
       browserSessionAutoConfirmInFlight = true;
       confirmSessionButton.disabled = true;
       try {
-        const response = await fetch(`/api/user/browser-sessions/${activeBrowserSession.session_id}/confirm`, {
+        const response = await workspaceFetch(`/api/user/browser-sessions/${activeBrowserSession.session_id}/confirm`, {
           method: "POST",
         });
         const payload = await response.json();
@@ -1698,7 +2055,7 @@
         await deleteBrowserSession(payload.session?.session_id || activeBrowserSession?.session_id, { silent: true });
         closeModal();
         if (!auto) {
-          window.alert(`Đã kết nối kênh ${payload.channel.channel_name} (${payload.channel.channel_id}).`);
+          showToast(`Đã kết nối kênh ${payload.channel.channel_name} (${payload.channel.channel_id}).`, "success");
         }
         persistDashboardScrollPosition();
         window.location.reload();
@@ -1709,7 +2066,7 @@
             errorNode.classList.remove("hidden");
           }
         } else {
-          window.alert(error.message || "Không thể xác nhận channel.");
+          showToast(error.message || "Không thể xác nhận channel.", "error");
         }
       } finally {
         browserSessionAutoConfirmInFlight = false;
@@ -1720,7 +2077,7 @@
     const refreshBrowserSession = async (silent = false) => {
       if (!activeBrowserSession?.session_id) return null;
       try {
-        const response = await fetch(`/api/user/browser-sessions/${activeBrowserSession.session_id}`);
+        const response = await workspaceFetch(`/api/user/browser-sessions/${activeBrowserSession.session_id}`);
         const payload = await response.json();
         if (!response.ok) {
           throw new Error(payload.detail || "Không thể tải browser session.");
@@ -1732,7 +2089,7 @@
         return payload;
       } catch (error) {
         if (!silent) {
-          window.alert(error.message || "Không thể tải browser session.");
+          showToast(error.message || "Không thể tải browser session.", "error");
         }
         return null;
       }
@@ -1745,8 +2102,13 @@
       }, 4000);
     };
 
-    const ensureBrowserSession = async () => {
-      const response = await fetch("/api/user/browser-sessions", { method: "POST" });
+    const ensureBrowserSession = async (workerId = null) => {
+      const requestInit = { method: "POST" };
+      if (workerId) {
+        requestInit.headers = { "Content-Type": "application/json" };
+        requestInit.body = JSON.stringify({ worker_id: workerId });
+      }
+      const response = await workspaceFetch("/api/user/browser-sessions", requestInit);
       const payload = await response.json();
       if (!response.ok) {
         throw new Error(payload.detail || "Không thể tạo browser session.");
@@ -1755,7 +2117,40 @@
       return payload;
     };
 
+    const launchBrowserSession = async (workerId) => {
+      pendingBrowserWorker = browserWorkersById.get(String(workerId || "")) || null;
+      closeWorkerPickerModal();
+      openModal();
+      renderBrowserSessionState(null);
+      button.disabled = true;
+      try {
+        await ensureBrowserSession(workerId);
+        startBrowserSessionPolling();
+      } catch (error) {
+        setLaunchState("failed", { last_error: error.message || "Không thể khởi tạo browser session." });
+        showToast(error.message || "Không thể khởi tạo browser session.", "error");
+      } finally {
+        button.disabled = false;
+      }
+    };
+
     button.addEventListener("click", async () => {
+      if (activeBrowserSession?.session_id && ["launching", "awaiting_confirmation", "confirmed"].includes(activeBrowserSession.status)) {
+        openModal();
+        renderBrowserSessionState(activeBrowserSession);
+        startBrowserSessionPolling();
+        void refreshBrowserSession(true);
+        return;
+      }
+
+      if (selectableBrowserWorkers.length === 1) {
+        await launchBrowserSession(selectableBrowserWorkers[0].id);
+        return;
+      }
+
+      openWorkerPickerModal();
+      return;
+
       openModal();
       renderBrowserSessionState(null);
       button.disabled = true;
@@ -1764,10 +2159,42 @@
         startBrowserSessionPolling();
       } catch (error) {
         setLaunchState("failed", { last_error: error.message || "Không thể khởi tạo browser session." });
-        window.alert(error.message || "Không thể khởi tạo browser session.");
+        showToast(error.message || "Không thể khởi tạo browser session.", "error");
       } finally {
         button.disabled = false;
       }
+    });
+
+    if (closeWorkerPickerButton) {
+      closeWorkerPickerButton.addEventListener("click", () => {
+        if (workerPickerLaunchInFlight) return;
+        closeWorkerPickerModal();
+      });
+    }
+
+    if (workerPickerModal) {
+      workerPickerModal.addEventListener("click", (event) => {
+        if (workerPickerLaunchInFlight) return;
+        if (event.target === workerPickerModal || event.target === workerPickerModal.firstElementChild) {
+          closeWorkerPickerModal();
+        }
+      });
+    }
+
+    workerCards.forEach((card) => {
+      if (!(card instanceof HTMLButtonElement)) return;
+      card.setAttribute("data-base-disabled", card.disabled ? "true" : "false");
+      card.addEventListener("click", async () => {
+        if (workerPickerLaunchInFlight || card.disabled) return;
+        const workerId = String(card.dataset.workerId || "").trim();
+        if (!workerId) return;
+        setWorkerPickerBusy(true);
+        try {
+          await launchBrowserSession(workerId);
+        } finally {
+          setWorkerPickerBusy(false);
+        }
+      });
     });
 
     const requestCloseBrowserSession = async () => {
@@ -1784,7 +2211,7 @@
         renderBrowserSessionState(null);
         closeModal();
       } catch (error) {
-        window.alert(error.message || "Không thể đóng browser session.");
+        showToast(error.message || "Không thể đóng browser session.", "error");
       } finally {
         closeSessionButton.disabled = false;
         closeModalButton.disabled = false;
@@ -1804,7 +2231,7 @@
       const session = activeBrowserSession?.session_id ? await refreshBrowserSession(true) : null;
       const next = session || activeBrowserSession;
       if (!next?.novnc_url || !["awaiting_confirmation", "confirmed"].includes(next.status)) {
-        window.alert("VPS chưa báo sẵn sàng noVNC. Chờ vài giây rồi thử lại.");
+        showToast("VPS chưa báo sẵn sàng noVNC. Chờ vài giây rồi thử lại.", "error");
         return;
       }
       window.open(next.novnc_url, "_blank", "noopener");
@@ -1821,7 +2248,7 @@
     if (dashboardSeed.browser_session) {
       renderBrowserSessionState(dashboardSeed.browser_session);
     } else {
-      setButtonLabel();
+      syncConnectButtonLabel();
     }
   };
 
@@ -1838,7 +2265,7 @@
         button.disabled = true;
         const scrollY = window.scrollY || window.pageYOffset || 0;
         try {
-          const response = await fetch(`/api/user/jobs/${jobId}${action === "cancel" ? "/cancel" : ""}`, {
+          const response = await workspaceFetch(`/api/user/jobs/${jobId}${action === "cancel" ? "/cancel" : ""}`, {
             method: action === "cancel" ? "PATCH" : "DELETE",
           });
           const payload = await response.json();
@@ -1848,7 +2275,7 @@
           await refreshDashboardLiveNow();
           restoreScrollPosition(scrollY);
         } catch (error) {
-          window.alert(error.message || "Không thể cập nhật job.");
+        showToast(error.message || "Không thể cập nhật job.", "error");
           button.disabled = false;
         }
       });
@@ -1868,7 +2295,7 @@
       deleteVisibleJobsButton.disabled = true;
       const scrollY = window.scrollY || window.pageYOffset || 0;
       try {
-        const response = await fetch("/api/user/jobs/actions/bulk-delete", {
+        const response = await workspaceFetch("/api/user/jobs/actions/bulk-delete", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1882,7 +2309,7 @@
         await refreshDashboardLiveNow();
         restoreScrollPosition(scrollY);
       } catch (error) {
-        window.alert(error.message || "Không thể xóa danh sách đang hiển thị.");
+        showToast(error.message || "Không thể xóa danh sách đang hiển thị.", "error");
         renderRenderTable();
       }
     });
@@ -1900,7 +2327,7 @@
 
         button.disabled = true;
         try {
-          const response = await fetch(`/api/user/channels/${channelId}`, {
+          const response = await workspaceFetch(`/api/user/channels/${channelId}`, {
             method: "DELETE",
           });
           const payload = await response.json();
@@ -1910,7 +2337,7 @@
           persistDashboardScrollPosition();
           window.location.reload();
         } catch (error) {
-          window.alert(error.message || "Không thể xóa kênh.");
+          showToast(error.message || "Không thể xóa kênh.", "error");
           button.disabled = false;
         }
       });
@@ -1922,6 +2349,26 @@
     renderSearchInput.addEventListener("input", () => {
       applyRenderSearch();
     });
+  };
+
+  const initConnectedChannelSearch = () => {
+    if (!(connectedChannelSearchInput instanceof HTMLInputElement) || !(connectedChannelList instanceof HTMLElement)) return;
+
+    const applyConnectedChannelSearch = () => {
+      const query = connectedChannelSearchInput.value.trim().toLowerCase();
+      let visibleCount = 0;
+
+      connectedChannelList.querySelectorAll("[data-channel-id]").forEach((row) => {
+        if (!(row instanceof HTMLElement)) return;
+        const haystack = String(row.dataset.channelSearch || row.textContent || "").toLowerCase();
+        const hidden = Boolean(query) && !haystack.includes(query);
+        row.classList.toggle("hidden", hidden);
+        if (!hidden) visibleCount += 1;
+      });
+    };
+
+    connectedChannelSearchInput.addEventListener("input", applyConnectedChannelSearch);
+    applyConnectedChannelSearch();
   };
 
   const clearTransientNoticeParams = () => {
@@ -1937,32 +2384,6 @@
     const search = url.searchParams.toString();
     const nextUrl = `${url.pathname}${search ? `?${search}` : ""}${url.hash}`;
     window.history.replaceState({}, document.title, nextUrl);
-  };
-
-  const initTransientNotice = () => {
-    const notice = document.querySelector("[data-transient-notice]");
-    if (!notice) {
-      clearTransientNoticeParams();
-      return;
-    }
-
-    let dismissed = false;
-    const dismiss = () => {
-      if (dismissed) return;
-      dismissed = true;
-      notice.classList.add("opacity-0", "-translate-y-1");
-      window.setTimeout(() => {
-        notice.remove();
-      }, 200);
-      clearTransientNoticeParams();
-    };
-
-    notice.querySelector("[data-notice-close]")?.addEventListener("click", dismiss);
-
-    const autoHideMs = Number(notice.getAttribute("data-notice-autohide") || 0);
-    if (autoHideMs > 0) {
-      window.setTimeout(dismiss, autoHideMs);
-    }
   };
 
   const initJobPreviewVideos = () => {
@@ -2007,9 +2428,13 @@
   initChannelConnectButton();
   initBulkDeleteVisibleJobs();
   initChannelActions();
+  initConnectedChannelSearch();
   initSearch();
   renderRenderTable();
-  initTransientNotice();
+  initTransientNotices();
+  if (!document.getElementById("dashboardNotice")) {
+    clearTransientNoticeParams();
+  }
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
       scheduleNextLiveRefresh();
@@ -2026,3 +2451,5 @@
   });
   void pollLiveDashboard();
 })();
+
+

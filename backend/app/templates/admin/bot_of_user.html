@@ -10,16 +10,16 @@
                 <i data-lucide="server" class="h-4.5 w-4.5 text-brand-600"></i>
             </div>
             <div>
-                <h2 class="section-title">Danh sach VPS cua {{ dashboard.target_user.username }}</h2>
-                <p class="section-note">Xem nhanh VPS duy nhat dang duoc cap cho user va danh sach kenh dang chay tren VPS do.</p>
+                <h2 class="section-title">Danh sách VPS của {{ dashboard.target_user.username }}</h2>
+                <p class="section-note">Xem nhanh toàn bộ VPS đang được cấp cho user này và số kênh đang bám trên từng máy.</p>
             </div>
         </div>
     </div>
 
     <div class="panel overflow-hidden">
         <div class="border-b border-slate-200/80 px-5 py-4">
-            <h3 class="section-title">VPS dang duoc cap</h3>
-            <p class="section-note">Danh sach VPS hien tai cua user nay. Luong production dang co dinh 1 job active / VPS.</p>
+            <h3 class="section-title">VPS đang được cấp</h3>
+            <p class="section-note">Danh sách bên dưới phản ánh toàn bộ VPS hiện tại của user. Production vẫn khóa cố định 1 job active / VPS.</p>
         </div>
 
         <div class="table-shell">
@@ -66,6 +66,10 @@
                                 </a>
                             </div>
                         </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="11" class="px-6 py-10 text-center text-[13px] text-slate-500">User này chưa được cấp VPS nào.</td>
                     </tr>
                     {% endfor %}
                 </tbody>

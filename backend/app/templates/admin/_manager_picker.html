@@ -1,3 +1,23 @@
+{% set locked_manager = (dashboard.manager_options | selectattr('selected') | list | first) %}
+{% if not locked_manager and dashboard.manager_options %}
+{% set locked_manager = dashboard.manager_options[0] %}
+{% endif %}
+
+{% if dashboard.manager_filter_locked and locked_manager %}
+<div class="manager-picker" data-manager-picker-locked="true">
+    <div class="manager-picker-trigger" aria-disabled="true">
+        <span class="manager-picker-trigger-body">
+            <span class="manager-picker-tags">
+                <span class="manager-picker-tag">
+                    <span class="manager-picker-tag-label">{{ locked_manager.username }}</span>
+                </span>
+            </span>
+        </span>
+        <i data-lucide="lock" class="h-4 w-4 text-slate-400"></i>
+    </div>
+    <input type="hidden" name="manager_ids" value="{{ locked_manager.id }}">
+</div>
+{% else %}
 <div class="manager-picker" data-manager-picker data-placeholder="Tất cả manager">
     <button type="button" class="manager-picker-trigger" data-manager-trigger aria-expanded="false">
         <span class="manager-picker-trigger-body">
@@ -45,3 +65,4 @@
     </div>
     <div data-manager-hidden-inputs></div>
 </div>
+{% endif %}

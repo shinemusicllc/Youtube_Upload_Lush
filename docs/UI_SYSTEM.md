@@ -45,17 +45,10 @@
   - thay module thao tác theo nghiệp vụ admin
   - không đổi design system
 
-## Screen Exceptions
-- Màn `Cấp phát BOT` là ngoại lệ có chủ đích:
-  - không dùng dải KPI ngang chuẩn của admin
-  - không cần hero/panel mở đầu riêng nếu không phục vụ thao tác
-  - stat chips ưu tiên nằm ngay trong header của panel `Danh sách BOT`, sát cụm view toggle
-  - dưới là workspace split `Danh sách BOT bên trái / target pane bên phải`
-  - có thể có rail chuyển giữa hai cột nếu cần bám mockup thao tác
-  - vẫn giữ nguyên font, palette, border, radius, icon system của admin shell hiện tại
-- Lý do:
-  - đây là màn thao tác điều phối, không phải màn quan sát KPI
-  - thay vì KPI strip chuẩn hoặc hero riêng, màn này ưu tiên toàn bộ không gian cho chọn BOT, stage danh sách gán và chọn người nhận
+## BOT Management
+- Flow `Cấp phát BOT` đã được gộp vào `Danh sách BOT`.
+- Screen canon cho admin/manager là `backend/app/templates/admin/worker_index.html`.
+- Mọi thao tác owner BOT, chọn user và xóa BOT phải đi trực tiếp trên flow này thay vì mở thêm screen điều phối tách riêng.
 
 ## Palette
 - Background app: `#f3f5f9`
@@ -200,4 +193,5 @@
 ## Current Status
 - User UI đã có nguồn visual rõ là `final_user_ui.html`.
 - Admin UI hiện đang lệch visual source of truth và cần được refactor lại theo file này trước khi tiếp tục nối parity logic sâu.
+- Runtime hiện tại không còn màn `Cấp phát BOT` độc lập; các URL cũ chỉ nên giữ vai trò redirect về `Danh sách BOT`.
 - Một số chi tiết shell của `final_user_ui.html` hiện vẫn có thể được polish thêm theo reference SaaS user đã đưa, nhưng mọi chỉnh sửa đều phải được xem là refinement của source of truth chứ không phải nguồn mới.

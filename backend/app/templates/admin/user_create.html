@@ -10,7 +10,7 @@
                 </div>
                 <div>
                     <h2 class="section-title">Tạo tài khoản user</h2>
-                    <p class="section-note">Khởi tạo username, mật khẩu và chọn manager phụ trách ngay từ đầu.</p>
+                    <p class="section-note">Khởi tạo username, mật khẩu và chọn manager phụ trách ngay từ đầu nếu cần.</p>
                 </div>
             </div>
             {% include "admin/_user_tabs.html" %}
@@ -44,7 +44,9 @@
                 </select>
                 {% if dashboard.manager_binding_locked %}
                 <input type="hidden" name="manager_id" value="{{ dashboard.form.manager_id }}">
-                <p class="mt-2 text-[11px] text-slate-500">Manager scope được khóa theo tài khoản đang đăng nhập.</p>
+                <p class="mt-2 text-[11px] text-slate-500">Manager phụ trách được khóa theo chính tài khoản manager đang đăng nhập.</p>
+                {% else %}
+                <p class="mt-2 text-[11px] text-slate-500">Admin có thể để trống nếu muốn tạo tài khoản chưa gán manager.</p>
                 {% endif %}
             </label>
 
