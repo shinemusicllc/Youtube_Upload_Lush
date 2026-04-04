@@ -16,6 +16,9 @@
 | DEC-012 | Worker cleanup theo 3 lớp: per-job cleanup, browser-session/profile cleanup, và janitor startup/periodic cho artifact stale | Active | worker runtime | High |
 
 | DEC-013 | Scheduler moi worker giu `1 active job` va claim queue theo round-robin giua cac user tren cung worker; worker chi claim job tiep theo sau khi `run_job()` return, tuc sau cleanup local cua job truoc | Active | worker scheduling + disk safety | High |
+| DEC-014 | Worker resilience dung retry/backoff cho HTTP, heartbeat background de tu reconnect sau mat mang/restart, Telegram chi alert khi worker offline qua 180s, va job `uploading` chi `requeue` khi mat ket noi luc upload moi bat dau | Active | worker runtime + control-plane ops | High |
+| DEC-015 | Job dang `rendering/uploading` chi duoc chuyen trang thai sau `lease/grace window`; heartbeat hut ngan khong duoc lap tuc `pending/error` | Active | worker runtime + control-plane ops | High |
+| DEC-016 | Them worker/BOT moi se di qua mot duong SSH bootstrap duy nhat tren control-plane; UI admin va CLI chi la hai mat goi chung mot helper, khong bootstrap qua Telegram | Active | admin ops + deploy | High |
 
 ## Notes
 - `docs/DECISIONS.md` van giu full history va ly do chi tiet.

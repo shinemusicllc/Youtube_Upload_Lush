@@ -14,7 +14,7 @@ import unicodedata
 from pathlib import Path
 import shutil
 import sqlite3
-from threading import RLock
+from threading import Event, RLock, Thread
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, urlencode, urlparse
@@ -97,6 +97,41 @@ class AppStore:
             current = current.replace(second=0, microsecond=0)
         return current.replace(tzinfo=None)
 
+    @staticmethod
+    def _worker_offline_alert_seconds() -> int:
+        raw_value = str(os.getenv("WORKER_OFFLINE_ALERT_SECONDS", "180")).strip()
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            value = 180
+        return max(60, value)
+
+    @staticmethod
+    def _worker_monitor_interval_seconds() -> int:
+        raw_value = str(os.getenv("WORKER_MONITOR_INTERVAL_SECONDS", "30")).strip()
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            value = 30
+        return max(10, value)
+
+    @staticmethod
+    def _worker_job_lease_seconds() -> int:
+        raw_value = str(os.getenv("WORKER_JOB_LEASE_SECONDS", "90")).strip()
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            value = 90
+        return max(30, value)
+
+    @staticmethod
+    def _telegram_alert_bot_token() -> str:
+        return str(os.getenv("TELEGRAM_ALERT_BOT_TOKEN", "")).strip()
+
+    @staticmethod
+    def _telegram_alert_chat_id() -> str:
+        return str(os.getenv("TELEGRAM_ALERT_CHAT_ID", "")).strip()
+
     def __init__(self) -> None:
         now = self._now()
         self.data_dir = Path(__file__).resolve().parents[1] / "data"
@@ -116,6 +151,8 @@ class AppStore:
         self.browser_profile_cleanup_tasks: list[dict[str, Any]] = []
         self.worker_round_robin_cursor: dict[str, str] = {}
         self._worker_state_lock = RLock()
+        self._monitor_stop_event = Event()
+        self._monitor_thread: Thread | None = None
 
         self.users = [
             UserSummary(id="admin-1", username="admin", display_name="Admin", role="admin"),
@@ -708,6 +745,112 @@ class AppStore:
             self._apply_state(json.loads(row[0]))
             return
         self._save_state()
+
+    def start_background_services(self) -> None:
+        with self._worker_state_lock:
+            if self._monitor_thread and self._monitor_thread.is_alive():
+                return
+            self._reconcile_worker_connectivity(now=self._now(trim=False))
+            self._monitor_stop_event.clear()
+            self._monitor_thread = Thread(
+                target=self._worker_monitor_loop,
+                name="control-plane-worker-monitor",
+                daemon=True,
+            )
+            self._monitor_thread.start()
+
+    def stop_background_services(self) -> None:
+        self._monitor_stop_event.set()
+        monitor_thread = self._monitor_thread
+        if monitor_thread and monitor_thread.is_alive():
+            monitor_thread.join(timeout=2.0)
+        self._monitor_thread = None
+
+    def _worker_monitor_loop(self) -> None:
+        interval_seconds = self._worker_monitor_interval_seconds()
+        while not self._monitor_stop_event.wait(interval_seconds):
+            try:
+                with self._worker_state_lock:
+                    now = self._now(trim=False)
+                    self._reconcile_worker_connectivity(now=now)
+                    self._reconcile_expired_worker_jobs(now=now)
+            except Exception as exc:
+                print(f"[worker_monitor] reconcile failed: {exc}", flush=True)
+
+    def _send_telegram_alert(self, message: str) -> bool:
+        bot_token = self._telegram_alert_bot_token()
+        chat_id = self._telegram_alert_chat_id()
+        if not bot_token or not chat_id:
+            return False
+
+        encoded_message = urlencode(
+            {
+                "chat_id": chat_id,
+                "text": message,
+            }
+        ).encode("utf-8")
+        request = Request(
+            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+            data=encoded_message,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=10) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+                return bool(payload.get("ok"))
+        except Exception as exc:
+            print(f"[telegram_alert] failed: {exc}", flush=True)
+            return False
+
+    def _worker_offline_message(self, worker: WorkerRecord, *, now: datetime) -> str:
+        worker_name = worker.name or worker.id
+        manager_name = worker.manager_name or "khong ro"
+        return (
+            "[CANH BAO] BOT mat ket noi qua 3 phut\n"
+            f"BOT: {worker_name}\n"
+            f"BOT ID: {worker.id}\n"
+            f"Manager: {manager_name}\n"
+            "Trang thai: BOT chua tu ket noi lai voi control-plane"
+        )
+
+    def _reconcile_worker_connectivity(self, *, now: datetime) -> bool:
+        changed = False
+        alert_seconds = self._worker_offline_alert_seconds()
+        stale_cutoff = timedelta(seconds=alert_seconds)
+        for worker in self.workers:
+            last_seen = worker.last_seen_at
+            running_threads = self._count_worker_running_jobs(worker)
+            is_online = last_seen is not None and (now - last_seen) < stale_cutoff
+            if is_online:
+                desired_status = "busy" if running_threads > 0 else "online"
+                if worker.status != desired_status:
+                    worker.status = desired_status
+                    changed = True
+                if worker.offline_since_at is not None:
+                    worker.offline_since_at = None
+                    changed = True
+                if worker.offline_alert_sent_at is not None:
+                    worker.offline_alert_sent_at = None
+                    changed = True
+                continue
+
+            if worker.status != "offline":
+                worker.status = "offline"
+                changed = True
+            offline_since_at = last_seen or now
+            if worker.offline_since_at != offline_since_at:
+                worker.offline_since_at = offline_since_at
+                changed = True
+            if worker.offline_alert_sent_at is not None:
+                continue
+            message = self._worker_offline_message(worker, now=now)
+            if self._send_telegram_alert(message):
+                worker.offline_alert_sent_at = now
+                changed = True
+        if changed:
+            self._save_state()
+        return changed
 
     def _normalize_user_worker_assignments(self) -> bool:
         changed = False
@@ -1457,18 +1600,19 @@ class AppStore:
         lease_base = now or self._now()
         active_statuses = self._worker_active_job_statuses()
         allowed_job_ids = {str(job_id).strip() for job_id in (job_ids or []) if str(job_id).strip()}
+        lease_duration = timedelta(seconds=self._worker_job_lease_seconds())
         for job in self.jobs:
             if job.claimed_by_worker_id == worker_id and job.status in active_statuses:
                 if allowed_job_ids and job.id not in allowed_job_ids:
                     continue
-                job.lease_expires_at = lease_base + timedelta(minutes=5)
+                job.lease_expires_at = lease_base + lease_duration
 
     def register_worker(self, payload: WorkerRegisterPayload) -> WorkerControlResponse:
         with self._worker_state_lock:
             if payload.shared_secret != self.get_worker_shared_secret():
                 raise ValueError("Worker shared secret khÃ´ng há»£p lá»‡.")
 
-            now = self._now()
+            now = self._now(trim=False)
             worker_display_name = self._default_worker_display_name(payload.worker_id, payload.name)
             public_base_url = str(payload.public_base_url or "").strip() or None
             existing = next((worker for worker in self.workers if worker.id == payload.worker_id), None)
@@ -1500,6 +1644,8 @@ class AppStore:
                     browser_web_port_base=payload.browser_web_port_base,
                     browser_debug_port_base=payload.browser_debug_port_base,
                 )
+                worker.offline_since_at = None
+                worker.offline_alert_sent_at = None
                 self.workers.append(worker)
             else:
                 existing.name = worker_display_name
@@ -1523,6 +1669,8 @@ class AppStore:
                 existing.disk_total_gb = payload.disk_total_gb or existing.disk_total_gb
                 existing.status = "online"
                 existing.last_seen_at = now
+                existing.offline_since_at = None
+                existing.offline_alert_sent_at = None
                 existing.public_base_url = public_base_url or existing.public_base_url
                 existing.browser_session_enabled = payload.browser_session_enabled
                 existing.browser_display_base = payload.browser_display_base
@@ -1537,7 +1685,7 @@ class AppStore:
     def heartbeat_worker(self, payload: WorkerHeartbeatPayload) -> WorkerControlResponse:
         with self._worker_state_lock:
             worker = self._authenticate_worker(payload.worker_id, payload.shared_secret)
-            now = self._now()
+            now = self._now(trim=False)
             worker.load_percent = payload.load_percent
             worker.ram_percent = payload.ram_percent
             worker.ram_used_gb = payload.ram_used_gb
@@ -1547,6 +1695,8 @@ class AppStore:
             worker.disk_total_gb = payload.disk_total_gb or worker.disk_total_gb
             worker.threads = self._normalize_requested_worker_threads(payload.threads)
             worker.last_seen_at = now
+            worker.offline_since_at = None
+            worker.offline_alert_sent_at = None
             if payload.public_base_url is not None:
                 worker.public_base_url = str(payload.public_base_url).strip() or None
             if payload.browser_session_enabled is not None:
@@ -2854,6 +3004,81 @@ class AppStore:
         if message:
             job.error_message = message
 
+    @staticmethod
+    def _upload_interruption_looks_requeueable(job: RenderJobRecord) -> bool:
+        upload_progress = max(int(job.upload_progress or 0), int(job.progress or 0))
+        if upload_progress > 10:
+            return False
+        if job.output_url:
+            return False
+        status_message = str(job.status_message or "").strip().casefold()
+        committed_markers = (
+            "processing",
+            "dang xu ly",
+            "đang xử lý",
+            "da luu",
+            "đã lưu",
+            "saved as",
+            "uploaded",
+            "đã tải",
+        )
+        return not any(marker in status_message for marker in committed_markers)
+
+    def _handle_interrupted_worker_job(
+        self,
+        job: RenderJobRecord,
+        *,
+        now: datetime,
+        reason: str,
+    ) -> None:
+        if job.status == "uploading":
+            if self._upload_interruption_looks_requeueable(job):
+                self._release_worker_job_claim(
+                    job,
+                    reset_status="pending",
+                    message=f"{reason} Job duoc dua lai hang cho vi upload moi bat dau.",
+                )
+                return
+            job.status = "error"
+            job.completed_at = now
+            job.can_cancel = False
+            job.lease_expires_at = None
+            job.status_message = None
+            job.download_progress = max(int(job.download_progress or 0), 100)
+            job.render_progress = max(int(job.render_progress or 0), 100)
+            job.upload_progress = max(int(job.upload_progress or 0), min(max(job.progress, 0), 99))
+            job.error_message = (
+                f"{reason} Job dang o pha upload da tien xa, "
+                "nen duoc danh dau loi de tranh upload trung video."
+            )
+            return
+        self._release_worker_job_claim(
+            job,
+            reset_status="pending",
+            message=f"{reason} Job duoc dua lai hang cho de worker nhan lai sau khi ket noi on dinh.",
+        )
+
+    def _reconcile_expired_worker_jobs(self, *, now: datetime) -> bool:
+        changed = False
+        active_statuses = self._worker_active_job_statuses()
+        for job in self.jobs:
+            if job.status not in active_statuses:
+                continue
+            if not job.claimed_by_worker_id:
+                continue
+            if job.lease_expires_at is None or job.lease_expires_at > now:
+                continue
+            self._handle_interrupted_worker_job(
+                job,
+                now=now,
+                reason="Control-plane khong nhan duoc heartbeat/progress cua worker trong thoi gian grace.",
+            )
+            changed = True
+        if changed:
+            self._refresh_queue_positions()
+            self._save_state()
+        return changed
+
     def _reconcile_worker_jobs_from_heartbeat(
         self,
         worker: WorkerRecord,
@@ -2866,23 +3091,14 @@ class AppStore:
             if job.claimed_by_worker_id != worker.id or job.status not in self._worker_active_job_statuses():
                 continue
             if job.id in active_job_id_set:
-                job.lease_expires_at = now + timedelta(minutes=5)
+                job.lease_expires_at = now + timedelta(seconds=self._worker_job_lease_seconds())
                 continue
-            if job.status == "uploading":
-                job.status = "error"
-                job.completed_at = now
-                job.can_cancel = False
-                job.lease_expires_at = None
-                job.status_message = None
-                job.download_progress = max(int(job.download_progress or 0), 100)
-                job.render_progress = max(int(job.render_progress or 0), 100)
-                job.upload_progress = max(int(job.upload_progress or 0), min(max(job.progress, 0), 99))
-                job.error_message = "Worker mat tracking o pha upload; can kiem tra lai browser session/worker truoc khi tao lai job."
+            if job.lease_expires_at is not None and job.lease_expires_at > now:
                 continue
-            self._release_worker_job_claim(
+            self._handle_interrupted_worker_job(
                 job,
-                reset_status="pending",
-                message="Job được đưa lại hàng chờ vì worker không còn báo đang xử lý.",
+                now=now,
+                reason="Worker khong con bao job nay trong heartbeat sau khi da qua grace window.",
             )
         self._refresh_queue_positions()
 
@@ -3177,6 +3393,7 @@ class AppStore:
         dashboard = self.get_user_dashboard_view(user_id=user_id)
         return {
             "kpis": dashboard["kpis"],
+            "connected_channels": dashboard["connected_channels"],
             "render_tabs": dashboard["render_tabs"],
             "render_jobs": dashboard["render_jobs"],
             "render_summary": dashboard["render_summary"],

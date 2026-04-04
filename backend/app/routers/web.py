@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import os
 from io import StringIO
 from pathlib import Path
 from urllib.parse import quote, urlencode
@@ -8,6 +9,7 @@ from urllib.parse import quote, urlencode
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from starlette.concurrency import run_in_threadpool
 
 from ..auth import (
     AdminSessionUser,
@@ -24,6 +26,12 @@ from ..auth import (
     set_admin_session_user,
 )
 from ..store import store
+from ..worker_bootstrap import (
+    WorkerBootstrapError,
+    bootstrap_worker_via_ssh,
+    build_worker_bootstrap_request,
+    suggest_next_worker_id,
+)
 
 templates = Jinja2Templates(directory=Path(__file__).resolve().parents[1] / "templates")
 router = APIRouter(tags=["web"])
@@ -157,6 +165,13 @@ def _redirect_bot_page_with_scope(
     if user_id:
         query.append(("userId", user_id))
     return RedirectResponse(url=f"{base_path}?{urlencode(query, doseq=True)}", status_code=303)
+
+
+def _resolve_worker_bootstrap_control_plane_url(request: Request) -> str:
+    configured = str(os.getenv("WORKER_BOOTSTRAP_CONTROL_PLANE_URL", "")).strip()
+    if configured:
+        return configured.rstrip("/")
+    return str(request.base_url).rstrip("/")
 
 
 def _sanitize_next_url(value: str | None, *, default_path: str) -> str:
@@ -900,17 +915,22 @@ async def admin_bot_index(
     selected_manager_ids = _resolve_bot_scope_manager_ids(selected_manager_ids, userId)
     if current_admin.role == "manager" and not selected_manager_ids:
         selected_manager_ids = [current_admin.id]
-    return _render(
-        request,
-        store.get_admin_bot_index_context(
-            manager_ids=selected_manager_ids,
-            viewer_role=current_admin.role,
-            viewer_id=current_admin.id,
-            focus_user_id=userId,
-            notice=notice,
-            notice_level=notice_level,
-        ),
+    dashboard = store.get_admin_bot_index_context(
+        manager_ids=selected_manager_ids,
+        viewer_role=current_admin.role,
+        viewer_id=current_admin.id,
+        focus_user_id=userId,
+        notice=notice,
+        notice_level=notice_level,
     )
+    dashboard["new_worker_defaults"] = {
+        "worker_id": suggest_next_worker_id([worker.id for worker in store.workers]),
+        "worker_name_hint": "IP VPS",
+        "ssh_user": "root",
+        "browser_session_enabled": True,
+        "control_plane_url": _resolve_worker_bootstrap_control_plane_url(request),
+    }
+    return _render(request, dashboard)
 
 
 @router.get("/admin/bot/assignment", response_class=HTMLResponse)
@@ -1000,6 +1020,47 @@ async def admin_bot_update(request: Request):
             user_id=return_user_id,
         )
     except (KeyError, ValueError) as exc:
+        return _redirect_bot_page_with_scope(
+            str(exc),
+            "error",
+            manager_ids=return_manager_ids,
+            user_id=return_user_id,
+        )
+
+
+@router.post("/admin/bot/create")
+async def admin_bot_create(request: Request):
+    current_admin = require_admin_access(request)
+    form = await request.form()
+    vps_ip = str(form.get("vps_ip") or "").strip()
+    ssh_user = str(form.get("ssh_user") or "").strip() or "root"
+    auth_mode = str(form.get("auth_mode") or "password").strip().lower() or "password"
+    password = str(form.get("password") or "").strip()
+    ssh_private_key = str(form.get("ssh_private_key") or "").replace("\r\n", "\n").strip()
+    return_user_id = str(form.get("return_user_id") or "").strip() or None
+    return_manager_ids = [str(value).strip() for value in form.getlist("return_manager_ids") if str(value).strip()]
+    manager_name = current_admin.username if current_admin.role == "manager" else "system"
+    worker_id = suggest_next_worker_id([worker.id for worker in store.workers])
+
+    try:
+        bootstrap_request = build_worker_bootstrap_request(
+            vps_ip=vps_ip,
+            ssh_user=ssh_user,
+            password=password if auth_mode != "ssh_key" else None,
+            ssh_private_key=ssh_private_key if auth_mode == "ssh_key" else None,
+            shared_secret=store.get_worker_shared_secret(),
+            control_plane_url=_resolve_worker_bootstrap_control_plane_url(request),
+            worker_id=worker_id,
+            manager_name=manager_name,
+        )
+        result = await run_in_threadpool(bootstrap_worker_via_ssh, bootstrap_request)
+        return _redirect_bot_page_with_scope(
+            f"Da khoi tao BOT {result.worker_id} tren {result.vps_ip}. Worker service dang {result.service_active} va se tu register voi control-plane.",
+            "success",
+            manager_ids=return_manager_ids,
+            user_id=return_user_id,
+        )
+    except WorkerBootstrapError as exc:
         return _redirect_bot_page_with_scope(
             str(exc),
             "error",

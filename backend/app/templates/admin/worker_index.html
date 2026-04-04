@@ -16,14 +16,20 @@
                 </div>
             </div>
 
-            <div class="w-full lg:w-auto lg:min-w-[520px]">
-                <form method="get" action="/admin/ManagerBOT/index" class="grid gap-3" data-manager-auto-submit="true">
+            <form method="get" action="/admin/ManagerBOT/index" class="grid gap-3 lg:min-w-[560px] lg:grid-cols-[1fr_auto]" data-manager-auto-submit="true">
                     {% if dashboard.focus_user %}
                     <input type="hidden" name="userId" value="{{ dashboard.focus_user.id }}">
                     {% endif %}
                     {% include "admin/_manager_picker.html" %}
-                </form>
-            </div>
+                <button
+                    type="button"
+                    class="action-btn action-btn-brand h-11 justify-center px-4 text-[13px]"
+                    data-dialog-open="create-bot-dialog"
+                >
+                    <i data-lucide="plus" class="h-4 w-4"></i>
+                    Th&#234;m BOT
+                </button>
+            </form>
         </div>
     </div>
 
@@ -143,6 +149,98 @@
     </div>
 </section>
 
+<dialog id="create-bot-dialog" class="admin-dialog">
+    <div class="panel">
+        <form method="post" action="/admin/bot/create">
+            {% for manager_id in dashboard.selected_manager_ids %}
+            <input type="hidden" name="return_manager_ids" value="{{ manager_id }}">
+            {% endfor %}
+            {% if dashboard.focus_user %}
+            <input type="hidden" name="return_user_id" value="{{ dashboard.focus_user.id }}">
+            {% endif %}
+
+            <div class="border-b border-slate-200 px-5 py-4">
+                <h3 class="section-title">Th&#234;m BOT m&#7899;i</h3>
+                <p class="section-note">Control-plane s&#7869; SSH sang VPS, clone repo, c&#224;i worker service v&#224; bot s&#7869; t&#7921; register l&#7841;i h&#7879; th&#7889;ng.</p>
+            </div>
+            <div class="space-y-4 px-5 py-5">
+                <div class="rounded-2xl border border-brand-100 bg-brand-50/70 px-4 py-3 text-[12px] leading-5 text-brand-700">
+                    <p class="font-semibold">BOT ID t&#7921; c&#7845;p: {{ dashboard.new_worker_defaults.worker_id }}</p>
+                    <p class="mt-1">T&#234;n BOT s&#7869; d&#249;ng IP VPS. Browser session/noVNC &#273;&#432;&#7907;c b&#7853;t s&#7861;n &#273;&#7875; &#273;&#259;ng nh&#7853;p Google v&#224; th&#234;m channel sau khi c&#224;i xong. Manager/group c&#243; th&#7875; s&#7917;a sau.</p>
+                </div>
+
+                <div>
+                    <label class="field-label" for="create-bot-vps-ip">VPS IP</label>
+                    <input
+                        class="toolbar-input"
+                        id="create-bot-vps-ip"
+                        name="vps_ip"
+                        required
+                        inputmode="url"
+                        spellcheck="false"
+                        placeholder="109.123.233.131"
+                    >
+                </div>
+                <div>
+                    <label class="field-label" for="create-bot-ssh-user">Root user</label>
+                    <input
+                        class="toolbar-input"
+                        id="create-bot-ssh-user"
+                        name="ssh_user"
+                        value="{{ dashboard.new_worker_defaults.ssh_user }}"
+                        required
+                        autocapitalize="off"
+                        spellcheck="false"
+                    >
+                </div>
+
+                <div class="space-y-2">
+                    <span class="field-label">Ki&#7875;u truy c&#7853;p SSH</span>
+                    <div class="grid gap-2 sm:grid-cols-2">
+                        <label class="flex cursor-pointer items-center gap-3 rounded-2xl border border-brand-100 bg-brand-50/60 px-4 py-3 text-[12px] font-medium text-brand-700">
+                            <input type="radio" name="auth_mode" value="password" checked data-create-auth-toggle>
+                            <span>Password</span>
+                        </label>
+                        <label class="flex cursor-pointer items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-[12px] font-medium text-slate-700">
+                            <input type="radio" name="auth_mode" value="ssh_key" data-create-auth-toggle>
+                            <span>SSH key</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div data-create-auth-panel="password">
+                    <label class="field-label" for="create-bot-password">Password</label>
+                    <input
+                        class="toolbar-input"
+                        id="create-bot-password"
+                        name="password"
+                        type="password"
+                        autocomplete="new-password"
+                        autocapitalize="off"
+                        spellcheck="false"
+                    >
+                </div>
+
+                <div data-create-auth-panel="ssh_key" hidden>
+                    <label class="field-label" for="create-bot-ssh-key">SSH key</label>
+                    <textarea
+                        class="toolbar-input min-h-[180px]"
+                        id="create-bot-ssh-key"
+                        name="ssh_private_key"
+                        spellcheck="false"
+                        placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                    ></textarea>
+                    <p class="mt-2 text-[11px] text-slate-500">D&#225;n nguy&#234;n SSH private key n&#7871;u VPS kh&#244;ng d&#249;ng password.</p>
+                </div>
+            </div>
+            <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
+                <button type="button" class="action-btn action-btn-slate" data-dialog-close>&#272;&#243;ng</button>
+                <button type="submit" class="action-btn action-btn-brand">C&#224;i worker</button>
+            </div>
+        </form>
+    </div>
+</dialog>
+
 <dialog id="edit-bot-dialog" class="admin-dialog">
     <div class="panel">
         <form method="post" action="/admin/bot/update">
@@ -236,7 +334,7 @@
 
             <div class="border-b border-slate-200 px-5 py-4">
                 <h3 class="section-title">X&#243;a BOT</h3>
-                <p class="section-note">Thao t&#225;c n&#224;y s&#7869; g&#7905; BOT kh&#7887;i &#273;i&#7873;u ph&#7889;i hi&#7879;n t&#7841;i v&#224; x&#243;a mapping live c&#242;n b&#225;m tr&#234;n BOT &#273;&#243;.</p>
+                <p class="section-note">Thao t&#225;c n&#224;y ch&#7881; x&#243;a BOT kh&#7887;i control-panel v&#224; d&#7885;n mapping/channel/job trong h&#7879; th&#7889;ng. N&#243; kh&#244;ng t&#7921; uninstall service tr&#234;n VPS.</p>
             </div>
             <div class="space-y-3 px-5 py-5">
                 <input type="hidden" name="Id" id="delete-bot-id">
@@ -258,10 +356,51 @@
     const tbody = table ? table.querySelector('[data-worker-live-body]') : null;
     const editManagerSelect = document.getElementById('edit-bot-manager-id');
     const editUserSelect = document.getElementById('edit-bot-user-id');
+    const createBotDialog = document.getElementById('create-bot-dialog');
+    const createBotIpInput = document.getElementById('create-bot-vps-ip');
+    const createBotPasswordInput = document.getElementById('create-bot-password');
+    const createBotKeyInput = document.getElementById('create-bot-ssh-key');
+    const createAuthToggles = Array.from(document.querySelectorAll('[data-create-auth-toggle]'));
     const pollMs = 3000;
     let pollingController = null;
     let pollingTimer = null;
     let lastPayloadSignature = '';
+
+    function syncCreateAuthPanels() {
+      const selectedToggle = createAuthToggles.find(function (input) {
+        return input.checked;
+      });
+      const selectedMode = selectedToggle ? selectedToggle.value : 'password';
+      document.querySelectorAll('[data-create-auth-panel]').forEach(function (panel) {
+        const isActive = panel.dataset.createAuthPanel === selectedMode;
+        panel.hidden = !isActive;
+      });
+      if (createBotPasswordInput) {
+        createBotPasswordInput.required = selectedMode === 'password';
+      }
+      if (createBotKeyInput) {
+        createBotKeyInput.required = selectedMode === 'ssh_key';
+      }
+    }
+
+    function resetCreateBotDialog() {
+      if (!createBotDialog) {
+        return;
+      }
+      const form = createBotDialog.querySelector('form');
+      if (form) {
+        form.reset();
+      }
+      if (createAuthToggles.length > 0) {
+        createAuthToggles[0].checked = true;
+      }
+      syncCreateAuthPanels();
+    }
+
+    createAuthToggles.forEach(function (toggle) {
+      toggle.addEventListener('change', syncCreateAuthPanels);
+    });
+    syncCreateAuthPanels();
 
     function escapeHtml(value) {
       return String(value === null || value === undefined ? '' : value)
@@ -414,6 +553,16 @@
         if (editUserSelect) {
           editUserSelect.value = button.dataset.userId || '';
           editUserSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        return;
+      }
+
+      if (button.matches('[data-dialog-open="create-bot-dialog"]')) {
+        resetCreateBotDialog();
+        if (createBotIpInput) {
+          window.setTimeout(function () {
+            createBotIpInput.focus();
+          }, 30);
         }
         return;
       }

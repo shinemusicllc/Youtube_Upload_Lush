@@ -48,6 +48,8 @@ class WorkerRecord(BaseModel):
     disk_total_gb: float
     threads: int
     last_seen_at: datetime | None = None
+    offline_since_at: datetime | None = None
+    offline_alert_sent_at: datetime | None = None
     public_base_url: str | None = None
     browser_session_enabled: bool = False
     browser_display_base: int | None = None

@@ -54,6 +54,99 @@
       credentials: init.credentials ?? "include",
     });
 
+  const applyConnectedChannelSearchFilter = () => {
+    if (!(connectedChannelSearchInput instanceof HTMLInputElement) || !(connectedChannelList instanceof HTMLElement)) return;
+
+    const query = connectedChannelSearchInput.value.trim().toLowerCase();
+    connectedChannelList.querySelectorAll("[data-channel-id]").forEach((row) => {
+      if (!(row instanceof HTMLElement)) return;
+      const haystack = String(row.dataset.channelSearch || row.textContent || "").toLowerCase();
+      const hidden = Boolean(query) && !haystack.includes(query);
+      row.classList.toggle("hidden", hidden);
+    });
+  };
+
+  const renderConnectedChannelAvatarMarkup = (channel) => {
+    const publicUrl = escapeHtml(channel.public_url || "#");
+    const title = escapeHtml(channel.title || "");
+    if (channel.avatar_url) {
+      return `
+        <a href="${publicUrl}" target="_blank" rel="noopener noreferrer" class="channel-avatar-shell focus:outline-none">
+          <span class="channel-avatar-inner">
+            <img src="${escapeHtml(channel.avatar_url)}" alt="${title}" class="channel-row-avatar object-cover border border-slate-200" loading="lazy" referrerpolicy="no-referrer">
+          </span>
+        </a>
+      `;
+    }
+
+    const avatarClass = escapeHtml(channel.avatar_class || "");
+    const avatarTextClass = channel.avatar_small ? " text-[10px]" : " text-white text-xs";
+    return `
+      <a href="${publicUrl}" target="_blank" rel="noopener noreferrer" class="channel-avatar-shell focus:outline-none">
+        <span class="channel-avatar-inner">
+          <div class="channel-avatar-fallback ${avatarClass}${avatarTextClass}">${escapeHtml(channel.avatar || "")}</div>
+        </span>
+      </a>
+    `;
+  };
+
+  const renderConnectedChannelWorkerMarkup = (channel) => {
+    if (!channel.worker_label) return "";
+
+    return `
+      <span class="text-slate-300">|</span>
+      <span class="inline-flex max-w-full items-center gap-1.5 rounded-full border border-rose-100 bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-600">
+        <span class="h-1.5 w-1.5 rounded-full ${escapeHtml(channel.worker_status_dot_class || "bg-slate-300")} shrink-0"></span>
+        <span class="truncate text-rose-600">${escapeHtml(channel.worker_label)}</span>
+        <span class="shrink-0 text-rose-600">&bull;</span>
+        <span class="shrink-0 text-rose-600">${Number(channel.worker_channel_count) || 0} kênh</span>
+      </span>
+    `;
+  };
+
+  const renderConnectedChannels = (channels) => {
+    if (!(connectedChannelList instanceof HTMLElement)) return;
+
+    const items = Array.isArray(channels) ? channels : [];
+    connectedChannelList.innerHTML = items
+      .map((channel) => {
+        const publicUrl = escapeHtml(channel.public_url || "#");
+        const title = escapeHtml(channel.title || "");
+        const channelId = escapeHtml(channel.channel_id || "");
+        const channelRecordId = escapeHtml(channel.id || "");
+        const searchText = escapeHtml(channel.search_text || "");
+        return `
+          <div class="channel-row group flex items-center gap-3 p-2.5 border-l-2 border-y border-r border-slate-200/70 rounded-xl bg-white min-w-0 transition-all cursor-pointer" data-channel-id="${channelRecordId}" data-channel-search="${searchText}">
+            ${renderConnectedChannelAvatarMarkup(channel)}
+            <div class="channel-row-copy flex-1 overflow-hidden">
+              <div class="channel-row-head">
+                <a href="${publicUrl}" target="_blank" rel="noopener noreferrer" class="channel-row-title hover:text-brand-700 transition-colors">${title}</a>
+              </div>
+              <div class="flex min-w-0 items-center gap-1.5 text-[10px] font-mono">
+                <a href="${publicUrl}" target="_blank" rel="noopener noreferrer" class="channel-row-meta-link truncate">${channelId}</a>
+                ${renderConnectedChannelWorkerMarkup(channel)}
+              </div>
+            </div>
+            <div class="channel-row-action">
+              <div class="channel-status flex items-center justify-end gap-1.5 text-[10px] font-semibold text-emerald-700 whitespace-nowrap transition-opacity">
+                <i data-lucide="circle-check" class="w-3.5 h-3.5"></i>
+                <span class="truncate">Đã kết nối</span>
+              </div>
+              <button type="button" data-channel-action="delete" data-channel-id="${channelRecordId}" data-channel-title="${title}" class="channel-remove absolute inset-y-0 right-0 inline-flex items-center gap-1.5 text-[11px] font-semibold text-rose-600 hover:text-rose-700 opacity-0 pointer-events-none transition-opacity" title="Xóa kênh">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                <span>Xóa</span>
+              </button>
+            </div>
+          </div>
+        `;
+      })
+      .join("");
+
+    initChannelActions();
+    applyConnectedChannelSearchFilter();
+    if (window.lucide) window.lucide.createIcons();
+  };
+
   const clampRenderPage = (page, totalPages) => {
     if (totalPages <= 0) return 1;
     return Math.min(Math.max(page, 1), totalPages);
@@ -909,6 +1002,11 @@
       });
     }
 
+    if (Array.isArray(payload.connected_channels)) {
+      dashboardSeed.connected_channels = payload.connected_channels;
+      renderConnectedChannels(payload.connected_channels);
+    }
+
     renderJobsState = Array.isArray(payload.render_jobs) ? payload.render_jobs : [];
     if (payload.browser_session !== undefined) {
       activeBrowserSession = payload.browser_session || null;
@@ -921,6 +1019,22 @@
     const compact = {
       kpis: Array.isArray(payload.kpis)
         ? payload.kpis.map((item) => [item.value, item.accent, item.value_class, item.bar_class])
+        : [],
+      connected_channels: Array.isArray(payload.connected_channels)
+        ? payload.connected_channels.map((channel) => [
+            channel.id,
+            channel.title,
+            channel.channel_id,
+            channel.worker_label,
+            channel.worker_status_dot_class,
+            channel.worker_channel_count,
+            channel.search_text,
+            channel.public_url,
+            channel.avatar,
+            channel.avatar_url,
+            channel.avatar_class,
+            channel.avatar_small,
+          ])
         : [],
       render_tabs: Array.isArray(payload.render_tabs)
         ? payload.render_tabs.map((item) => [item.label, item.count, item.active])
@@ -2317,6 +2431,8 @@
 
   const initChannelActions = () => {
     document.querySelectorAll("[data-channel-action='delete']").forEach((button) => {
+      if (!(button instanceof HTMLButtonElement) || button.dataset.actionReady === "true") return;
+      button.dataset.actionReady = "true";
       button.addEventListener("click", async () => {
         const channelId = button.dataset.channelId;
         const channelTitle = button.dataset.channelTitle || "kênh này";
@@ -2353,22 +2469,11 @@
 
   const initConnectedChannelSearch = () => {
     if (!(connectedChannelSearchInput instanceof HTMLInputElement) || !(connectedChannelList instanceof HTMLElement)) return;
-
-    const applyConnectedChannelSearch = () => {
-      const query = connectedChannelSearchInput.value.trim().toLowerCase();
-      let visibleCount = 0;
-
-      connectedChannelList.querySelectorAll("[data-channel-id]").forEach((row) => {
-        if (!(row instanceof HTMLElement)) return;
-        const haystack = String(row.dataset.channelSearch || row.textContent || "").toLowerCase();
-        const hidden = Boolean(query) && !haystack.includes(query);
-        row.classList.toggle("hidden", hidden);
-        if (!hidden) visibleCount += 1;
-      });
-    };
-
-    connectedChannelSearchInput.addEventListener("input", applyConnectedChannelSearch);
-    applyConnectedChannelSearch();
+    if (connectedChannelSearchInput.dataset.searchReady !== "true") {
+      connectedChannelSearchInput.dataset.searchReady = "true";
+      connectedChannelSearchInput.addEventListener("input", applyConnectedChannelSearchFilter);
+    }
+    applyConnectedChannelSearchFilter();
   };
 
   const clearTransientNoticeParams = () => {

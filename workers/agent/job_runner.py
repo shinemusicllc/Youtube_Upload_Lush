@@ -48,14 +48,26 @@ def _make_progress_reporter(client: httpx.Client, config: WorkerConfig, job_id: 
             state["message"] = cleaned_message
             return
 
-        update_job_progress(
-            client,
-            config,
-            job_id,
-            status=status,
-            progress=bounded,
-            message=cleaned_message,
-        )
+        try:
+            update_job_progress(
+                client,
+                config,
+                job_id,
+                status=status,
+                progress=bounded,
+                message=cleaned_message,
+            )
+        except Exception as exc:
+            print(
+                f"[job_progress] job={job_id} status={status} progress={bounded} "
+                f"update skipped after retries: {exc}",
+                flush=True,
+            )
+            state["status"] = status
+            state["progress"] = max(last_progress, bounded)
+            state["message"] = cleaned_message
+            state["sent_at"] = now
+            return
         state["status"] = status
         state["progress"] = bounded
         state["message"] = cleaned_message

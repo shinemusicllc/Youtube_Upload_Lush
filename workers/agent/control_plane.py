@@ -13,6 +13,7 @@ from .config import WorkerConfig
 
 _last_bandwidth_sample: tuple[float, int] | None = None
 _last_cpu_sample: tuple[int, int] | None = None
+_RETRYABLE_STATUS_CODES = {408, 425, 429, 500, 502, 503, 504}
 
 
 def _load_percent() -> int:
@@ -141,6 +142,65 @@ def worker_auth_headers(config: WorkerConfig) -> dict[str, str]:
     }
 
 
+def _is_retryable_error(exc: Exception) -> bool:
+    if isinstance(exc, httpx.TimeoutException):
+        return True
+    if isinstance(exc, httpx.RequestError):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        response = exc.response
+        return response is not None and response.status_code in _RETRYABLE_STATUS_CODES
+    return False
+
+
+def is_worker_missing_error(exc: Exception) -> bool:
+    if not isinstance(exc, httpx.HTTPStatusError):
+        return False
+    response = exc.response
+    request = exc.request
+    if response is None or request is None:
+        return False
+    return response.status_code == 404 and "/api/workers/" in str(request.url)
+
+
+def _retry_delay_seconds(config: WorkerConfig, attempt: int) -> float:
+    capped_attempt = max(0, min(attempt - 1, 6))
+    delay = config.network_retry_base_seconds * (2 ** capped_attempt)
+    return max(config.network_retry_base_seconds, min(config.network_retry_max_seconds, delay))
+
+
+def _request_with_retry(
+    client: httpx.Client,
+    config: WorkerConfig,
+    method: str,
+    url: str,
+    *,
+    operation: str,
+    retry_forever: bool = True,
+    max_attempts: int | None = None,
+    **kwargs: Any,
+) -> httpx.Response:
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            response = client.request(method, url, **kwargs)
+            response.raise_for_status()
+            return response
+        except Exception as exc:
+            if not _is_retryable_error(exc):
+                raise
+            if not retry_forever and max_attempts is not None and attempt >= max_attempts:
+                raise
+            delay_seconds = _retry_delay_seconds(config, attempt)
+            print(
+                f"[control_plane] {operation} failed (attempt {attempt}): {exc}. "
+                f"retrying in {delay_seconds:.1f}s",
+                flush=True,
+            )
+            time.sleep(delay_seconds)
+
+
 @dataclass
 class YouTubeUploadTarget:
     job_id: str
@@ -177,8 +237,12 @@ class BrowserProfileCleanupAssignment:
 
 def register_worker(client: httpx.Client, config: WorkerConfig) -> None:
     _, total_gb = _disk_usage()
-    response = client.post(
+    _request_with_retry(
+        client,
+        config,
+        "POST",
         "/api/workers/register",
+        operation="register_worker",
         json={
             "worker_id": config.worker_id,
             "name": config.worker_name,
@@ -196,7 +260,6 @@ def register_worker(client: httpx.Client, config: WorkerConfig) -> None:
             "browser_debug_port_base": config.browser_debug_port_base,
         },
     )
-    response.raise_for_status()
 
 
 def heartbeat_worker(
@@ -207,8 +270,12 @@ def heartbeat_worker(
 ) -> None:
     used_gb, total_gb = _disk_usage()
     ram_used_gb, ram_total_gb, ram_percent = _memory_usage()
-    response = client.post(
+    _request_with_retry(
+        client,
+        config,
+        "POST",
         "/api/workers/heartbeat",
+        operation="heartbeat_worker",
         json={
             "worker_id": config.worker_id,
             "shared_secret": config.shared_secret,
@@ -230,21 +297,23 @@ def heartbeat_worker(
             "active_job_ids": active_job_ids or [],
         },
     )
-    response.raise_for_status()
 
 
 def poll_browser_sessions(
     client: httpx.Client,
     config: WorkerConfig,
 ) -> tuple[list[BrowserSessionAssignment], list[BrowserProfileCleanupAssignment]]:
-    response = client.post(
+    response = _request_with_retry(
+        client,
+        config,
+        "POST",
         "/api/workers/browser-sessions/poll",
+        operation="poll_browser_sessions",
         json={
             "worker_id": config.worker_id,
             "shared_secret": config.shared_secret,
         },
     )
-    response.raise_for_status()
     payload = response.json()
     sessions: list[BrowserSessionAssignment] = []
     for item in payload.get("sessions") or []:
@@ -280,15 +349,18 @@ def ack_browser_profile_cleanup(
 ) -> None:
     if not profile_keys:
         return
-    response = client.post(
+    _request_with_retry(
+        client,
+        config,
+        "POST",
         "/api/workers/browser-profiles/cleanup-ack",
+        operation="ack_browser_profile_cleanup",
         json={
             "worker_id": config.worker_id,
             "shared_secret": config.shared_secret,
             "profile_keys": profile_keys,
         },
     )
-    response.raise_for_status()
 
 
 def sync_browser_session(
@@ -312,8 +384,12 @@ def sync_browser_session(
     x11vnc_pid: int | None = None,
     websockify_pid: int | None = None,
 ) -> None:
-    response = client.post(
+    _request_with_retry(
+        client,
+        config,
+        "POST",
         f"/api/workers/browser-sessions/{session_id}/sync",
+        operation=f"sync_browser_session:{session_id}",
         json={
             "worker_id": config.worker_id,
             "shared_secret": config.shared_secret,
@@ -334,18 +410,20 @@ def sync_browser_session(
             "websockify_pid": websockify_pid,
         },
     )
-    response.raise_for_status()
 
 
 def claim_job(client: httpx.Client, config: WorkerConfig) -> dict[str, Any] | None:
-    response = client.post(
+    response = _request_with_retry(
+        client,
+        config,
+        "POST",
         "/api/workers/claim",
+        operation="claim_job",
         json={
             "worker_id": config.worker_id,
             "shared_secret": config.shared_secret,
         },
     )
-    response.raise_for_status()
     payload = response.json()
     return payload.get("job")
 
@@ -359,8 +437,14 @@ def update_job_progress(
     progress: int,
     message: str | None = None,
 ) -> None:
-    response = client.post(
+    _request_with_retry(
+        client,
+        config,
+        "POST",
         f"/api/workers/jobs/{job_id}/progress",
+        operation=f"update_job_progress:{job_id}",
+        retry_forever=False,
+        max_attempts=config.progress_retry_attempts,
         json={
             "worker_id": config.worker_id,
             "shared_secret": config.shared_secret,
@@ -369,7 +453,6 @@ def update_job_progress(
             "message": message,
         },
     )
-    response.raise_for_status()
 
 
 def upload_job_thumbnail(
@@ -381,8 +464,12 @@ def upload_job_thumbnail(
     payload: bytes,
     content_type: str = "image/jpeg",
 ) -> None:
-    response = client.post(
+    _request_with_retry(
+        client,
+        config,
+        "POST",
         f"/api/workers/jobs/{job_id}/thumbnail",
+        operation=f"upload_job_thumbnail:{job_id}",
         headers={
             **worker_auth_headers(config),
             "x-file-name": file_name,
@@ -390,7 +477,6 @@ def upload_job_thumbnail(
         },
         content=payload,
     )
-    response.raise_for_status()
 
 
 def complete_job(
@@ -401,8 +487,12 @@ def complete_job(
     output_url: str | None = None,
     message: str | None = None,
 ) -> None:
-    response = client.post(
+    _request_with_retry(
+        client,
+        config,
+        "POST",
         f"/api/workers/jobs/{job_id}/complete",
+        operation=f"complete_job:{job_id}",
         json={
             "worker_id": config.worker_id,
             "shared_secret": config.shared_secret,
@@ -410,27 +500,32 @@ def complete_job(
             "message": message,
         },
     )
-    response.raise_for_status()
 
 
 def fail_job(client: httpx.Client, config: WorkerConfig, job_id: str, *, message: str) -> None:
-    response = client.post(
+    _request_with_retry(
+        client,
+        config,
+        "POST",
         f"/api/workers/jobs/{job_id}/fail",
+        operation=f"fail_job:{job_id}",
         json={
             "worker_id": config.worker_id,
             "shared_secret": config.shared_secret,
             "message": message,
         },
     )
-    response.raise_for_status()
 
 
 def get_job_youtube_target(client: httpx.Client, config: WorkerConfig, job_id: str) -> YouTubeUploadTarget:
-    response = client.get(
+    response = _request_with_retry(
+        client,
+        config,
+        "GET",
         f"/api/workers/jobs/{job_id}/youtube-target",
+        operation=f"get_job_youtube_target:{job_id}",
         headers=worker_auth_headers(config),
     )
-    response.raise_for_status()
     payload = response.json()
     return YouTubeUploadTarget(
         job_id=str(payload["job_id"]),

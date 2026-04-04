@@ -40,6 +40,9 @@ class WorkerConfig:
     browser_vnc_port_base: int
     browser_web_port_base: int
     browser_debug_port_base: int
+    network_retry_base_seconds: float
+    network_retry_max_seconds: float
+    progress_retry_attempts: int
 
 
 def load_config() -> WorkerConfig:
@@ -71,4 +74,7 @@ def load_config() -> WorkerConfig:
         browser_vnc_port_base=int(os.getenv("BROWSER_SESSION_VNC_PORT_BASE", "5990")),
         browser_web_port_base=int(os.getenv("BROWSER_SESSION_WEB_PORT_BASE", "6090")),
         browser_debug_port_base=int(os.getenv("BROWSER_SESSION_DEBUG_PORT_BASE", "9222")),
+        network_retry_base_seconds=float(os.getenv("WORKER_NETWORK_RETRY_BASE_SECONDS", "3")),
+        network_retry_max_seconds=float(os.getenv("WORKER_NETWORK_RETRY_MAX_SECONDS", "30")),
+        progress_retry_attempts=max(1, int(os.getenv("WORKER_PROGRESS_RETRY_ATTEMPTS", "3"))),
     )

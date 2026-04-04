@@ -17,6 +17,14 @@ def create_app() -> FastAPI:
         version="0.1.0",
     )
 
+    @app.on_event("startup")
+    async def start_background_services() -> None:
+        store.start_background_services()
+
+    @app.on_event("shutdown")
+    async def stop_background_services() -> None:
+        store.stop_background_services()
+
     app.add_middleware(
         SessionMiddleware,
         secret_key=store.get_session_secret(),
