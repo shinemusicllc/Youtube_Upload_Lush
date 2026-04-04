@@ -2054,8 +2054,7 @@
       return parsed.toLocaleString("vi-VN");
     };
 
-    const isBrowserSessionReady = (session) =>
-      !!(session?.novnc_url && !["failed", "closed", "expired"].includes(String(session?.status || "").trim()));
+    const isBrowserSessionReady = (session) => !!(session?.novnc_url && ["awaiting_confirmation", "confirmed"].includes(session.status));
     const canAutoConfirmBrowserSession = (session) =>
       !!(session?.session_id && session?.detected_channel_id && ["awaiting_confirmation", "confirmed"].includes(session.status));
 
@@ -2373,7 +2372,7 @@
     openSessionButton.addEventListener("click", async () => {
       const session = activeBrowserSession?.session_id ? await refreshBrowserSession(true) : null;
       const next = session || activeBrowserSession;
-      if (!isBrowserSessionReady(next)) {
+      if (!next?.novnc_url || !["awaiting_confirmation", "confirmed"].includes(next.status)) {
         showToast("VPS chưa báo sẵn sàng noVNC. Chờ vài giây rồi thử lại.", "error");
         return;
       }
