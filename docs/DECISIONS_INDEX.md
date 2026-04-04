@@ -20,6 +20,7 @@
 | DEC-015 | Job dang `rendering/uploading` chi duoc chuyen trang thai sau `lease/grace window`; heartbeat hut ngan khong duoc lap tuc `pending/error` | Active | worker runtime + control-plane ops | High |
 | DEC-016 | Them worker/BOT moi se di qua mot duong SSH bootstrap duy nhat tren control-plane; UI admin va CLI chi la hai mat goi chung mot helper, khong bootstrap qua Telegram | Active | admin ops + deploy | High |
 | DEC-017 | `Xoa BOT` phai la decommission that tren VPS va `Them BOT` phai hien row provisioning live ngay trong Danh sach BOT | Active | admin ops + BOT UI | High |
+| DEC-018 | Bootstrap/decommission worker phai chiu duoc Windows line endings va viec tai tao worker tren cung VPS: script upload sang Linux phai duoc normalize LF, venv phai tao o runtime dir, failed install row khong duoc giu slot `worker-XX`, va requirement worker phai du de boot tren may trang | Active | worker bootstrap + admin ops | High |
 
 ## Notes
 - `docs/DECISIONS.md` van giu full history va ly do chi tiet.
