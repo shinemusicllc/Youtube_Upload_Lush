@@ -9,7 +9,6 @@ from urllib.parse import quote, urlencode
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
-from starlette.concurrency import run_in_threadpool
 
 from ..auth import (
     AdminSessionUser,
@@ -28,9 +27,10 @@ from ..auth import (
 from ..store import store
 from ..worker_bootstrap import (
     WorkerBootstrapError,
-    bootstrap_worker_via_ssh,
+    build_worker_decommission_request,
     build_worker_bootstrap_request,
-    suggest_next_worker_id,
+    start_worker_decommission_operation,
+    start_worker_install_operation,
 )
 
 templates = Jinja2Templates(directory=Path(__file__).resolve().parents[1] / "templates")
@@ -753,7 +753,7 @@ async def admin_user_reset_password(request: Request):
     try:
         _enforce_user_scope(current_admin, user_id)
         return _redirect_with_notice("/admin/user/edit", "Đổi mật khẩu đã được gộp vào Sửa user.", "info", userId=user_id)
-    except (KeyError, ValueError) as exc:
+    except (KeyError, ValueError, WorkerBootstrapError) as exc:
         return _redirect_with_notice("/admin/user/index", str(exc), "error")
 
 
@@ -861,7 +861,7 @@ async def admin_user_add_bot(request: Request):
             "info",
             user_id=user_id or None,
         )
-    except (KeyError, ValueError) as exc:
+    except (KeyError, ValueError, WorkerBootstrapError) as exc:
         return _redirect_bot_page_with_scope(str(exc), "error", user_id=user_id or None)
 
 
@@ -878,7 +878,7 @@ async def admin_user_delete_bot(request: Request):
             "info",
             user_id=user_id or None,
         )
-    except (KeyError, ValueError) as exc:
+    except (KeyError, ValueError, WorkerBootstrapError) as exc:
         return _redirect_bot_page_with_scope(str(exc), "error", user_id=user_id or None)
 
 
@@ -924,7 +924,7 @@ async def admin_bot_index(
         notice_level=notice_level,
     )
     dashboard["new_worker_defaults"] = {
-        "worker_id": suggest_next_worker_id([worker.id for worker in store.workers]),
+        "worker_id": store.suggest_next_worker_bootstrap_id(),
         "worker_name_hint": "IP VPS",
         "ssh_user": "root",
         "browser_session_enabled": True,
@@ -1040,7 +1040,8 @@ async def admin_bot_create(request: Request):
     return_user_id = str(form.get("return_user_id") or "").strip() or None
     return_manager_ids = [str(value).strip() for value in form.getlist("return_manager_ids") if str(value).strip()]
     manager_name = current_admin.username if current_admin.role == "manager" else "system"
-    worker_id = suggest_next_worker_id([worker.id for worker in store.workers])
+    manager_id = current_admin.id if current_admin.role == "manager" else None
+    worker_id = store.suggest_next_worker_bootstrap_id()
 
     try:
         bootstrap_request = build_worker_bootstrap_request(
@@ -1053,14 +1054,23 @@ async def admin_bot_create(request: Request):
             worker_id=worker_id,
             manager_name=manager_name,
         )
-        result = await run_in_threadpool(bootstrap_worker_via_ssh, bootstrap_request)
+        task = start_worker_install_operation(
+            store=store,
+            request=bootstrap_request,
+            ssh_user=ssh_user,
+            manager_id=manager_id,
+            manager_name=manager_name,
+        )
         return _redirect_bot_page_with_scope(
-            f"Da khoi tao BOT {result.worker_id} tren {result.vps_ip}. Worker service dang {result.service_active} va se tu register voi control-plane.",
+            (
+                f"Da xep hang cai dat BOT {task['worker_id']} tren {task['vps_ip']}. "
+                "Bang BOT se tu cap nhat khi worker duoc cai dat va ket noi lai."
+            ),
             "success",
             manager_ids=return_manager_ids,
             user_id=return_user_id,
         )
-    except WorkerBootstrapError as exc:
+    except (WorkerBootstrapError, ValueError) as exc:
         return _redirect_bot_page_with_scope(
             str(exc),
             "error",
@@ -1075,10 +1085,35 @@ async def admin_bot_delete(request: Request):
     form = await request.form()
     worker_id = str(form.get("Id") or form.get("worker_id") or "").strip()
     _enforce_worker_scope(current_admin, worker_id)
+    ssh_user = str(form.get("ssh_user") or "").strip() or "root"
+    auth_mode = str(form.get("auth_mode") or "password").strip().lower() or "password"
+    password = str(form.get("password") or "").strip()
+    ssh_private_key = str(form.get("ssh_private_key") or "").replace("\r\n", "\n").strip()
     return_user_id = str(form.get("return_user_id") or "").strip() or None
     return_manager_ids = [str(value).strip() for value in form.getlist("return_manager_ids") if str(value).strip()]
     try:
-        store.delete_bot(worker_id)
+        connection_profile = store.get_worker_connection_profile(worker_id)
+        decommission_request = build_worker_decommission_request(
+            vps_ip=connection_profile["vps_ip"],
+            ssh_user=ssh_user or connection_profile["ssh_user"],
+            password=password if auth_mode != "ssh_key" else None,
+            ssh_private_key=ssh_private_key if auth_mode == "ssh_key" else None,
+        )
+        task = start_worker_decommission_operation(
+            store=store,
+            worker_id=worker_id,
+            request=decommission_request,
+            ssh_user=ssh_user or connection_profile["ssh_user"],
+        )
+        return _redirect_bot_page_with_scope(
+            (
+                f"Da bat dau go BOT {worker_id} khoi VPS {task['vps_ip']}. "
+                "BOT se bien mat khoi danh sach sau khi service va du lieu tren may duoc don xong."
+            ),
+            "success",
+            manager_ids=return_manager_ids,
+            user_id=return_user_id,
+        )
         return _redirect_bot_page_with_scope(
             "Đã xóa BOT.",
             "success",

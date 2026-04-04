@@ -50,6 +50,7 @@ from .schemas import (
     WorkerRecord,
     WorkerYouTubeUploadTarget,
 )
+from .worker_bootstrap import suggest_next_worker_id
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
@@ -150,6 +151,8 @@ class AppStore:
         self.browser_sessions: list[BrowserSessionRecord] = []
         self.browser_profile_cleanup_tasks: list[dict[str, Any]] = []
         self.worker_round_robin_cursor: dict[str, str] = {}
+        self.worker_connection_profiles: dict[str, dict[str, Any]] = {}
+        self.worker_operation_tasks: list[dict[str, Any]] = []
         self._worker_state_lock = RLock()
         self._monitor_stop_event = Event()
         self._monitor_thread: Thread | None = None
@@ -676,6 +679,50 @@ class AppStore:
             return AppStore._normalize_datetime(datetime.fromisoformat(value))
         raise ValueError(f"Unsupported datetime payload: {value!r}")
 
+    def _restore_worker_connection_profiles(self, payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        restored: dict[str, dict[str, Any]] = {}
+        for worker_id, raw_profile in payload.items():
+            normalized_worker_id = str(worker_id or "").strip()
+            if not normalized_worker_id or not isinstance(raw_profile, dict):
+                continue
+            profile = dict(raw_profile)
+            restored[normalized_worker_id] = {
+                "worker_id": normalized_worker_id,
+                "vps_ip": str(profile.get("vps_ip") or "").strip(),
+                "ssh_user": str(profile.get("ssh_user") or "").strip() or "root",
+                "updated_at": self._parse_datetime(profile.get("updated_at")),
+            }
+        return restored
+
+    def _restore_worker_operation_tasks(self, payload: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        tasks: list[dict[str, Any]] = []
+        for raw_task in payload:
+            if not isinstance(raw_task, dict):
+                continue
+            task = dict(raw_task)
+            task_id = str(task.get("id") or "").strip()
+            worker_id = str(task.get("worker_id") or "").strip()
+            if not task_id or not worker_id:
+                continue
+            tasks.append(
+                {
+                    "id": task_id,
+                    "worker_id": worker_id,
+                    "worker_name": str(task.get("worker_name") or "").strip(),
+                    "vps_ip": str(task.get("vps_ip") or "").strip(),
+                    "manager_id": str(task.get("manager_id") or "").strip() or None,
+                    "manager_name": str(task.get("manager_name") or "").strip(),
+                    "group": str(task.get("group") or "").strip(),
+                    "kind": str(task.get("kind") or "install").strip(),
+                    "status": str(task.get("status") or "queued").strip(),
+                    "message": str(task.get("message") or "").strip(),
+                    "created_at": self._parse_datetime(task.get("created_at")) or self._now(trim=False),
+                    "updated_at": self._parse_datetime(task.get("updated_at")) or self._now(trim=False),
+                    "completed_at": self._parse_datetime(task.get("completed_at")),
+                }
+            )
+        return tasks
+
     def _serialize_state(self) -> dict[str, Any]:
         return {
             "users": [user.model_dump(mode="json") for user in self.users],
@@ -689,6 +736,8 @@ class AppStore:
             "browser_sessions": [session.model_dump(mode="json") for session in self.browser_sessions],
             "browser_profile_cleanup_tasks": deepcopy(self.browser_profile_cleanup_tasks),
             "worker_round_robin_cursor": deepcopy(self.worker_round_robin_cursor),
+            "worker_connection_profiles": self._serialize_value(self.worker_connection_profiles),
+            "worker_operation_tasks": self._serialize_value(self.worker_operation_tasks),
             "render_delete_meta": self._serialize_value(self.render_delete_meta),
         }
 
@@ -714,6 +763,12 @@ class AppStore:
             for worker_id, owner_key in (payload.get("worker_round_robin_cursor") or {}).items()
             if str(worker_id or "").strip() and str(owner_key or "").strip()
         }
+        self.worker_connection_profiles = self._restore_worker_connection_profiles(
+            payload.get("worker_connection_profiles") or {}
+        )
+        self.worker_operation_tasks = self._restore_worker_operation_tasks(
+            payload.get("worker_operation_tasks") or []
+        )
 
         render_meta = payload.get("render_delete_meta") or {}
         self.render_delete_meta = {
@@ -745,6 +800,269 @@ class AppStore:
             self._apply_state(json.loads(row[0]))
             return
         self._save_state()
+
+    @staticmethod
+    def _looks_like_ipv4(value: str | None) -> bool:
+        normalized = str(value or "").strip()
+        if not normalized:
+            return False
+        return bool(re.fullmatch(r"\d{1,3}(?:\.\d{1,3}){3}", normalized))
+
+    def suggest_next_worker_bootstrap_id(self) -> str:
+        reserved_ids = [worker.id for worker in self.workers]
+        reserved_ids.extend(
+            str(task.get("worker_id") or "").strip()
+            for task in self.worker_operation_tasks
+            if str(task.get("worker_id") or "").strip()
+            and str(task.get("status") or "").strip() not in {"completed", "failed"}
+        )
+        return suggest_next_worker_id(reserved_ids)
+
+    def _remember_worker_connection_profile(self, worker_id: str, *, vps_ip: str, ssh_user: str) -> None:
+        normalized_worker_id = str(worker_id or "").strip()
+        normalized_ip = str(vps_ip or "").strip()
+        if not normalized_worker_id or not normalized_ip:
+            return
+        self.worker_connection_profiles[normalized_worker_id] = {
+            "worker_id": normalized_worker_id,
+            "vps_ip": normalized_ip,
+            "ssh_user": str(ssh_user or "").strip() or "root",
+            "updated_at": self._now(trim=False),
+        }
+
+    def get_worker_connection_profile(self, worker_id: str) -> dict[str, Any]:
+        normalized_worker_id = str(worker_id or "").strip()
+        if not normalized_worker_id:
+            raise KeyError(worker_id)
+        profile = dict(self.worker_connection_profiles.get(normalized_worker_id) or {})
+        if not profile:
+            worker = self._find_worker(normalized_worker_id)
+            worker_name = str(self._resolve_worker_display_name(worker.id) or "").strip()
+            if self._looks_like_ipv4(worker_name):
+                profile = {
+                    "worker_id": normalized_worker_id,
+                    "vps_ip": worker_name,
+                    "ssh_user": "root",
+                    "updated_at": self._now(trim=False),
+                }
+        normalized_ip = str(profile.get("vps_ip") or "").strip()
+        if not normalized_ip:
+            raise ValueError("BOT nay chua co thong tin VPS IP de go worker tu xa.")
+        return {
+            "worker_id": normalized_worker_id,
+            "vps_ip": normalized_ip,
+            "ssh_user": str(profile.get("ssh_user") or "").strip() or "root",
+            "updated_at": self._parse_datetime(profile.get("updated_at")),
+        }
+
+    @staticmethod
+    def _worker_operation_is_finished(task: dict[str, Any]) -> bool:
+        return str(task.get("status") or "").strip() == "completed"
+
+    def _find_worker_operation(self, operation_id: str) -> dict[str, Any]:
+        normalized_id = str(operation_id or "").strip()
+        for task in self.worker_operation_tasks:
+            if str(task.get("id") or "").strip() == normalized_id:
+                return task
+        raise KeyError(operation_id)
+
+    def _worker_operation_badge(self, task: dict[str, Any]) -> tuple[str, str]:
+        kind = str(task.get("kind") or "").strip()
+        status = str(task.get("status") or "").strip()
+        mapping = {
+            ("install", "queued"): (
+                "Dang xep hang cai dat",
+                "inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold text-amber-700",
+            ),
+            ("install", "running"): (
+                "Dang cai dat",
+                "inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[10px] font-semibold text-sky-700",
+            ),
+            ("install", "awaiting_registration"): (
+                "Cho BOT ket noi",
+                "inline-flex items-center rounded-full border border-brand-100 bg-brand-50 px-2.5 py-1 text-[10px] font-semibold text-brand-700",
+            ),
+            ("install", "failed"): (
+                "Cai dat loi",
+                "inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[10px] font-semibold text-rose-700",
+            ),
+            ("decommission", "queued"): (
+                "Dang xep hang go BOT",
+                "inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold text-amber-700",
+            ),
+            ("decommission", "running"): (
+                "Dang go BOT",
+                "inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-[10px] font-semibold text-orange-700",
+            ),
+            ("decommission", "failed"): (
+                "Go BOT loi",
+                "inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[10px] font-semibold text-rose-700",
+            ),
+        }
+        return mapping.get(
+            (kind, status),
+            (
+                "Dang xu ly",
+                "inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-700",
+            ),
+        )
+
+    def enqueue_worker_install_operation(
+        self,
+        *,
+        worker_id: str,
+        worker_name: str,
+        vps_ip: str,
+        ssh_user: str,
+        manager_id: str | None,
+        manager_name: str,
+        group: str = "",
+    ) -> dict[str, Any]:
+        with self._worker_state_lock:
+            normalized_worker_id = str(worker_id or "").strip()
+            normalized_ip = str(vps_ip or "").strip()
+            if not normalized_worker_id or not normalized_ip:
+                raise ValueError("Worker bootstrap task thieu worker_id hoac VPS IP.")
+            if any(str(worker.id or "").strip() == normalized_worker_id for worker in self.workers):
+                raise ValueError("Worker ID nay da ton tai trong control-plane.")
+            if any(str(self._resolve_worker_display_name(worker.id) or "").strip() == normalized_ip for worker in self.workers):
+                raise ValueError("VPS nay da ton tai trong danh sach BOT.")
+            removed_failed_worker_ids: set[str] = set()
+            remaining_tasks: list[dict[str, Any]] = []
+            for task in self.worker_operation_tasks:
+                is_replaceable_failed_install = (
+                    str(task.get("kind") or "").strip() == "install"
+                    and str(task.get("status") or "").strip() == "failed"
+                    and (
+                        str(task.get("worker_id") or "").strip() == normalized_worker_id
+                        or str(task.get("vps_ip") or "").strip() == normalized_ip
+                    )
+                )
+                if is_replaceable_failed_install:
+                    failed_worker_id = str(task.get("worker_id") or "").strip()
+                    if failed_worker_id:
+                        removed_failed_worker_ids.add(failed_worker_id)
+                    continue
+                remaining_tasks.append(task)
+            self.worker_operation_tasks = remaining_tasks
+            for failed_worker_id in removed_failed_worker_ids:
+                if not any(str(worker.id or "").strip() == failed_worker_id for worker in self.workers):
+                    self.worker_connection_profiles.pop(failed_worker_id, None)
+            for task in self.worker_operation_tasks:
+                if self._worker_operation_is_finished(task):
+                    continue
+                if (
+                    str(task.get("worker_id") or "").strip() == normalized_worker_id
+                    or str(task.get("vps_ip") or "").strip() == normalized_ip
+                ):
+                    raise ValueError("BOT nay dang co mot tien trinh cai dat/go BOT khac chua xong.")
+            now = self._now(trim=False)
+            task = {
+                "id": f"worker-op-{uuid4().hex[:10]}",
+                "worker_id": normalized_worker_id,
+                "worker_name": str(worker_name or normalized_ip).strip() or normalized_ip,
+                "vps_ip": normalized_ip,
+                "manager_id": str(manager_id or "").strip() or None,
+                "manager_name": str(manager_name or "").strip() or "system",
+                "group": str(group or "").strip(),
+                "kind": "install",
+                "status": "queued",
+                "message": "Dang cho control-plane ket noi SSH vao VPS...",
+                "created_at": now,
+                "updated_at": now,
+                "completed_at": None,
+            }
+            self.worker_operation_tasks.append(task)
+            self._remember_worker_connection_profile(normalized_worker_id, vps_ip=normalized_ip, ssh_user=ssh_user)
+            self._save_state()
+            return deepcopy(task)
+
+    def enqueue_worker_decommission_operation(
+        self,
+        *,
+        worker_id: str,
+        vps_ip: str,
+        ssh_user: str,
+    ) -> dict[str, Any]:
+        with self._worker_state_lock:
+            worker = self._find_worker(worker_id)
+            normalized_worker_id = str(worker.id or "").strip()
+            normalized_ip = str(vps_ip or "").strip()
+            if not normalized_ip:
+                raise ValueError("BOT nay chua co VPS IP de go worker tu xa.")
+            for task in self.worker_operation_tasks:
+                if self._worker_operation_is_finished(task):
+                    continue
+                if str(task.get("worker_id") or "").strip() == normalized_worker_id:
+                    raise ValueError("BOT nay dang co mot tien trinh cai dat/go BOT khac chua xong.")
+            now = self._now(trim=False)
+            task = {
+                "id": f"worker-op-{uuid4().hex[:10]}",
+                "worker_id": normalized_worker_id,
+                "worker_name": self._resolve_worker_display_name(worker.id),
+                "vps_ip": normalized_ip,
+                "manager_id": worker.manager_id,
+                "manager_name": worker.manager_name,
+                "group": str(worker.group or "").strip(),
+                "kind": "decommission",
+                "status": "queued",
+                "message": "Dang cho control-plane ket noi SSH de go worker khoi VPS...",
+                "created_at": now,
+                "updated_at": now,
+                "completed_at": None,
+            }
+            self.worker_operation_tasks.append(task)
+            self._remember_worker_connection_profile(normalized_worker_id, vps_ip=normalized_ip, ssh_user=ssh_user)
+            self._save_state()
+            return deepcopy(task)
+
+    def update_worker_operation(
+        self,
+        operation_id: str,
+        *,
+        status: str | None = None,
+        message: str | None = None,
+        completed: bool = False,
+    ) -> dict[str, Any]:
+        with self._worker_state_lock:
+            task = self._find_worker_operation(operation_id)
+            now = self._now(trim=False)
+            if status:
+                task["status"] = str(status).strip()
+            if message is not None:
+                task["message"] = str(message).strip()
+            task["updated_at"] = now
+            task["completed_at"] = now if completed else None
+            self._save_state()
+            return deepcopy(task)
+
+    def clear_install_operation_after_register(self, worker_id: str) -> bool:
+        with self._worker_state_lock:
+            normalized_worker_id = str(worker_id or "").strip()
+            before = len(self.worker_operation_tasks)
+            self.worker_operation_tasks = [
+                task
+                for task in self.worker_operation_tasks
+                if not (
+                    str(task.get("kind") or "").strip() == "install"
+                    and str(task.get("worker_id") or "").strip() == normalized_worker_id
+                )
+            ]
+            changed = len(self.worker_operation_tasks) != before
+            if changed:
+                self._save_state()
+            return changed
+
+    def finalize_decommissioned_bot(self, worker_id: str, operation_id: str) -> None:
+        with self._worker_state_lock:
+            self._delete_bot_state(worker_id)
+            self.worker_operation_tasks = [
+                task
+                for task in self.worker_operation_tasks
+                if str(task.get("id") or "").strip() != str(operation_id or "").strip()
+            ]
+            self.worker_connection_profiles.pop(str(worker_id or "").strip(), None)
+            self._save_state()
 
     def start_background_services(self) -> None:
         with self._worker_state_lock:
@@ -1678,6 +1996,22 @@ class AppStore:
                 existing.browser_web_port_base = payload.browser_web_port_base
                 existing.browser_debug_port_base = payload.browser_debug_port_base
                 worker = existing
+
+            if self._looks_like_ipv4(worker_display_name):
+                existing_profile = self.worker_connection_profiles.get(payload.worker_id) or {}
+                self._remember_worker_connection_profile(
+                    payload.worker_id,
+                    vps_ip=worker_display_name,
+                    ssh_user=str(existing_profile.get("ssh_user") or "root"),
+                )
+            self.worker_operation_tasks = [
+                task
+                for task in self.worker_operation_tasks
+                if not (
+                    str(task.get("kind") or "").strip() == "install"
+                    and str(task.get("worker_id") or "").strip() == payload.worker_id
+                )
+            ]
 
             self._save_state()
             return WorkerControlResponse(ok=True, worker=deepcopy(worker))
@@ -4221,9 +4555,92 @@ class AppStore:
         )
         return context
 
+    def _filtered_worker_operation_tasks(self, manager_ids: list[str] | None = None) -> list[dict[str, Any]]:
+        selected_ids = set(self._selected_manager_ids(manager_ids))
+        tasks: list[dict[str, Any]] = []
+        for task in self.worker_operation_tasks:
+            if self._worker_operation_is_finished(task):
+                continue
+            manager_id = str(task.get("manager_id") or "").strip()
+            if selected_ids and manager_id not in selected_ids:
+                continue
+            tasks.append(task)
+        tasks.sort(
+            key=lambda item: (
+                self._parse_datetime(item.get("created_at")) or self._now(trim=False),
+                str(item.get("worker_id") or "").strip(),
+            )
+        )
+        return tasks
+
+    def _build_operation_placeholder_row(self, task: dict[str, Any]) -> dict[str, Any]:
+        status_label, status_class = self._worker_operation_badge(task)
+        placeholder_name = str(task.get("worker_name") or task.get("vps_ip") or task.get("worker_id") or "").strip()
+        return {
+            "index": 0,
+            "id": str(task.get("worker_id") or "").strip(),
+            "bot_id": str(task.get("worker_id") or "").strip(),
+            "manager_id": str(task.get("manager_id") or "").strip(),
+            "manager_name": str(task.get("manager_name") or "").strip() or "system",
+            "name": placeholder_name,
+            "raw_name": placeholder_name,
+            "group": str(task.get("group") or "").strip() or "-",
+            "assigned_user_id": "",
+            "assigned_user_name": "",
+            "assigned_user_names_text": "",
+            "status_key": f"{task.get('kind')}-{task.get('status')}",
+            "status_label": status_label,
+            "status_class": status_class,
+            "created_at": self._format_full_datetime(self._parse_datetime(task.get("created_at"))),
+            "total_channels": 0,
+            "total_users": 0,
+            "thread_text": "--",
+            "running_threads": 0,
+            "max_threads": 0,
+            "threads": 0,
+            "ram_text": "--",
+            "ram_percent": 0,
+            "disk_text": "--",
+            "bandwidth_text": "--",
+            "load_percent": 0,
+            "meta_text": str(task.get("message") or "").strip() or "Control-plane dang xu ly tren VPS.",
+            "row_dimmed": True,
+            "actions_disabled": True,
+            "is_operation_placeholder": True,
+            "operation_kind": str(task.get("kind") or "").strip(),
+            "operation_status": str(task.get("status") or "").strip(),
+        }
+
+    def _apply_operation_state_to_worker_row(self, row: dict[str, Any], task: dict[str, Any]) -> dict[str, Any]:
+        status_label, status_class = self._worker_operation_badge(task)
+        kind = str(task.get("kind") or "").strip()
+        status = str(task.get("status") or "").strip()
+        operation_failed = status == "failed"
+        updated_row = dict(row)
+        updated_row.update(
+            {
+                "status_key": f"{kind}-{status}",
+                "status_label": status_label,
+                "status_class": status_class,
+                "meta_text": str(task.get("message") or "").strip() or updated_row.get("meta_text") or updated_row.get("manager_name") or "-",
+                "row_dimmed": True,
+                "actions_disabled": not operation_failed,
+                "operation_kind": kind,
+                "operation_status": status,
+            }
+        )
+        return updated_row
+
     def _build_bot_rows(self, manager_ids: list[str] | None = None) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
-        for index, worker in enumerate(self._filtered_workers(manager_ids), start=1):
+        operation_tasks = self._filtered_worker_operation_tasks(manager_ids)
+        operation_by_worker_id = {
+            str(task.get("worker_id") or "").strip(): task
+            for task in operation_tasks
+            if str(task.get("worker_id") or "").strip()
+        }
+        visible_worker_ids: set[str] = set()
+        for worker in self._filtered_workers(manager_ids):
             status_label, status_class = self._worker_status_badge(worker.status)
             thread_summary = self._worker_thread_summary(worker)
             assigned_users = self._assigned_users_for_worker(worker.id)
@@ -4237,38 +4654,56 @@ class AppStore:
             else:
                 assigned_user_id = ""
                 assigned_user_name = "BOT trống"
-            rows.append(
-                {
-                    "index": index,
-                    "id": worker.id,
-                    "bot_id": worker.id,
-                    "manager_id": worker.manager_id or "",
-                    "manager_name": worker.manager_name,
-                    "name": self._resolve_worker_display_name(worker.id),
-                    "raw_name": self._resolve_worker_display_name(worker.id),
-                    "group": worker.group or worker.manager_name,
-                    "assigned_user_id": assigned_user_id,
-                    "assigned_user_name": assigned_user_name,
-                    "assigned_user_names_text": ", ".join(assigned_user_names),
-                    "status_key": worker.status,
-                    "status_label": status_label,
-                    "status_class": status_class,
-                    "created_at": self._format_full_datetime(worker.created_at or worker.last_seen_at),
-                    "total_channels": len([channel for channel in self.channels if channel.worker_id == worker.id]),
-                    "total_users": len([link for link in self.user_worker_links if link["worker_id"] == worker.id]),
-                    "thread_text": thread_summary["thread_text"],
-                    "running_threads": thread_summary["running_threads"],
-                    "max_threads": thread_summary["max_threads"],
-                    "threads": worker.threads,
-                    "ram_text": f"{worker.ram_used_gb:.1f}GB / {worker.ram_total_gb:.1f}GB"
-                    if worker.ram_total_gb > 0
-                    else "--",
-                    "ram_percent": worker.ram_percent,
-                    "disk_text": f"{worker.disk_used_gb:.1f}/{worker.disk_total_gb:.1f}GB",
-                    "bandwidth_text": f"{worker.bandwidth_kbps:.2f}KB/s",
-                    "load_percent": worker.load_percent,
-                }
-            )
+            row = {
+                "index": 0,
+                "id": worker.id,
+                "bot_id": worker.id,
+                "manager_id": worker.manager_id or "",
+                "manager_name": worker.manager_name,
+                "name": self._resolve_worker_display_name(worker.id),
+                "raw_name": self._resolve_worker_display_name(worker.id),
+                "group": worker.group or worker.manager_name,
+                "assigned_user_id": assigned_user_id,
+                "assigned_user_name": assigned_user_name,
+                "assigned_user_names_text": ", ".join(assigned_user_names),
+                "status_key": worker.status,
+                "status_label": status_label,
+                "status_class": status_class,
+                "created_at": self._format_full_datetime(worker.created_at or worker.last_seen_at),
+                "total_channels": len([channel for channel in self.channels if channel.worker_id == worker.id]),
+                "total_users": len([link for link in self.user_worker_links if link["worker_id"] == worker.id]),
+                "thread_text": thread_summary["thread_text"],
+                "running_threads": thread_summary["running_threads"],
+                "max_threads": thread_summary["max_threads"],
+                "threads": worker.threads,
+                "ram_text": f"{worker.ram_used_gb:.1f}GB / {worker.ram_total_gb:.1f}GB"
+                if worker.ram_total_gb > 0
+                else "--",
+                "ram_percent": worker.ram_percent,
+                "disk_text": f"{worker.disk_used_gb:.1f}/{worker.disk_total_gb:.1f}GB",
+                "bandwidth_text": f"{worker.bandwidth_kbps:.2f}KB/s",
+                "load_percent": worker.load_percent,
+                "meta_text": worker.manager_name,
+                "row_dimmed": False,
+                "actions_disabled": False,
+                "is_operation_placeholder": False,
+                "operation_kind": "",
+                "operation_status": "",
+            }
+            worker_task = operation_by_worker_id.get(worker.id)
+            if worker_task is not None:
+                row = self._apply_operation_state_to_worker_row(row, worker_task)
+            rows.append(row)
+            visible_worker_ids.add(worker.id)
+        for task in operation_tasks:
+            if str(task.get("kind") or "").strip() != "install":
+                continue
+            task_worker_id = str(task.get("worker_id") or "").strip()
+            if task_worker_id in visible_worker_ids:
+                continue
+            rows.append(self._build_operation_placeholder_row(task))
+        for index, row in enumerate(rows, start=1):
+            row["index"] = index
         return rows
 
     def get_admin_bot_index_context(
@@ -4806,7 +5241,7 @@ class AppStore:
         self._save_state()
         return len(normalized_worker_ids)
 
-    def delete_bot(self, worker_id: str) -> None:
+    def _delete_bot_state(self, worker_id: str) -> None:
         self._find_worker(worker_id)
         self._clear_worker_channels(worker_id)
         removed_jobs = [job for job in self.jobs if job.worker_name == worker_id]
@@ -4815,6 +5250,15 @@ class AppStore:
         self.workers = [worker for worker in self.workers if worker.id != worker_id]
         self.user_worker_links = [link for link in self.user_worker_links if link["worker_id"] != worker_id]
         self.jobs = [job for job in self.jobs if job.worker_name != worker_id]
+
+    def delete_bot(self, worker_id: str) -> None:
+        self._delete_bot_state(worker_id)
+        self.worker_connection_profiles.pop(str(worker_id or "").strip(), None)
+        self.worker_operation_tasks = [
+            task
+            for task in self.worker_operation_tasks
+            if str(task.get("worker_id") or "").strip() != str(worker_id or "").strip()
+        ]
         self._save_state()
 
     def update_bot_thread(self, worker_id: str, thread: int) -> None:

@@ -7,6 +7,13 @@ from pydantic import BaseModel
 
 from ..auth import normalize_manager_filter_ids, require_admin_access, require_admin_only
 from ..store import store
+from ..worker_bootstrap import (
+    WorkerBootstrapError,
+    build_worker_bootstrap_request,
+    build_worker_decommission_request,
+    start_worker_decommission_operation,
+    start_worker_install_operation,
+)
 
 router = APIRouter(tags=["admin"])
 
@@ -47,6 +54,21 @@ class AdminBotUpdatePayload(BaseModel):
 
 class AdminBotThreadPayload(BaseModel):
     thread: int
+
+
+class AdminBotInstallPayload(BaseModel):
+    vps_ip: str
+    ssh_user: str = "root"
+    auth_mode: str = "password"
+    password: str | None = None
+    ssh_private_key: str | None = None
+
+
+class AdminBotDecommissionPayload(BaseModel):
+    ssh_user: str = "root"
+    auth_mode: str = "password"
+    password: str | None = None
+    ssh_private_key: str | None = None
 
 
 class ManagerFilterPayload(BaseModel):
@@ -329,6 +351,41 @@ async def get_admin_bots(request: Request, manager_ids: list[str] | None = None,
     }
 
 
+@router.post("/admin/bots/install")
+async def install_admin_bot(request: Request, payload: AdminBotInstallPayload):
+    current_user = require_admin_access(request)
+    manager_name = current_user.username if current_user.role == "manager" else "system"
+    manager_id = current_user.id if current_user.role == "manager" else None
+    worker_id = store.suggest_next_worker_bootstrap_id()
+    auth_mode = str(payload.auth_mode or "password").strip().lower() or "password"
+    try:
+        bootstrap_request = build_worker_bootstrap_request(
+            vps_ip=payload.vps_ip,
+            ssh_user=payload.ssh_user,
+            password=payload.password if auth_mode != "ssh_key" else None,
+            ssh_private_key=payload.ssh_private_key if auth_mode == "ssh_key" else None,
+            shared_secret=store.get_worker_shared_secret(),
+            control_plane_url=str(request.base_url).rstrip("/"),
+            worker_id=worker_id,
+            manager_name=manager_name,
+        )
+        task = start_worker_install_operation(
+            store=store,
+            request=bootstrap_request,
+            ssh_user=payload.ssh_user,
+            manager_id=manager_id,
+            manager_name=manager_name,
+        )
+        return {
+            "ok": True,
+            "operation_id": task["id"],
+            "worker_id": task["worker_id"],
+            "vps_ip": task["vps_ip"],
+        }
+    except (ValueError, WorkerBootstrapError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get("/admin/workers")
 async def get_admin_workers_legacy(request: Request, manager_ids: list[str] | None = None):
     return await get_admin_bots(request, manager_ids)
@@ -365,10 +422,26 @@ async def update_admin_bot_threads(request: Request, bot_id: str, payload: Admin
 
 
 @router.delete("/admin/bots/{bot_id}")
-async def delete_admin_bot(request: Request, bot_id: str):
+async def delete_admin_bot(request: Request, bot_id: str, payload: AdminBotDecommissionPayload):
     _enforce_worker_scope(request, bot_id)
-    store.delete_bot(bot_id)
-    return {"ok": True}
+    auth_mode = str(payload.auth_mode or "password").strip().lower() or "password"
+    try:
+        connection_profile = store.get_worker_connection_profile(bot_id)
+        decommission_request = build_worker_decommission_request(
+            vps_ip=connection_profile["vps_ip"],
+            ssh_user=payload.ssh_user or connection_profile["ssh_user"],
+            password=payload.password if auth_mode != "ssh_key" else None,
+            ssh_private_key=payload.ssh_private_key if auth_mode == "ssh_key" else None,
+        )
+        task = start_worker_decommission_operation(
+            store=store,
+            worker_id=bot_id,
+            request=decommission_request,
+            ssh_user=payload.ssh_user or connection_profile["ssh_user"],
+        )
+        return {"ok": True, "operation_id": task["id"], "worker_id": bot_id, "vps_ip": task["vps_ip"]}
+    except (KeyError, ValueError, WorkerBootstrapError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/admin/bots/of-user/{user_id}")

@@ -25,7 +25,7 @@ link_runtime_path "$APP_DIR" "$RUNTIME_DIR" "worker-data" "worker-data"
 cd "$APP_DIR"
 
 if [ ! -d "$RUNTIME_DIR/.venv" ]; then
-  python3 -m venv .venv
+  python3 -m venv "$RUNTIME_DIR/.venv"
 fi
 . .venv/bin/activate
 pip install --upgrade pip

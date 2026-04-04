@@ -6,6 +6,7 @@ import re
 import shlex
 from dataclasses import dataclass
 from pathlib import Path
+from threading import Thread
 
 try:
     import paramiko
@@ -17,6 +18,7 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 SCRIPT_DIR = ROOT_DIR / "scripts"
 BOOTSTRAP_SCRIPT_PATH = SCRIPT_DIR / "bootstrap_worker.sh"
 GIT_LAYOUT_SCRIPT_PATH = SCRIPT_DIR / "git_runtime_layout.sh"
+DECOMMISSION_SCRIPT_PATH = SCRIPT_DIR / "decommission_worker.sh"
 DEFAULT_REPO_URL = "https://github.com/shinemusicllc/Youtube_Upload_Lush.git"
 DEFAULT_BRANCH = "main"
 DEFAULT_APP_DIR = "/opt/youtube-upload-lush"
@@ -55,6 +57,24 @@ class WorkerBootstrapRequest:
 class WorkerBootstrapResult:
     worker_id: str
     worker_name: str
+    vps_ip: str
+    service_enabled: str
+    service_active: str
+
+
+@dataclass(slots=True)
+class WorkerDecommissionRequest:
+    vps_ip: str
+    ssh_user: str
+    password: str | None = None
+    ssh_private_key: str | None = None
+    app_dir: str = DEFAULT_APP_DIR
+    runtime_dir: str = DEFAULT_RUNTIME_DIR
+    connect_timeout: int = 20
+
+
+@dataclass(slots=True)
+class WorkerDecommissionResult:
     vps_ip: str
     service_enabled: str
     service_active: str
@@ -118,6 +138,29 @@ def build_worker_bootstrap_request(
     )
 
 
+def build_worker_decommission_request(
+    *,
+    vps_ip: str,
+    ssh_user: str,
+    password: str | None = None,
+    ssh_private_key: str | None = None,
+) -> WorkerDecommissionRequest:
+    normalized_ip = str(vps_ip or "").strip()
+    if not normalized_ip:
+        raise WorkerBootstrapError("VPS IP la bat buoc.")
+    normalized_user = str(ssh_user or "").strip() or "root"
+    normalized_key = str(ssh_private_key or "").strip()
+    normalized_password = str(password or "").strip()
+    if not normalized_key and not normalized_password:
+        raise WorkerBootstrapError("Can nhap password hoac SSH key de go worker khoi VPS.")
+    return WorkerDecommissionRequest(
+        vps_ip=normalized_ip,
+        ssh_user=normalized_user,
+        password=normalized_password or None,
+        ssh_private_key=normalized_key or None,
+    )
+
+
 def _ensure_runtime_dependency() -> None:
     if paramiko is None:
         raise WorkerBootstrapError("Thieu dependency `paramiko`. Hay cai lai backend requirements truoc.")
@@ -125,6 +168,8 @@ def _ensure_runtime_dependency() -> None:
         raise WorkerBootstrapError(f"Khong tim thay script bootstrap: {BOOTSTRAP_SCRIPT_PATH}")
     if not GIT_LAYOUT_SCRIPT_PATH.exists():
         raise WorkerBootstrapError(f"Khong tim thay script runtime layout: {GIT_LAYOUT_SCRIPT_PATH}")
+    if not DECOMMISSION_SCRIPT_PATH.exists():
+        raise WorkerBootstrapError(f"Khong tim thay script decommission: {DECOMMISSION_SCRIPT_PATH}")
 
 
 def _load_private_key(raw_key: str):
@@ -179,6 +224,12 @@ def _run_remote_command(client, command: str) -> tuple[int, str, str]:
     stdin, stdout, stderr = client.exec_command(command)
     exit_code = stdout.channel.recv_exit_status()
     return exit_code, stdout.read().decode("utf-8", errors="replace"), stderr.read().decode("utf-8", errors="replace")
+
+
+def _upload_remote_script(sftp, local_path: Path, remote_path: str) -> None:
+    content = local_path.read_bytes().replace(b"\r\n", b"\n")
+    with sftp.file(remote_path, "wb") as remote_file:
+        remote_file.write(content)
 
 
 def _build_worker_env_file(request: WorkerBootstrapRequest) -> str:
@@ -237,8 +288,8 @@ def bootstrap_worker_via_ssh(request: WorkerBootstrapRequest) -> WorkerBootstrap
             remote_bootstrap_script = f"{temp_dir}/bootstrap_worker.sh"
             remote_layout_script = f"{temp_dir}/git_runtime_layout.sh"
             remote_env_file = f"{temp_dir}/youtube-upload-worker.env"
-            sftp.put(str(BOOTSTRAP_SCRIPT_PATH), remote_bootstrap_script)
-            sftp.put(str(GIT_LAYOUT_SCRIPT_PATH), remote_layout_script)
+            _upload_remote_script(sftp, BOOTSTRAP_SCRIPT_PATH, remote_bootstrap_script)
+            _upload_remote_script(sftp, GIT_LAYOUT_SCRIPT_PATH, remote_layout_script)
             with sftp.file(remote_env_file, "w") as remote_file:
                 remote_file.write(_build_worker_env_file(request))
         finally:
@@ -299,3 +350,156 @@ def bootstrap_worker_via_ssh(request: WorkerBootstrapRequest) -> WorkerBootstrap
         if temp_dir:
             _run_remote_command(client, f"rm -rf {shlex.quote(temp_dir)}")
         client.close()
+
+
+def decommission_worker_via_ssh(request: WorkerDecommissionRequest) -> WorkerDecommissionResult:
+    client = _connect_client(request)
+    temp_dir = ""
+    try:
+        exit_code, stdout, stderr = _run_remote_command(client, "mktemp -d /tmp/youtube-worker-decommission-XXXXXX")
+        if exit_code != 0:
+            raise WorkerBootstrapError(stderr.strip() or stdout.strip() or "Khong tao duoc thu muc tam tren VPS.")
+        temp_dir = stdout.strip()
+        if not temp_dir:
+            raise WorkerBootstrapError("Khong nhan duoc duong dan thu muc tam tren VPS.")
+
+        remote_script = f"{temp_dir}/decommission_worker.sh"
+        sftp = client.open_sftp()
+        try:
+            _upload_remote_script(sftp, DECOMMISSION_SCRIPT_PATH, remote_script)
+        finally:
+            sftp.close()
+
+        sudo_prefix = "" if request.ssh_user == "root" else "sudo "
+        chmod_command = f"chmod 755 {shlex.quote(remote_script)}"
+        decommission_command = (
+            "{sudo}env APP_DIR={app_dir} RUNTIME_DIR={runtime_dir} bash {script}"
+        ).format(
+            sudo=sudo_prefix,
+            app_dir=shlex.quote(request.app_dir),
+            runtime_dir=shlex.quote(request.runtime_dir),
+            script=shlex.quote(remote_script),
+        )
+        for command in (chmod_command, decommission_command):
+            exit_code, stdout, stderr = _run_remote_command(client, command)
+            if exit_code != 0:
+                message = stderr.strip() or stdout.strip() or f"Remote command failed: {command}"
+                raise WorkerBootstrapError(message)
+
+        enabled_code, enabled_stdout, enabled_stderr = _run_remote_command(
+            client,
+            f"{sudo_prefix}systemctl is-enabled youtube-upload-worker.service",
+        )
+        active_code, active_stdout, active_stderr = _run_remote_command(
+            client,
+            f"{sudo_prefix}systemctl is-active youtube-upload-worker.service",
+        )
+        service_enabled = (enabled_stdout.strip() or enabled_stderr.strip() or "not-found") if enabled_code != 0 else (
+            enabled_stdout.strip() or "unknown"
+        )
+        service_active = (active_stdout.strip() or active_stderr.strip() or "inactive") if active_code != 0 else (
+            active_stdout.strip() or "unknown"
+        )
+        return WorkerDecommissionResult(
+            vps_ip=request.vps_ip,
+            service_enabled=service_enabled,
+            service_active=service_active,
+        )
+    finally:
+        if temp_dir:
+            _run_remote_command(client, f"rm -rf {shlex.quote(temp_dir)}")
+        client.close()
+
+
+def _run_worker_install_operation(store, operation_id: str, request: WorkerBootstrapRequest) -> None:
+    try:
+        store.update_worker_operation(
+            operation_id,
+            status="running",
+            message=f"Dang ket noi SSH vao {request.vps_ip} va cai worker service...",
+        )
+        result = bootstrap_worker_via_ssh(request)
+        store.update_worker_operation(
+            operation_id,
+            status="awaiting_registration",
+            message=(
+                f"Da cai worker service tren {result.vps_ip}. Dang cho BOT "
+                "ket noi lai voi control-plane..."
+            ),
+        )
+    except Exception as exc:
+        store.update_worker_operation(
+            operation_id,
+            status="failed",
+            message=str(exc),
+        )
+
+
+def start_worker_install_operation(
+    *,
+    store,
+    request: WorkerBootstrapRequest,
+    ssh_user: str,
+    manager_id: str | None,
+    manager_name: str,
+    group: str = "",
+) -> dict:
+    task = store.enqueue_worker_install_operation(
+        worker_id=request.worker_id,
+        worker_name=request.worker_name,
+        vps_ip=request.vps_ip,
+        ssh_user=ssh_user,
+        manager_id=manager_id,
+        manager_name=manager_name,
+        group=group,
+    )
+    Thread(
+        target=_run_worker_install_operation,
+        args=(store, str(task.get("id") or ""), request),
+        name=f"worker-install-{request.worker_id}",
+        daemon=True,
+    ).start()
+    return task
+
+
+def _run_worker_decommission_operation(
+    store,
+    operation_id: str,
+    worker_id: str,
+    request: WorkerDecommissionRequest,
+) -> None:
+    try:
+        store.update_worker_operation(
+            operation_id,
+            status="running",
+            message=f"Dang stop service va don app tren VPS {request.vps_ip}...",
+        )
+        decommission_worker_via_ssh(request)
+        store.finalize_decommissioned_bot(worker_id, operation_id)
+    except Exception as exc:
+        store.update_worker_operation(
+            operation_id,
+            status="failed",
+            message=str(exc),
+        )
+
+
+def start_worker_decommission_operation(
+    *,
+    store,
+    worker_id: str,
+    request: WorkerDecommissionRequest,
+    ssh_user: str,
+) -> dict:
+    task = store.enqueue_worker_decommission_operation(
+        worker_id=worker_id,
+        vps_ip=request.vps_ip,
+        ssh_user=ssh_user,
+    )
+    Thread(
+        target=_run_worker_decommission_operation,
+        args=(store, str(task.get("id") or ""), worker_id, request),
+        name=f"worker-decommission-{worker_id}",
+        daemon=True,
+    ).start()
+    return task

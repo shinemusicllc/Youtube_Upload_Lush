@@ -15,7 +15,6 @@ from backend.app.worker_bootstrap import (  # noqa: E402
     bootstrap_worker_via_ssh,
     build_worker_bootstrap_request,
     build_worker_bootstrap_control_plane_url,
-    suggest_next_worker_id,
 )
 
 
@@ -42,7 +41,7 @@ def main() -> int:
     if not ssh_key and not password:
         password = getpass.getpass("SSH password: ").strip()
 
-    worker_id = suggest_next_worker_id([worker.id for worker in store.workers])
+    worker_id = store.suggest_next_worker_bootstrap_id()
     control_plane_url = build_worker_bootstrap_control_plane_url(args.control_plane_url)
 
     try:

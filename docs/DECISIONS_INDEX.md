@@ -19,6 +19,7 @@
 | DEC-014 | Worker resilience dung retry/backoff cho HTTP, heartbeat background de tu reconnect sau mat mang/restart, Telegram chi alert khi worker offline qua 180s, va job `uploading` chi `requeue` khi mat ket noi luc upload moi bat dau | Active | worker runtime + control-plane ops | High |
 | DEC-015 | Job dang `rendering/uploading` chi duoc chuyen trang thai sau `lease/grace window`; heartbeat hut ngan khong duoc lap tuc `pending/error` | Active | worker runtime + control-plane ops | High |
 | DEC-016 | Them worker/BOT moi se di qua mot duong SSH bootstrap duy nhat tren control-plane; UI admin va CLI chi la hai mat goi chung mot helper, khong bootstrap qua Telegram | Active | admin ops + deploy | High |
+| DEC-017 | `Xoa BOT` phai la decommission that tren VPS va `Them BOT` phai hien row provisioning live ngay trong Danh sach BOT | Active | admin ops + BOT UI | High |
 
 ## Notes
 - `docs/DECISIONS.md` van giu full history va ly do chi tiet.
