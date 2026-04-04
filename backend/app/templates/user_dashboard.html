@@ -1088,11 +1088,21 @@
                           aria-selected="{{ 'true' if channel.is_active else 'false' }}"
                         >
                           <span class="channel-option-leading">
-                            {% if channel.avatar_url %}
-                            <img src="{{ channel.avatar_url | e }}" alt="{{ channel.label | e }}" class="channel-select-avatar channel-avatar-media object-cover" loading="lazy" referrerpolicy="no-referrer">
-                            {% elif channel.avatar %}
-                            <span class="channel-select-avatar {{ channel.avatar_class | e }}">{{ channel.avatar | e }}</span>
-                            {% endif %}
+                            <span class="relative inline-flex h-10 w-10 items-center justify-center">
+                              {% if channel.avatar_url %}
+                              <img
+                                src="{{ channel.avatar_url | e }}"
+                                alt="{{ channel.label | e }}"
+                                class="channel-select-avatar channel-avatar-media object-cover"
+                                loading="lazy"
+                                referrerpolicy="no-referrer"
+                                onerror="this.classList.add('hidden'); const fallback = this.parentElement && this.parentElement.querySelector('[data-avatar-fallback]'); if (fallback) fallback.classList.remove('hidden');"
+                              >
+                              <span data-avatar-fallback class="channel-select-avatar {{ channel.avatar_class | e }} hidden">{{ channel.avatar | e }}</span>
+                              {% elif channel.avatar %}
+                              <span data-avatar-fallback class="channel-select-avatar {{ channel.avatar_class | e }}">{{ channel.avatar | e }}</span>
+                              {% endif %}
+                            </span>
                             <span class="channel-option-copy">
                               <span class="channel-option-name">{{ channel.label | e }}</span>
                               {% if channel.meta %}
@@ -1292,9 +1302,17 @@
                   <a href="{{ channel.public_url | e }}" target="_blank" rel="noopener noreferrer" class="channel-avatar-shell focus:outline-none">
                     <span class="channel-avatar-inner">
                       {% if channel.avatar_url %}
-                      <img src="{{ channel.avatar_url | e }}" alt="{{ channel.title | e }}" class="channel-row-avatar object-cover border border-slate-200" loading="lazy" referrerpolicy="no-referrer">
+                      <img
+                        src="{{ channel.avatar_url | e }}"
+                        alt="{{ channel.title | e }}"
+                        class="channel-row-avatar object-cover border border-slate-200"
+                        loading="lazy"
+                        referrerpolicy="no-referrer"
+                        onerror="this.classList.add('hidden'); const fallback = this.parentElement && this.parentElement.querySelector('[data-avatar-fallback]'); if (fallback) fallback.classList.remove('hidden');"
+                      >
+                      <span data-avatar-fallback class="channel-avatar-fallback {{ channel.avatar_class | e }}{% if channel.avatar_small %} text-[10px]{% else %} text-white text-xs{% endif %} hidden">{{ channel.avatar | e }}</span>
                       {% else %}
-                      <div class="channel-avatar-fallback {{ channel.avatar_class | e }}{% if channel.avatar_small %} text-[10px]{% else %} text-white text-xs{% endif %}">{{ channel.avatar | e }}</div>
+                      <span data-avatar-fallback class="channel-avatar-fallback {{ channel.avatar_class | e }}{% if channel.avatar_small %} text-[10px]{% else %} text-white text-xs{% endif %}">{{ channel.avatar | e }}</span>
                       {% endif %}
                     </span>
                   </a>
@@ -1416,9 +1434,19 @@
                   <td class="px-6 py-4">
                     <div class="flex items-center gap-3">
                        {% if job.channel_avatar_url %}
-                       <img src="{{ job.channel_avatar_url | e }}" alt="{{ job.channel_name | e }}" class="channel-avatar-media w-7 h-7 rounded-[6px] object-cover shrink-0" loading="lazy" referrerpolicy="no-referrer">
+                       <span class="relative inline-flex h-7 w-7 shrink-0 items-center justify-center">
+                         <img
+                           src="{{ job.channel_avatar_url | e }}"
+                           alt="{{ job.channel_name | e }}"
+                           class="channel-avatar-media w-7 h-7 rounded-[6px] object-cover shrink-0"
+                           loading="lazy"
+                           referrerpolicy="no-referrer"
+                           onerror="this.classList.add('hidden'); const fallback = this.parentElement && this.parentElement.querySelector('[data-avatar-fallback]'); if (fallback) fallback.classList.remove('hidden');"
+                         >
+                         <span data-avatar-fallback class="w-7 h-7 bg-emerald-800 text-white rounded-[4px] hidden inline-flex items-center justify-center text-[10px] font-bold shrink-0">{{ job.channel_avatar | e }}</span>
+                       </span>
                        {% else %}
-                       <div class="w-7 h-7 bg-emerald-800 text-white rounded-[4px] flex items-center justify-center text-[10px] font-bold shrink-0">{{ job.channel_avatar | e }}</div>
+                       <span data-avatar-fallback class="w-7 h-7 bg-emerald-800 text-white rounded-[4px] inline-flex items-center justify-center text-[10px] font-bold shrink-0">{{ job.channel_avatar | e }}</span>
                        {% endif %}
                        <div class="min-w-0">
                          <p class="text-[12px] font-bold text-slate-900 leading-none mb-1 truncate">{{ job.channel_name | e }}</p>

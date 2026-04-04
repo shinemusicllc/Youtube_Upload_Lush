@@ -48,6 +48,31 @@
       .replace(/\"/g, "&quot;")
       .replace(/'/g, "&#39;");
 
+  const renderAvatarWithFallback = ({
+    imageUrl,
+    alt,
+    imageClass,
+    fallbackClass,
+    fallbackText,
+  }) => {
+    const safeFallbackText = escapeHtml(fallbackText || "?");
+    const safeFallbackClass = escapeHtml(fallbackClass || "");
+    if (!imageUrl) {
+      return `<span class="${safeFallbackClass}">${safeFallbackText}</span>`;
+    }
+    return `
+      <img
+        src="${escapeHtml(imageUrl)}"
+        alt="${escapeHtml(alt || "")}"
+        class="${escapeHtml(imageClass || "")}"
+        loading="lazy"
+        referrerpolicy="no-referrer"
+        onerror="this.classList.add('hidden'); const fallback = this.parentElement && this.parentElement.querySelector('[data-avatar-fallback]'); if (fallback) fallback.classList.remove('hidden');"
+      >
+      <span data-avatar-fallback class="${safeFallbackClass} hidden">${safeFallbackText}</span>
+    `;
+  };
+
   const workspaceFetch = (input, init = {}) =>
     fetch(input, {
       ...init,
@@ -69,22 +94,17 @@
   const renderConnectedChannelAvatarMarkup = (channel) => {
     const publicUrl = escapeHtml(channel.public_url || "#");
     const title = escapeHtml(channel.title || "");
-    if (channel.avatar_url) {
-      return `
-        <a href="${publicUrl}" target="_blank" rel="noopener noreferrer" class="channel-avatar-shell focus:outline-none">
-          <span class="channel-avatar-inner">
-            <img src="${escapeHtml(channel.avatar_url)}" alt="${title}" class="channel-row-avatar object-cover border border-slate-200" loading="lazy" referrerpolicy="no-referrer">
-          </span>
-        </a>
-      `;
-    }
-
-    const avatarClass = escapeHtml(channel.avatar_class || "");
-    const avatarTextClass = channel.avatar_small ? " text-[10px]" : " text-white text-xs";
+    const avatarClass = `${escapeHtml(channel.avatar_class || "")}${channel.avatar_small ? " text-[10px]" : " text-white text-xs"}`;
     return `
       <a href="${publicUrl}" target="_blank" rel="noopener noreferrer" class="channel-avatar-shell focus:outline-none">
         <span class="channel-avatar-inner">
-          <div class="channel-avatar-fallback ${avatarClass}${avatarTextClass}">${escapeHtml(channel.avatar || "")}</div>
+          ${renderAvatarWithFallback({
+            imageUrl: channel.avatar_url,
+            alt: title,
+            imageClass: "channel-row-avatar object-cover border border-slate-200",
+            fallbackClass: `channel-avatar-fallback ${avatarClass}`,
+            fallbackText: channel.avatar || "",
+          })}
         </span>
       </a>
     `;
@@ -626,10 +646,17 @@
   };
 
   const renderChannelAvatarMarkup = (job) => {
-    if (job.channel_avatar_url) {
-      return `<img src="${escapeHtml(job.channel_avatar_url)}" alt="${escapeHtml(job.channel_name)}" class="channel-avatar-media w-7 h-7 rounded-[6px] object-cover shrink-0" loading="lazy" referrerpolicy="no-referrer">`;
-    }
-    return `<div class="w-7 h-7 bg-emerald-800 text-white rounded-[4px] flex items-center justify-center text-[10px] font-bold shrink-0">${escapeHtml(job.channel_avatar || "?")}</div>`;
+    return `
+      <span class="relative inline-flex h-7 w-7 shrink-0 items-center justify-center">
+        ${renderAvatarWithFallback({
+          imageUrl: job.channel_avatar_url,
+          alt: job.channel_name,
+          imageClass: "channel-avatar-media w-7 h-7 rounded-[6px] object-cover shrink-0",
+          fallbackClass: "w-7 h-7 bg-emerald-800 text-white rounded-[4px] inline-flex items-center justify-center text-[10px] font-bold shrink-0",
+          fallbackText: job.channel_avatar || "?",
+        })}
+      </span>
+    `;
   };
 
   const renderJobActionsMarkup = (job) => `
@@ -2027,7 +2054,8 @@
       return parsed.toLocaleString("vi-VN");
     };
 
-    const isBrowserSessionReady = (session) => !!(session?.novnc_url && ["awaiting_confirmation", "confirmed"].includes(session.status));
+    const isBrowserSessionReady = (session) =>
+      !!(session?.novnc_url && !["failed", "closed", "expired"].includes(String(session?.status || "").trim()));
     const canAutoConfirmBrowserSession = (session) =>
       !!(session?.session_id && session?.detected_channel_id && ["awaiting_confirmation", "confirmed"].includes(session.status));
 
@@ -2038,6 +2066,7 @@
         confirmed: "Đã nhận diện",
         failed: "Khởi tạo lỗi",
         closed: "Đã đóng",
+        expired: "Đã hết hạn",
       };
       return mapping[status] || status || "Chưa khởi tạo";
     };
@@ -2344,7 +2373,7 @@
     openSessionButton.addEventListener("click", async () => {
       const session = activeBrowserSession?.session_id ? await refreshBrowserSession(true) : null;
       const next = session || activeBrowserSession;
-      if (!next?.novnc_url || !["awaiting_confirmation", "confirmed"].includes(next.status)) {
+      if (!isBrowserSessionReady(next)) {
         showToast("VPS chưa báo sẵn sàng noVNC. Chờ vài giây rồi thử lại.", "error");
         return;
       }

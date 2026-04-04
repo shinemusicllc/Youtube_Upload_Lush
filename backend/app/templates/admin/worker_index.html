@@ -62,12 +62,25 @@
                 <tbody data-worker-live-body data-live-endpoint="/api/admin/bots">
                     {% for worker in dashboard.workers %}
                     {% set created_parts = (worker.created_at or '').split(' ') %}
+                    {% set compact_operation_row = worker.row_dimmed and worker.actions_disabled %}
                     <tr
                         data-worker-row-id="{{ worker.id }}"
                         class="{% if worker.row_dimmed %}bg-slate-50/70 opacity-80{% endif %}"
                         data-search-text="{{ worker.bot_id }} {{ worker.name }} {{ worker.group }} {{ worker.manager_name }} {{ worker.assigned_user_name }} {{ worker.assigned_user_names_text }} {{ worker.created_at }} {{ worker.ram_text }} {{ worker.disk_text }} {{ worker.bandwidth_text }}"
                     >
                         <td class="table-mono text-slate-500">{{ worker.index }}</td>
+                        {% if compact_operation_row %}
+                        <td colspan="11" class="py-3">
+                            <div class="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3">
+                                <p class="table-mono truncate text-[12px] font-semibold text-slate-700">{{ worker.name }}</p>
+                                <p class="mt-1 inline-flex max-w-full items-center gap-2 truncate text-[13px] font-semibold text-slate-900">
+                                    <span class="font-mono tracking-[0.28em] text-slate-400">...</span>
+                                    <span class="truncate">{{ worker.status_label }}</span>
+                                </p>
+                                <p class="mt-1 truncate text-[12px] text-slate-500" title="{{ worker.meta_text or '' }}">{{ worker.meta_text or 'Control-plane dang xu ly tren VPS.' }}</p>
+                            </div>
+                        </td>
+                        {% else %}
                         <td>
                             <div>
                                 <p class="text-[13px] font-semibold text-slate-900">{{ worker.name }}</p>
@@ -149,6 +162,7 @@
                                 {% endif %}
                             </div>
                         </td>
+                        {% endif %}
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -616,6 +630,28 @@
       ].join('');
     }
 
+    function buildCompactOperationRowMarkup(worker, workerId, searchText) {
+      const workerName = escapeHtml(worker.name || '-');
+      const statusLabel = escapeHtml(worker.status_label || 'Dang xu ly');
+      const metaText = escapeHtml(worker.meta_text || 'Control-plane dang xu ly tren VPS.');
+      const rowClass = worker.row_dimmed ? ' class="bg-slate-50/70 opacity-80"' : '';
+      return [
+        '<tr data-worker-row-id="', workerId, '" data-search-text="', searchText, '"', rowClass, '>',
+        '  <td class="table-mono text-slate-500">', escapeHtml(worker.index), '</td>',
+        '  <td colspan="11" class="py-3">',
+        '    <div class="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3">',
+        '      <p class="table-mono truncate text-[12px] font-semibold text-slate-700">', workerName, '</p>',
+        '      <p class="mt-1 inline-flex max-w-full items-center gap-2 truncate text-[13px] font-semibold text-slate-900">',
+        '        <span class="font-mono tracking-[0.28em] text-slate-400">...</span>',
+        '        <span class="truncate">', statusLabel, '</span>',
+        '      </p>',
+        '      <p class="mt-1 truncate text-[12px] text-slate-500" title="', metaText, '">', metaText, '</p>',
+        '    </div>',
+        '  </td>',
+        '</tr>',
+      ].join('');
+    }
+
     function buildWorkerActionMarkup(worker, workerId, workerName, rawWorkerName, workerGroup, managerId, assignedUserId) {
       if (worker.actions_disabled) {
         return buildDisabledActionMarkup(worker);
@@ -665,6 +701,9 @@
       const totalChannels = escapeHtml(worker.total_channels || 0);
       const totalUsers = escapeHtml(worker.total_users || 0);
       const searchText = escapeHtml(buildWorkerSearchText(worker));
+      if (worker.row_dimmed && worker.actions_disabled) {
+        return buildCompactOperationRowMarkup(worker, workerId, searchText);
+      }
       const rowClass = worker.row_dimmed ? ' class="bg-slate-50/70 opacity-80"' : '';
       const actionsMarkup = buildWorkerActionMarkup(
         worker,

@@ -26,6 +26,14 @@ def _pid_is_running(pid: int | None) -> bool:
         os.kill(pid, 0)
     except OSError:
         return False
+    if sys.platform.startswith("linux"):
+        stat_path = Path("/proc") / str(pid) / "stat"
+        try:
+            stat_parts = stat_path.read_text(encoding="utf-8").split()
+        except OSError:
+            return True
+        if len(stat_parts) >= 3 and stat_parts[2] == "Z":
+            return False
     return True
 
 
