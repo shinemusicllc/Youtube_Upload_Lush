@@ -943,7 +943,7 @@ def upload_video_via_browser(
         options.add_argument("--disable-sync")
         options.add_argument("--disable-features=PasswordManagerOnboarding,PasswordsImport,Translate,MediaRouter,SigninIntercept,DiceWebSigninInterception,PasswordManagerShortcut,PasswordGeneration,PasswordCheck,EnablePasswordsAccountStorage")
         options.add_argument("--disable-save-password-bubble")
-        options.add_argument("--enable-automation")
+        options.add_argument("--disable-blink-features=AutomationControlled")
         options.add_argument("--password-store=basic")
         options.add_argument("--window-size=1440,900")
         options.add_argument("--lang=en-US")

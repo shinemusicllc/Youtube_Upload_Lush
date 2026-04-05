@@ -324,7 +324,7 @@ class BrowserRuntimeManager:
                 "--disable-dev-shm-usage",
                 "--disable-features=PasswordManagerOnboarding,PasswordsImport,Translate,MediaRouter,SigninIntercept,DiceWebSigninInterception,PasswordManagerShortcut,PasswordGeneration,PasswordCheck,EnablePasswordsAccountStorage",
                 "--disable-save-password-bubble",
-                "--enable-automation",
+                "--disable-blink-features=AutomationControlled",
                 "--disable-sync",
                 "--disable-background-networking",
                 "--password-store=basic",
