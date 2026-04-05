@@ -18,3 +18,8 @@ pkill -f "workers.agent.main" || true
 rm -rf "$APP_DIR" "$RUNTIME_DIR"
 rm -rf "${APP_DIR}.legacy-"*
 rm -rf "${APP_DIR}.clone-"*
+rm -rf /root/.config/google-chrome
+rm -rf /root/.cache/google-chrome
+rm -rf /root/.config/chromium
+rm -rf /root/.cache/chromium
+rm -rf /root/snap/chromium

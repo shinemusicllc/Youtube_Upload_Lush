@@ -60,7 +60,7 @@ BROWSER_SESSION_DEBUG_PORT_BASE=19220
 BROWSER_SESSION_BIND_HOST=0.0.0.0
 BROWSER_SESSION_START_URL=https://studio.youtube.com
 BROWSER_SESSION_NOVNC_WEB_DIR=/usr/share/novnc
-BROWSER_SESSION_CHROMIUM_BIN=chromium-browser
+BROWSER_SESSION_CHROMIUM_BIN=google-chrome-stable
 EOF
   echo "Da tao /etc/youtube-upload-worker.env, vui long cap nhat gia tri truoc khi start service."
 fi
@@ -70,9 +70,18 @@ set -a
 set +a
 
 if [ "${BROWSER_SESSION_ENABLED:-0}" = "1" ]; then
-  apt-get install -y xvfb openbox x11vnc websockify novnc chromium-browser || true
-  if ! command -v chromium-browser >/dev/null 2>&1 && ! command -v chromium >/dev/null 2>&1; then
-    snap install chromium || true
+  apt-get install -y xvfb openbox x11vnc websockify novnc wget gnupg ca-certificates || true
+  if ! command -v google-chrome-stable >/dev/null 2>&1; then
+    install -d -m 0755 /etc/apt/keyrings
+    if [ ! -f /etc/apt/keyrings/google-chrome.gpg ]; then
+      wget -q -O- https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor >/etc/apt/keyrings/google-chrome.gpg
+      chmod 0644 /etc/apt/keyrings/google-chrome.gpg
+    fi
+    cat >/etc/apt/sources.list.d/google-chrome.list <<'EOF'
+deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.gpg] https://dl.google.com/linux/chrome/deb/ stable main
+EOF
+    apt-get update
+    apt-get install -y google-chrome-stable
   fi
   for binary in Xvfb openbox x11vnc websockify; do
     if ! command -v "$binary" >/dev/null 2>&1; then
@@ -84,7 +93,7 @@ if [ "${BROWSER_SESSION_ENABLED:-0}" = "1" ]; then
     echo "Missing noVNC web assets at ${BROWSER_SESSION_NOVNC_WEB_DIR:-/usr/share/novnc}" >&2
     exit 1
   fi
-  if ! command -v "${BROWSER_SESSION_CHROMIUM_BIN:-chromium-browser}" >/dev/null 2>&1 && ! command -v chromium >/dev/null 2>&1; then
+  if ! command -v "${BROWSER_SESSION_CHROMIUM_BIN:-google-chrome-stable}" >/dev/null 2>&1; then
     echo "Missing Chromium binary for browser session." >&2
     exit 1
   fi

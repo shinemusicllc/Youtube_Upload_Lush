@@ -252,9 +252,14 @@ class BrowserRuntimeManager:
 
         env = os.environ.copy()
         env["DISPLAY"] = display
-        env["HOME"] = str(profile_dir)
+        env["HOME"] = str(session_dir / "home")
         env["XDG_RUNTIME_DIR"] = str(session_dir / "xdg")
+        env["XDG_CONFIG_HOME"] = str(session_dir / "xdg-config")
+        env["XDG_CACHE_HOME"] = str(session_dir / "xdg-cache")
         Path(env["XDG_RUNTIME_DIR"]).mkdir(parents=True, exist_ok=True)
+        Path(env["HOME"]).mkdir(parents=True, exist_ok=True)
+        Path(env["XDG_CONFIG_HOME"]).mkdir(parents=True, exist_ok=True)
+        Path(env["XDG_CACHE_HOME"]).mkdir(parents=True, exist_ok=True)
 
         openbox_log = (log_dir / "openbox.log").open("ab")
         openbox = subprocess.Popen(["openbox"], env=env, stdout=openbox_log, stderr=subprocess.STDOUT)
