@@ -14,6 +14,7 @@ apt-get install -y ffmpeg
 
 mkdir -p "$RUNTIME_DIR"
 install_base_packages
+mkdir -p "$RUNTIME_DIR/.backup" "$RUNTIME_DIR/worker-data"
 adopt_runtime_path "$APP_DIR" "$RUNTIME_DIR" ".venv" ".venv"
 adopt_runtime_path "$APP_DIR" "$RUNTIME_DIR" ".backup" ".backup"
 adopt_runtime_path "$APP_DIR" "$RUNTIME_DIR" "worker-data" "worker-data"
@@ -72,6 +73,20 @@ if [ "${BROWSER_SESSION_ENABLED:-0}" = "1" ]; then
   apt-get install -y xvfb openbox x11vnc websockify novnc chromium-browser || true
   if ! command -v chromium-browser >/dev/null 2>&1 && ! command -v chromium >/dev/null 2>&1; then
     snap install chromium || true
+  fi
+  for binary in Xvfb openbox x11vnc websockify; do
+    if ! command -v "$binary" >/dev/null 2>&1; then
+      echo "Missing required browser-session binary: $binary" >&2
+      exit 1
+    fi
+  done
+  if [ ! -d "${BROWSER_SESSION_NOVNC_WEB_DIR:-/usr/share/novnc}" ] || [ ! -f "${BROWSER_SESSION_NOVNC_WEB_DIR:-/usr/share/novnc}/vnc.html" ]; then
+    echo "Missing noVNC web assets at ${BROWSER_SESSION_NOVNC_WEB_DIR:-/usr/share/novnc}" >&2
+    exit 1
+  fi
+  if ! command -v "${BROWSER_SESSION_CHROMIUM_BIN:-chromium-browser}" >/dev/null 2>&1 && ! command -v chromium >/dev/null 2>&1; then
+    echo "Missing Chromium binary for browser session." >&2
+    exit 1
   fi
 fi
 

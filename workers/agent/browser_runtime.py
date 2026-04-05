@@ -84,8 +84,11 @@ class BrowserRuntimeManager:
         profile_root = Path(os.getenv("BROWSER_SESSION_PROFILE_ROOT", str(self.data_dir / "browser-profiles")))
         session_root = Path(os.getenv("BROWSER_SESSION_STATE_ROOT", str(self.data_dir / "browser-sessions")))
         chromium_bin = os.getenv("BROWSER_SESSION_CHROMIUM_BIN", "").strip()
-        if not chromium_bin:
-            chromium_bin = self._resolve_executable(["google-chrome-stable", "google-chrome", "chromium-browser", "chromium"])
+        chromium_candidates: list[str] = []
+        if chromium_bin:
+            chromium_candidates.append(chromium_bin)
+        chromium_candidates.extend(["google-chrome-stable", "google-chrome", "chromium-browser", "chromium"])
+        chromium_bin = self._resolve_executable(list(dict.fromkeys(chromium_candidates)))
         return BrowserRuntimeConfig(
             enabled=_truthy(os.getenv("BROWSER_SESSION_ENABLED")),
             public_base_url=str(os.getenv("BROWSER_SESSION_PUBLIC_BASE_URL", "")).strip().rstrip("/"),

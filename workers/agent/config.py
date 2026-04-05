@@ -13,6 +13,17 @@ def _env(name: str, default: str = "") -> str:
     return value
 
 
+def _ensure_directory(path: Path) -> Path:
+    if path.is_symlink():
+        target = Path(os.readlink(path))
+        if not target.is_absolute():
+            target = (path.parent / target).resolve(strict=False)
+        target.mkdir(parents=True, exist_ok=True)
+        return path
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 @dataclass
 class WorkerConfig:
     control_plane_url: str
@@ -47,7 +58,9 @@ class WorkerConfig:
 
 def load_config() -> WorkerConfig:
     hostname = socket.gethostname().split(".")[0]
-    work_root = Path(os.getenv("WORKER_DATA_DIR", "/opt/youtube-upload-lush/worker-data")).expanduser()
+    work_root = _ensure_directory(
+        Path(os.getenv("WORKER_DATA_DIR", "/opt/youtube-upload-lush/worker-data")).expanduser()
+    )
     return WorkerConfig(
         control_plane_url=_env("CONTROL_PLANE_URL").rstrip("/"),
         shared_secret=_env("WORKER_SHARED_SECRET"),
