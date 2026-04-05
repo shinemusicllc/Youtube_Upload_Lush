@@ -1581,8 +1581,6 @@
     };
 
     const isBrowserSessionReady = (session) => !!(session?.novnc_url && ["awaiting_confirmation", "confirmed"].includes(session.status));
-    const canAutoConfirmBrowserSession = (session) =>
-      !!(session?.session_id && session?.detected_channel_id && ["awaiting_confirmation", "confirmed"].includes(session.status));
 
     const formatBrowserSessionStatus = (status) => {
       const mapping = {
@@ -1723,9 +1721,6 @@
           throw new Error(payload.detail || "Không thể tải browser session.");
         }
         renderBrowserSessionState(payload);
-        if (!browserSessionAutoConfirmInFlight && !modal.classList.contains("hidden") && canAutoConfirmBrowserSession(payload)) {
-          void confirmBrowserSession({ auto: true });
-        }
         return payload;
       } catch (error) {
         if (!silent) {
