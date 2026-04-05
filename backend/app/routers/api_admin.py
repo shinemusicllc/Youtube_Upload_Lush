@@ -327,7 +327,12 @@ async def toggle_admin_role(request: Request, user_id: str):
 
 
 @router.get("/admin/bots")
-async def get_admin_bots(request: Request, manager_ids: list[str] | None = None, userId: str | None = None):
+async def get_admin_bots(
+    request: Request,
+    manager_ids: list[str] | None = None,
+    userId: str | None = None,
+    after_event_id: str | None = None,
+):
     if userId:
         _enforce_user_scope(request, userId)
     selected_manager_ids = _manager_ids_from_request(request, manager_ids)
@@ -342,12 +347,18 @@ async def get_admin_bots(request: Request, manager_ids: list[str] | None = None,
     current_user = require_admin_access(request)
     if current_user.role == "manager" and not selected_manager_ids:
         selected_manager_ids = [current_user.id]
+    notifications = store.get_admin_notifications(
+        manager_ids=selected_manager_ids,
+        after_id=after_event_id,
+    )
     return {
         "items": store.get_admin_bot_index_context(
             manager_ids=selected_manager_ids,
             viewer_role=current_user.role,
             viewer_id=current_user.id,
-        ).get("workers", [])
+        ).get("workers", []),
+        "events": notifications.get("items", []),
+        "event_cursor": notifications.get("cursor", ""),
     }
 
 

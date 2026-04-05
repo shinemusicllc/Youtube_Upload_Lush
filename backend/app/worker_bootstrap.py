@@ -7,6 +7,7 @@ import shlex
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Thread
+from typing import Callable
 
 try:
     import paramiko
@@ -97,7 +98,7 @@ def build_worker_bootstrap_control_plane_url(fallback_url: str | None = None) ->
     fallback = str(fallback_url or "").strip()
     if fallback:
         return fallback.rstrip("/")
-    raise WorkerBootstrapError("Chua co WORKER_BOOTSTRAP_CONTROL_PLANE_URL de bootstrap worker.")
+    raise WorkerBootstrapError("Chưa có WORKER_BOOTSTRAP_CONTROL_PLANE_URL để bootstrap worker.")
 
 
 def build_worker_bootstrap_request(
@@ -115,12 +116,12 @@ def build_worker_bootstrap_request(
 ) -> WorkerBootstrapRequest:
     normalized_ip = str(vps_ip or "").strip()
     if not normalized_ip:
-        raise WorkerBootstrapError("VPS IP la bat buoc.")
+        raise WorkerBootstrapError("VPS IP là bắt buộc.")
     normalized_user = str(ssh_user or "").strip() or "root"
     normalized_key = str(ssh_private_key or "").strip()
     normalized_password = str(password or "").strip()
     if not normalized_key and not normalized_password:
-        raise WorkerBootstrapError("Can nhap password hoac SSH key de bootstrap worker.")
+        raise WorkerBootstrapError("Cần nhập password hoặc SSH key để bootstrap worker.")
     return WorkerBootstrapRequest(
         vps_ip=normalized_ip,
         ssh_user=normalized_user,
@@ -147,12 +148,12 @@ def build_worker_decommission_request(
 ) -> WorkerDecommissionRequest:
     normalized_ip = str(vps_ip or "").strip()
     if not normalized_ip:
-        raise WorkerBootstrapError("VPS IP la bat buoc.")
+        raise WorkerBootstrapError("VPS IP là bắt buộc.")
     normalized_user = str(ssh_user or "").strip() or "root"
     normalized_key = str(ssh_private_key or "").strip()
     normalized_password = str(password or "").strip()
     if not normalized_key and not normalized_password:
-        raise WorkerBootstrapError("Can nhap password hoac SSH key de go worker khoi VPS.")
+        raise WorkerBootstrapError("Cần nhập password hoặc SSH key để gỡ worker khỏi VPS.")
     return WorkerDecommissionRequest(
         vps_ip=normalized_ip,
         ssh_user=normalized_user,
@@ -163,19 +164,19 @@ def build_worker_decommission_request(
 
 def _ensure_runtime_dependency() -> None:
     if paramiko is None:
-        raise WorkerBootstrapError("Thieu dependency `paramiko`. Hay cai lai backend requirements truoc.")
+        raise WorkerBootstrapError("Thiếu dependency `paramiko`. Hãy cài lại backend requirements trước.")
     if not BOOTSTRAP_SCRIPT_PATH.exists():
-        raise WorkerBootstrapError(f"Khong tim thay script bootstrap: {BOOTSTRAP_SCRIPT_PATH}")
+        raise WorkerBootstrapError(f"Không tìm thấy script bootstrap: {BOOTSTRAP_SCRIPT_PATH}")
     if not GIT_LAYOUT_SCRIPT_PATH.exists():
-        raise WorkerBootstrapError(f"Khong tim thay script runtime layout: {GIT_LAYOUT_SCRIPT_PATH}")
+        raise WorkerBootstrapError(f"Không tìm thấy script runtime layout: {GIT_LAYOUT_SCRIPT_PATH}")
     if not DECOMMISSION_SCRIPT_PATH.exists():
-        raise WorkerBootstrapError(f"Khong tim thay script decommission: {DECOMMISSION_SCRIPT_PATH}")
+        raise WorkerBootstrapError(f"Không tìm thấy script decommission: {DECOMMISSION_SCRIPT_PATH}")
 
 
 def _load_private_key(raw_key: str):
     key_text = str(raw_key or "").strip()
     if not key_text:
-        raise WorkerBootstrapError("SSH key rong.")
+        raise WorkerBootstrapError("SSH key rỗng.")
     last_error: Exception | None = None
     for key_type in (
         getattr(paramiko, "Ed25519Key", None),
@@ -189,7 +190,7 @@ def _load_private_key(raw_key: str):
             return key_type.from_private_key(io.StringIO(key_text))
         except Exception as exc:  # pragma: no cover - parser branch depends on key type
             last_error = exc
-    raise WorkerBootstrapError(f"SSH key khong hop le: {last_error or 'unknown error'}")
+    raise WorkerBootstrapError(f"SSH key không hợp lệ: {last_error or 'unknown error'}")
 
 
 def _connect_client(request: WorkerBootstrapRequest):
@@ -214,10 +215,10 @@ def _connect_client(request: WorkerBootstrapRequest):
         return client
     except paramiko.AuthenticationException as exc:
         client.close()
-        raise WorkerBootstrapError("Dang nhap SSH that bai.") from exc
+        raise WorkerBootstrapError("Đăng nhập SSH thất bại.") from exc
     except Exception as exc:  # pragma: no cover - network/runtime path
         client.close()
-        raise WorkerBootstrapError(f"Khong ket noi duoc VPS {request.vps_ip}: {exc}") from exc
+        raise WorkerBootstrapError(f"Không kết nối được VPS {request.vps_ip}: {exc}") from exc
 
 
 def _run_remote_command(client, command: str) -> tuple[int, str, str]:
@@ -270,21 +271,29 @@ def _build_worker_env_file(request: WorkerBootstrapRequest) -> str:
     )
 
 
-def bootstrap_worker_via_ssh(request: WorkerBootstrapRequest) -> WorkerBootstrapResult:
+def bootstrap_worker_via_ssh(
+    request: WorkerBootstrapRequest,
+    *,
+    progress: Callable[[str], None] | None = None,
+) -> WorkerBootstrapResult:
     if not request.shared_secret:
-        raise WorkerBootstrapError("Worker shared secret dang rong.")
+        raise WorkerBootstrapError("Worker shared secret đang rỗng.")
     client = _connect_client(request)
     temp_dir = ""
     try:
+        if progress:
+            progress(f"Đang kết nối SSH tới VPS {request.vps_ip}...")
         exit_code, stdout, stderr = _run_remote_command(client, "mktemp -d /tmp/youtube-worker-bootstrap-XXXXXX")
         if exit_code != 0:
-            raise WorkerBootstrapError(stderr.strip() or stdout.strip() or "Khong tao duoc thu muc tam tren VPS.")
+            raise WorkerBootstrapError(stderr.strip() or stdout.strip() or "Không tạo được thư mục tạm trên VPS.")
         temp_dir = stdout.strip()
         if not temp_dir:
-            raise WorkerBootstrapError("Khong nhan duoc duong dan thu muc tam tren VPS.")
+            raise WorkerBootstrapError("Không nhận được đường dẫn thư mục tạm trên VPS.")
 
         sftp = client.open_sftp()
         try:
+            if progress:
+                progress("Đang tải script cài đặt và cấu hình worker lên VPS...")
             remote_bootstrap_script = f"{temp_dir}/bootstrap_worker.sh"
             remote_layout_script = f"{temp_dir}/git_runtime_layout.sh"
             remote_env_file = f"{temp_dir}/youtube-upload-worker.env"
@@ -315,12 +324,21 @@ def bootstrap_worker_via_ssh(request: WorkerBootstrapRequest) -> WorkerBootstrap
             branch=shlex.quote(request.branch),
             script=shlex.quote(remote_bootstrap_script),
         )
-        for command in (chmod_command, install_env_command, bootstrap_command):
+        steps = (
+            (chmod_command, "Đang chuẩn hóa quyền thực thi script trên VPS..."),
+            (install_env_command, "Đang ghi file cấu hình worker vào hệ thống..."),
+            (bootstrap_command, "Đang clone repo, cài dependency và bật worker service..."),
+        )
+        for command, step_message in steps:
+            if progress:
+                progress(step_message)
             exit_code, stdout, stderr = _run_remote_command(client, command)
             if exit_code != 0:
                 message = stderr.strip() or stdout.strip() or f"Remote command failed: {command}"
                 raise WorkerBootstrapError(message)
 
+        if progress:
+            progress("Đang kiểm tra trạng thái systemd của worker...")
         _, enabled_stdout, _ = _run_remote_command(
             client,
             f"{sudo_prefix}systemctl is-enabled youtube-upload-worker.service",
@@ -337,7 +355,7 @@ def bootstrap_worker_via_ssh(request: WorkerBootstrapRequest) -> WorkerBootstrap
                 f"{sudo_prefix}systemctl status youtube-upload-worker.service --no-pager -n 40",
             )
             raise WorkerBootstrapError(
-                (status_stderr.strip() or status_stdout.strip() or "Worker service khong active sau bootstrap.")
+                (status_stderr.strip() or status_stdout.strip() or "Worker service không active sau bootstrap.")
             )
         return WorkerBootstrapResult(
             worker_id=request.worker_id,
@@ -352,20 +370,28 @@ def bootstrap_worker_via_ssh(request: WorkerBootstrapRequest) -> WorkerBootstrap
         client.close()
 
 
-def decommission_worker_via_ssh(request: WorkerDecommissionRequest) -> WorkerDecommissionResult:
+def decommission_worker_via_ssh(
+    request: WorkerDecommissionRequest,
+    *,
+    progress: Callable[[str], None] | None = None,
+) -> WorkerDecommissionResult:
     client = _connect_client(request)
     temp_dir = ""
     try:
+        if progress:
+            progress(f"Đang kết nối SSH tới VPS {request.vps_ip}...")
         exit_code, stdout, stderr = _run_remote_command(client, "mktemp -d /tmp/youtube-worker-decommission-XXXXXX")
         if exit_code != 0:
-            raise WorkerBootstrapError(stderr.strip() or stdout.strip() or "Khong tao duoc thu muc tam tren VPS.")
+            raise WorkerBootstrapError(stderr.strip() or stdout.strip() or "Không tạo được thư mục tạm trên VPS.")
         temp_dir = stdout.strip()
         if not temp_dir:
-            raise WorkerBootstrapError("Khong nhan duoc duong dan thu muc tam tren VPS.")
+            raise WorkerBootstrapError("Không nhận được đường dẫn thư mục tạm trên VPS.")
 
         remote_script = f"{temp_dir}/decommission_worker.sh"
         sftp = client.open_sftp()
         try:
+            if progress:
+                progress("Đang tải script gỡ worker lên VPS...")
             _upload_remote_script(sftp, DECOMMISSION_SCRIPT_PATH, remote_script)
         finally:
             sftp.close()
@@ -380,12 +406,20 @@ def decommission_worker_via_ssh(request: WorkerDecommissionRequest) -> WorkerDec
             runtime_dir=shlex.quote(request.runtime_dir),
             script=shlex.quote(remote_script),
         )
-        for command in (chmod_command, decommission_command):
+        steps = (
+            (chmod_command, "Đang chuẩn hóa quyền thực thi script gỡ BOT..."),
+            (decommission_command, "Đang dừng service và dọn app worker khỏi VPS..."),
+        )
+        for command, step_message in steps:
+            if progress:
+                progress(step_message)
             exit_code, stdout, stderr = _run_remote_command(client, command)
             if exit_code != 0:
                 message = stderr.strip() or stdout.strip() or f"Remote command failed: {command}"
                 raise WorkerBootstrapError(message)
 
+        if progress:
+            progress("Đang xác nhận worker service đã được gỡ khỏi hệ thống...")
         enabled_code, enabled_stdout, enabled_stderr = _run_remote_command(
             client,
             f"{sudo_prefix}systemctl is-enabled youtube-upload-worker.service",
@@ -413,26 +447,21 @@ def decommission_worker_via_ssh(request: WorkerDecommissionRequest) -> WorkerDec
 
 def _run_worker_install_operation(store, operation_id: str, request: WorkerBootstrapRequest) -> None:
     try:
-        store.update_worker_operation(
-            operation_id,
-            status="running",
-            message=f"Dang ket noi SSH vao {request.vps_ip} va cai worker service...",
-        )
-        result = bootstrap_worker_via_ssh(request)
+        def report(message: str) -> None:
+            store.update_worker_operation(operation_id, status="running", message=message)
+
+        report(f"Đang kết nối SSH tới {request.vps_ip} và chuẩn bị cài worker...")
+        result = bootstrap_worker_via_ssh(request, progress=report)
         store.update_worker_operation(
             operation_id,
             status="awaiting_registration",
             message=(
-                f"Da cai worker service tren {result.vps_ip}. Dang cho BOT "
-                "ket noi lai voi control-plane..."
+                f"Đã cài worker service trên {result.vps_ip}. Đang chờ BOT "
+                "kết nối lại với control-plane..."
             ),
         )
     except Exception as exc:
-        store.update_worker_operation(
-            operation_id,
-            status="failed",
-            message=str(exc),
-        )
+        store.fail_worker_operation(operation_id, message=str(exc))
 
 
 def start_worker_install_operation(
@@ -469,19 +498,14 @@ def _run_worker_decommission_operation(
     request: WorkerDecommissionRequest,
 ) -> None:
     try:
-        store.update_worker_operation(
-            operation_id,
-            status="running",
-            message=f"Dang stop service va don app tren VPS {request.vps_ip}...",
-        )
-        decommission_worker_via_ssh(request)
+        def report(message: str) -> None:
+            store.update_worker_operation(operation_id, status="running", message=message)
+
+        report(f"Đang kết nối SSH tới {request.vps_ip} và chuẩn bị gỡ BOT...")
+        decommission_worker_via_ssh(request, progress=report)
         store.finalize_decommissioned_bot(worker_id, operation_id)
     except Exception as exc:
-        store.update_worker_operation(
-            operation_id,
-            status="failed",
-            message=str(exc),
-        )
+        store.fail_worker_operation(operation_id, message=str(exc))
 
 
 def start_worker_decommission_operation(

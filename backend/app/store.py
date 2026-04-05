@@ -153,6 +153,7 @@ class AppStore:
         self.worker_round_robin_cursor: dict[str, str] = {}
         self.worker_connection_profiles: dict[str, dict[str, Any]] = {}
         self.worker_operation_tasks: list[dict[str, Any]] = []
+        self.admin_notifications: list[dict[str, Any]] = []
         self._worker_state_lock = RLock()
         self._monitor_stop_event = Event()
         self._monitor_thread: Thread | None = None
@@ -847,7 +848,7 @@ class AppStore:
                 }
         normalized_ip = str(profile.get("vps_ip") or "").strip()
         if not normalized_ip:
-            raise ValueError("BOT nay chua co thong tin VPS IP de go worker tu xa.")
+            raise ValueError("BOT này chưa có thông tin VPS IP để gỡ worker từ xa.")
         return {
             "worker_id": normalized_worker_id,
             "vps_ip": normalized_ip,
@@ -871,41 +872,142 @@ class AppStore:
         status = str(task.get("status") or "").strip()
         mapping = {
             ("install", "queued"): (
-                "Dang xep hang cai dat",
+                "Đang xếp hàng cài đặt...",
                 "inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold text-amber-700",
             ),
             ("install", "running"): (
-                "Dang cai dat",
+                "Đang cài đặt...",
                 "inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[10px] font-semibold text-sky-700",
             ),
             ("install", "awaiting_registration"): (
-                "Cho BOT ket noi",
+                "Chờ BOT kết nối",
                 "inline-flex items-center rounded-full border border-brand-100 bg-brand-50 px-2.5 py-1 text-[10px] font-semibold text-brand-700",
             ),
             ("install", "failed"): (
-                "Cai dat loi",
+                "Cài đặt lỗi",
                 "inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[10px] font-semibold text-rose-700",
             ),
             ("decommission", "queued"): (
-                "Dang xep hang go BOT",
+                "Đang xếp hàng gỡ BOT...",
                 "inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold text-amber-700",
             ),
             ("decommission", "running"): (
-                "Dang go BOT",
+                "Đang gỡ BOT...",
                 "inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-[10px] font-semibold text-orange-700",
             ),
             ("decommission", "failed"): (
-                "Go BOT loi",
+                "Gỡ BOT lỗi",
                 "inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[10px] font-semibold text-rose-700",
             ),
         }
         return mapping.get(
             (kind, status),
             (
-                "Dang xu ly",
+                "Đang xử lý",
                 "inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-700",
             ),
         )
+
+    def _push_admin_notification(
+        self,
+        *,
+        message: str,
+        level: str = "info",
+        manager_id: str | None = None,
+        scope: str = "bot-ops",
+    ) -> dict[str, Any]:
+        notification = {
+            "id": f"notice-{uuid4().hex[:12]}",
+            "message": str(message or "").strip(),
+            "level": str(level or "info").strip() or "info",
+            "manager_id": str(manager_id or "").strip() or None,
+            "scope": str(scope or "bot-ops").strip() or "bot-ops",
+            "created_at": self._now(trim=False),
+        }
+        self.admin_notifications.append(notification)
+        self.admin_notifications = self.admin_notifications[-100:]
+        return deepcopy(notification)
+
+    def _latest_admin_notification_id(
+        self,
+        *,
+        manager_ids: list[str] | None = None,
+        scope: str = "bot-ops",
+    ) -> str:
+        selected_ids = set(self._selected_manager_ids(manager_ids))
+        latest_id = ""
+        for item in self.admin_notifications:
+            if str(item.get("scope") or "").strip() != scope:
+                continue
+            manager_id = str(item.get("manager_id") or "").strip()
+            if selected_ids and manager_id not in selected_ids:
+                continue
+            latest_id = str(item.get("id") or "").strip()
+        return latest_id
+
+    def get_admin_notifications(
+        self,
+        *,
+        manager_ids: list[str] | None = None,
+        after_id: str | None = None,
+        scope: str = "bot-ops",
+    ) -> dict[str, Any]:
+        selected_ids = set(self._selected_manager_ids(manager_ids))
+        normalized_after_id = str(after_id or "").strip()
+        latest_id = self._latest_admin_notification_id(manager_ids=manager_ids, scope=scope)
+        if not normalized_after_id:
+            return {"items": [], "cursor": latest_id}
+
+        seen_after = False
+        if normalized_after_id == latest_id:
+            seen_after = True
+        items: list[dict[str, Any]] = []
+        for item in self.admin_notifications:
+            if str(item.get("scope") or "").strip() != scope:
+                continue
+            item_id = str(item.get("id") or "").strip()
+            if not seen_after:
+                if item_id == normalized_after_id:
+                    seen_after = True
+                continue
+            manager_id = str(item.get("manager_id") or "").strip()
+            if selected_ids and manager_id not in selected_ids:
+                continue
+            items.append(
+                {
+                    "id": item_id,
+                    "message": str(item.get("message") or "").strip(),
+                    "level": str(item.get("level") or "info").strip() or "info",
+                    "created_at": self._format_full_datetime(self._parse_datetime(item.get("created_at"))),
+                }
+            )
+        return {"items": items, "cursor": latest_id}
+
+    def fail_worker_operation(
+        self,
+        operation_id: str,
+        *,
+        message: str,
+        level: str = "error",
+    ) -> None:
+        with self._worker_state_lock:
+            task = self._find_worker_operation(operation_id)
+            task_message = str(message or "").strip() or "Không thể hoàn tất thao tác BOT."
+            kind = str(task.get("kind") or "").strip()
+            worker_name = str(task.get("worker_name") or task.get("vps_ip") or task.get("worker_id") or "").strip()
+            manager_id = str(task.get("manager_id") or "").strip() or None
+            notice_prefix = "Cài đặt BOT" if kind == "install" else "Gỡ BOT"
+            self._push_admin_notification(
+                message=f"{notice_prefix} {worker_name} thất bại: {task_message}",
+                level=level,
+                manager_id=manager_id,
+            )
+            self.worker_operation_tasks = [
+                existing
+                for existing in self.worker_operation_tasks
+                if str(existing.get("id") or "").strip() != str(operation_id or "").strip()
+            ]
+            self._save_state()
 
     def enqueue_worker_install_operation(
         self,
@@ -922,11 +1024,11 @@ class AppStore:
             normalized_worker_id = str(worker_id or "").strip()
             normalized_ip = str(vps_ip or "").strip()
             if not normalized_worker_id or not normalized_ip:
-                raise ValueError("Worker bootstrap task thieu worker_id hoac VPS IP.")
+                raise ValueError("Worker bootstrap task thiếu worker_id hoặc VPS IP.")
             if any(str(worker.id or "").strip() == normalized_worker_id for worker in self.workers):
-                raise ValueError("Worker ID nay da ton tai trong control-plane.")
+                raise ValueError("Worker ID này đã tồn tại trong control-plane.")
             if any(str(self._resolve_worker_display_name(worker.id) or "").strip() == normalized_ip for worker in self.workers):
-                raise ValueError("VPS nay da ton tai trong danh sach BOT.")
+                raise ValueError("VPS này đã tồn tại trong danh sách BOT.")
             removed_failed_worker_ids: set[str] = set()
             remaining_tasks: list[dict[str, Any]] = []
             for task in self.worker_operation_tasks:
@@ -955,7 +1057,7 @@ class AppStore:
                     str(task.get("worker_id") or "").strip() == normalized_worker_id
                     or str(task.get("vps_ip") or "").strip() == normalized_ip
                 ):
-                    raise ValueError("BOT nay dang co mot tien trinh cai dat/go BOT khac chua xong.")
+                    raise ValueError("BOT này đang có một tiến trình cài đặt hoặc gỡ BOT khác chưa xong.")
             now = self._now(trim=False)
             task = {
                 "id": f"worker-op-{uuid4().hex[:10]}",
@@ -967,7 +1069,7 @@ class AppStore:
                 "group": str(group or "").strip(),
                 "kind": "install",
                 "status": "queued",
-                "message": "Dang cho control-plane ket noi SSH vao VPS...",
+                "message": "Đang chờ control-plane kết nối SSH vào VPS...",
                 "created_at": now,
                 "updated_at": now,
                 "completed_at": None,
@@ -989,12 +1091,12 @@ class AppStore:
             normalized_worker_id = str(worker.id or "").strip()
             normalized_ip = str(vps_ip or "").strip()
             if not normalized_ip:
-                raise ValueError("BOT nay chua co VPS IP de go worker tu xa.")
+                raise ValueError("BOT này chưa có VPS IP để gỡ worker từ xa.")
             for task in self.worker_operation_tasks:
                 if self._worker_operation_is_finished(task):
                     continue
                 if str(task.get("worker_id") or "").strip() == normalized_worker_id:
-                    raise ValueError("BOT nay dang co mot tien trinh cai dat/go BOT khac chua xong.")
+                    raise ValueError("BOT này đang có một tiến trình cài đặt hoặc gỡ BOT khác chưa xong.")
             now = self._now(trim=False)
             task = {
                 "id": f"worker-op-{uuid4().hex[:10]}",
@@ -1006,7 +1108,7 @@ class AppStore:
                 "group": str(worker.group or "").strip(),
                 "kind": "decommission",
                 "status": "queued",
-                "message": "Dang cho control-plane ket noi SSH de go worker khoi VPS...",
+                "message": "Đang chờ control-plane kết nối SSH để gỡ worker khỏi VPS...",
                 "created_at": now,
                 "updated_at": now,
                 "completed_at": None,
@@ -4603,7 +4705,7 @@ class AppStore:
             "disk_text": "--",
             "bandwidth_text": "--",
             "load_percent": 0,
-            "meta_text": str(task.get("message") or "").strip() or "Control-plane dang xu ly tren VPS.",
+            "meta_text": str(task.get("message") or "").strip() or "Control-plane đang xử lý trên VPS.",
             "row_dimmed": True,
             "actions_disabled": True,
             "is_operation_placeholder": True,
@@ -4749,6 +4851,7 @@ class AppStore:
             {
                 "template": "admin/worker_index.html",
                 "workers": worker_rows,
+                "worker_event_cursor": self._latest_admin_notification_id(manager_ids=manager_ids),
                 "focus_user": focus_user,
                 "manager_binding_locked": viewer_role == "manager",
                 "bot_manager_options": self._bot_manager_options(viewer_role=viewer_role, viewer_id=viewer_id),

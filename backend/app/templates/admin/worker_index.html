@@ -59,25 +59,40 @@
                         <th class="w-[320px] text-right">T&#225;c v&#7909;</th>
                     </tr>
                 </thead>
-                <tbody data-worker-live-body data-live-endpoint="/api/admin/bots">
+                <tbody data-worker-live-body data-live-endpoint="/api/admin/bots" data-initial-event-cursor="{{ dashboard.worker_event_cursor or '' }}">
                     {% for worker in dashboard.workers %}
                     {% set created_parts = (worker.created_at or '').split(' ') %}
                     {% set compact_operation_row = worker.row_dimmed and worker.actions_disabled %}
+                    {% set operation_is_delete = worker.operation_kind == 'decommission' %}
+                    {% set operation_shell_class = 'border-brand-100 bg-white shadow-[0_12px_28px_rgba(93,103,223,0.08)]' %}
+                    {% set operation_icon_class = 'bg-brand-50 text-brand-600' %}
+                    {% set operation_spinner_class = 'border-brand-200 border-t-brand-600' %}
+                    {% if operation_is_delete %}
+                    {% set operation_shell_class = 'border-orange-100 bg-white shadow-[0_12px_28px_rgba(249,115,22,0.08)]' %}
+                    {% set operation_icon_class = 'bg-orange-50 text-orange-600' %}
+                    {% set operation_spinner_class = 'border-orange-200 border-t-orange-600' %}
+                    {% endif %}
                     <tr
                         data-worker-row-id="{{ worker.id }}"
-                        class="{% if worker.row_dimmed %}bg-slate-50/70 opacity-80{% endif %}"
+                        class="{% if worker.row_dimmed and not compact_operation_row %}bg-slate-50/70 opacity-80{% endif %}"
                         data-search-text="{{ worker.bot_id }} {{ worker.name }} {{ worker.group }} {{ worker.manager_name }} {{ worker.assigned_user_name }} {{ worker.assigned_user_names_text }} {{ worker.created_at }} {{ worker.ram_text }} {{ worker.disk_text }} {{ worker.bandwidth_text }}"
                     >
                         <td class="table-mono text-slate-500">{{ worker.index }}</td>
                         {% if compact_operation_row %}
                         <td colspan="11" class="py-3">
-                            <div class="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3">
-                                <p class="table-mono truncate text-[12px] font-semibold text-slate-700">{{ worker.name }}</p>
-                                <p class="mt-1 inline-flex max-w-full items-center gap-2 truncate text-[13px] font-semibold text-slate-900">
-                                    <span class="font-mono tracking-[0.28em] text-slate-400">...</span>
-                                    <span class="truncate">{{ worker.status_label }}</span>
-                                </p>
-                                <p class="mt-1 truncate text-[12px] text-slate-500" title="{{ worker.meta_text or '' }}">{{ worker.meta_text or 'Control-plane dang xu ly tren VPS.' }}</p>
+                            <div class="rounded-[18px] border px-4 py-3 {{ operation_shell_class }}">
+                                <div class="flex items-start gap-3">
+                                    <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl {{ operation_icon_class }}">
+                                        <span class="inline-flex h-4 w-4 animate-spin rounded-full border-2 {{ operation_spinner_class }}"></span>
+                                    </div>
+                                    <div class="min-w-0 flex-1">
+                                        <p class="table-mono truncate text-[12px] font-semibold text-slate-500">{{ worker.name }}</p>
+                                        <p class="mt-1 inline-flex max-w-full items-center gap-2 truncate text-[13px] font-semibold text-slate-900">
+                                            <span class="truncate">{{ worker.status_label }}</span>
+                                        </p>
+                                        <p class="mt-1 truncate text-[12px] text-slate-500" title="{{ worker.meta_text or '' }}">{{ worker.meta_text or 'Control-plane đang xử lý trên VPS.' }}</p>
+                                    </div>
+                                </div>
                             </div>
                         </td>
                         {% else %}
@@ -183,13 +198,12 @@
 
             <div class="border-b border-slate-200 px-5 py-4">
                 <h3 class="section-title">Th&#234;m BOT m&#7899;i</h3>
-                <p class="section-note">Control-plane s&#7869; SSH sang VPS, clone repo, c&#224;i worker service v&#224; row BOT s&#7869; hi&#7879;n ngay trong danh s&#225;ch &#7903; tr&#7841;ng th&#225;i m&#7901 cho t&#7899;i khi bot register xong.</p>
+                <p class="section-note">Control-plane sẽ SSH sang VPS, clone repo, cài worker service và hiển thị tiến trình cài đặt trực tiếp ngay trong danh sách BOT.</p>
             </div>
             <div class="space-y-4 px-5 py-5">
-                <div class="hidden rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-[12px] leading-5 text-rose-700" data-create-bot-error></div>
                 <div class="rounded-2xl border border-brand-100 bg-brand-50/70 px-4 py-3 text-[12px] leading-5 text-brand-700">
-                    <p class="font-semibold">BOT ID t&#7921; c&#7845;p: {{ dashboard.new_worker_defaults.worker_id }}</p>
-                    <p class="mt-1">T&#234;n BOT s&#7869; d&#249;ng IP VPS. Browser session/noVNC &#273;&#432;&#7907;c b&#7853;t s&#7861;n &#273;&#7875; &#273;&#259;ng nh&#7853;p Google v&#224; th&#234;m channel sau khi c&#224;i xong. Manager/group c&#243; th&#7875; s&#7917;a sau.</p>
+                    <p class="font-semibold">BOT ID tự cấp: {{ dashboard.new_worker_defaults.worker_id }}</p>
+                    <p class="mt-1">Tên BOT sẽ dùng IP VPS. Browser session/noVNC được bật sẵn để đăng nhập Google và thêm channel sau khi cài xong. Manager và group có thể chỉnh sau.</p>
                 </div>
 
                 <div>
@@ -361,11 +375,6 @@
             </div>
             <div class="space-y-4 px-5 py-5">
                 <input type="hidden" name="Id" id="delete-bot-id">
-                <div class="hidden rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-[12px] leading-5 text-rose-700" data-delete-bot-error></div>
-                <div class="rounded-2xl border border-rose-200 bg-rose-50/80 px-4 py-3 text-[12px] leading-5 text-rose-700">
-                    <p class="font-semibold">Canh bao destructive</p>
-                    <p class="mt-1">Sau khi x&#243;a, BOT n&#224;y s&#7869; kh&#244;ng th&#7875; t&#7921; reconnect l&#7841;i n&#7871;u service tr&#234;n VPS &#273;&#227; &#273;&#432;&#7907;c g&#7905; th&#224;nh c&#244;ng.</p>
-                </div>
                 <p class="text-[13px] text-slate-700">B&#7841;n c&#243; ch&#7855;c mu&#7889;n g&#7905; s&#7841;ch <strong id="delete-bot-name"></strong> kh&#7887;i VPS v&#224; control-panel?</p>
                 <div>
                     <label class="field-label" for="delete-bot-ssh-user">Root user</label>
@@ -433,7 +442,6 @@
     const editUserSelect = document.getElementById('edit-bot-user-id');
     const createBotDialog = document.getElementById('create-bot-dialog');
     const createBotForm = document.querySelector('[data-create-bot-form]');
-    const createBotError = document.querySelector('[data-create-bot-error]');
     const createBotSubmit = document.querySelector('[data-create-bot-submit]');
     const createBotIpInput = document.getElementById('create-bot-vps-ip');
     const createBotPasswordInput = document.getElementById('create-bot-password');
@@ -441,7 +449,6 @@
     const createAuthToggles = Array.from(document.querySelectorAll('[data-create-auth-toggle]'));
     const deleteBotDialog = document.getElementById('delete-bot-dialog');
     const deleteBotForm = document.querySelector('[data-delete-bot-form]');
-    const deleteBotError = document.querySelector('[data-delete-bot-error]');
     const deleteBotSubmit = document.querySelector('[data-delete-bot-submit]');
     const deleteBotSshUserInput = document.getElementById('delete-bot-ssh-user');
     const deleteBotPasswordInput = document.getElementById('delete-bot-password');
@@ -451,6 +458,7 @@
     let pollingController = null;
     let pollingTimer = null;
     let lastPayloadSignature = '';
+    let lastEventCursor = tbody ? String(tbody.dataset.initialEventCursor || '').trim() : '';
 
     function syncCreateAuthPanels() {
       const selectedToggle = createAuthToggles.find(function (input) {
@@ -486,13 +494,16 @@
       }
     }
 
-    function setFormError(target, message) {
-      if (!target) {
+    function showSystemNotice(message, type) {
+      const text = String(message || '').trim();
+      if (!text) {
         return;
       }
-      const text = String(message || '').trim();
-      target.textContent = text;
-      target.classList.toggle('hidden', !text);
+      if (typeof window.showAdminToast === 'function') {
+        window.showAdminToast(text, type || 'info');
+        return;
+      }
+      window.alert(text);
     }
 
     function setSubmitLoading(button, isLoading, loadingLabel) {
@@ -504,7 +515,7 @@
       }
       button.disabled = !!isLoading;
       button.innerHTML = isLoading
-        ? '<span class="font-mono tracking-[0.28em] text-slate-100">...</span> ' + escapeHtml(loadingLabel)
+        ? '<span class="inline-flex h-4 w-4 animate-spin rounded-full border-2 border-white/65 border-t-white"></span><span>' + escapeHtml(loadingLabel) + '</span>'
         : button.dataset.idleHtml;
     }
 
@@ -526,8 +537,7 @@
         createAuthToggles[0].checked = true;
       }
       syncCreateAuthPanels();
-      setFormError(createBotError, '');
-      setSubmitLoading(createBotSubmit, false, 'Dang cai dat...');
+      setSubmitLoading(createBotSubmit, false, 'Đang cài đặt...');
     }
 
     function resetDeleteBotDialog() {
@@ -545,8 +555,7 @@
         deleteBotSshUserInput.value = 'root';
       }
       syncDeleteAuthPanels();
-      setFormError(deleteBotError, '');
-      setSubmitLoading(deleteBotSubmit, false, 'Dang go BOT...');
+      setSubmitLoading(deleteBotSubmit, false, 'Đang gỡ BOT...');
     }
 
     createAuthToggles.forEach(function (toggle) {
@@ -605,6 +614,21 @@
       ].filter(Boolean).join(' ');
     }
 
+    function operationVisual(worker) {
+      const isDelete = worker.operation_kind === 'decommission';
+      return isDelete
+        ? {
+            shell: 'border-orange-100 bg-white shadow-[0_12px_28px_rgba(249,115,22,0.08)]',
+            icon: 'bg-orange-50 text-orange-600',
+            spinner: 'border-orange-200 border-t-orange-600'
+          }
+        : {
+            shell: 'border-brand-100 bg-white shadow-[0_12px_28px_rgba(93,103,223,0.08)]',
+            icon: 'bg-brand-50 text-brand-600',
+            spinner: 'border-brand-200 border-t-brand-600'
+          };
+    }
+
     function renderCountBadge(count, tone, label) {
       return `<span class="inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold ${tone}">${escapeHtml(count)} ${label}</span>`;
     }
@@ -622,30 +646,41 @@
     }
 
     function buildDisabledActionMarkup(worker) {
+      const visual = operationVisual(worker);
       return [
-        '<span class="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-500">',
-        '  <span class="font-mono tracking-[0.28em] text-slate-400">...</span>',
-        '  ', escapeHtml(worker.status_label || 'Dang xu ly'),
+        '<span class="inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-[11px] font-semibold text-slate-600 ',
+        visual.shell,
+        '">',
+        '  <span class="inline-flex h-3.5 w-3.5 animate-spin rounded-full border-2 ',
+        visual.spinner,
+        '"></span>',
+        '  ', escapeHtml(worker.status_label || 'Đang xử lý...'),
         '</span>'
       ].join('');
     }
 
     function buildCompactOperationRowMarkup(worker, workerId, searchText) {
+      const visual = operationVisual(worker);
       const workerName = escapeHtml(worker.name || '-');
-      const statusLabel = escapeHtml(worker.status_label || 'Dang xu ly');
-      const metaText = escapeHtml(worker.meta_text || 'Control-plane dang xu ly tren VPS.');
-      const rowClass = worker.row_dimmed ? ' class="bg-slate-50/70 opacity-80"' : '';
+      const statusLabel = escapeHtml(worker.status_label || 'Đang xử lý...');
+      const metaText = escapeHtml(worker.meta_text || 'Control-plane đang xử lý trên VPS.');
       return [
-        '<tr data-worker-row-id="', workerId, '" data-search-text="', searchText, '"', rowClass, '>',
+        '<tr data-worker-row-id="', workerId, '" data-search-text="', searchText, '">',
         '  <td class="table-mono text-slate-500">', escapeHtml(worker.index), '</td>',
         '  <td colspan="11" class="py-3">',
-        '    <div class="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3">',
-        '      <p class="table-mono truncate text-[12px] font-semibold text-slate-700">', workerName, '</p>',
-        '      <p class="mt-1 inline-flex max-w-full items-center gap-2 truncate text-[13px] font-semibold text-slate-900">',
-        '        <span class="font-mono tracking-[0.28em] text-slate-400">...</span>',
-        '        <span class="truncate">', statusLabel, '</span>',
-        '      </p>',
-        '      <p class="mt-1 truncate text-[12px] text-slate-500" title="', metaText, '">', metaText, '</p>',
+        '    <div class="rounded-[18px] border px-4 py-3 ', visual.shell, '">',
+        '      <div class="flex items-start gap-3">',
+        '        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ', visual.icon, '">',
+        '          <span class="inline-flex h-4 w-4 animate-spin rounded-full border-2 ', visual.spinner, '"></span>',
+        '        </div>',
+        '        <div class="min-w-0 flex-1">',
+        '          <p class="table-mono truncate text-[12px] font-semibold text-slate-500">', workerName, '</p>',
+        '          <p class="mt-1 inline-flex max-w-full items-center gap-2 truncate text-[13px] font-semibold text-slate-900">',
+        '            <span class="truncate">', statusLabel, '</span>',
+        '          </p>',
+        '          <p class="mt-1 truncate text-[12px] text-slate-500" title="', metaText, '">', metaText, '</p>',
+        '        </div>',
+        '      </div>',
         '    </div>',
         '  </td>',
         '</tr>',
@@ -806,7 +841,7 @@
       if (payload && typeof payload.detail === 'string' && payload.detail.trim()) {
         return payload.detail.trim();
       }
-      return 'Khong the xu ly yeu cau. Hay thu lai.';
+      return 'Không thể xử lý yêu cầu. Hãy thử lại.';
     }
 
     async function submitCreateBotForm(event) {
@@ -814,8 +849,7 @@
       if (!createBotForm) {
         return;
       }
-      setFormError(createBotError, '');
-      setSubmitLoading(createBotSubmit, true, 'Dang cai dat...');
+      setSubmitLoading(createBotSubmit, true, 'Đang cài đặt...');
       const formData = new FormData(createBotForm);
       const payload = {
         vps_ip: String(formData.get('vps_ip') || '').trim(),
@@ -841,9 +875,12 @@
         resetCreateBotDialog();
         await fetchLiveWorkers();
       } catch (error) {
-        setFormError(createBotError, error && error.message ? error.message : 'Khong the cai worker luc nay.');
+        showSystemNotice(
+          error && error.message ? error.message : 'Không thể cài worker lúc này.',
+          'error'
+        );
       } finally {
-        setSubmitLoading(createBotSubmit, false, 'Dang cai dat...');
+        setSubmitLoading(createBotSubmit, false, 'Đang cài đặt...');
       }
     }
 
@@ -852,8 +889,7 @@
       if (!deleteBotForm) {
         return;
       }
-      setFormError(deleteBotError, '');
-      setSubmitLoading(deleteBotSubmit, true, 'Dang go BOT...');
+      setSubmitLoading(deleteBotSubmit, true, 'Đang gỡ BOT...');
       const formData = new FormData(deleteBotForm);
       const workerId = String(formData.get('Id') || '').trim();
       const payload = {
@@ -879,9 +915,12 @@
         resetDeleteBotDialog();
         await fetchLiveWorkers();
       } catch (error) {
-        setFormError(deleteBotError, error && error.message ? error.message : 'Khong the go BOT luc nay.');
+        showSystemNotice(
+          error && error.message ? error.message : 'Không thể gỡ BOT lúc này.',
+          'error'
+        );
       } finally {
-        setSubmitLoading(deleteBotSubmit, false, 'Dang go BOT...');
+        setSubmitLoading(deleteBotSubmit, false, 'Đang gỡ BOT...');
       }
     }
 
@@ -905,6 +944,9 @@
       const endpoint = tbody.dataset.liveEndpoint;
       const requestUrl = new URL(endpoint, window.location.origin);
       buildManagerQuery(requestUrl);
+      if (lastEventCursor) {
+        requestUrl.searchParams.set('after_event_id', lastEventCursor);
+      }
 
       const response = await fetch(requestUrl.toString(), {
         method: 'GET',
@@ -917,6 +959,14 @@
       }
 
       const payload = await response.json();
+      const latestEventCursor = String(payload.event_cursor || '').trim();
+      if (latestEventCursor) {
+        lastEventCursor = latestEventCursor;
+      }
+      const events = Array.isArray(payload.events) ? payload.events : [];
+      events.forEach(function (item) {
+        showSystemNotice(item && item.message ? item.message : '', item && item.level ? item.level : 'info');
+      });
       const items = Array.isArray(payload.items) ? payload.items : [];
       const signature = JSON.stringify(items);
       if (signature === lastPayloadSignature) {
