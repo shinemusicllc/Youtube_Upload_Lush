@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import os
@@ -1041,5 +1041,4 @@ def upload_video_via_browser(
                 pass
         _stop_process(xvfb_process)
         shutil.rmtree(runtime_dir, ignore_errors=True)
-        _delete_profile_indexeddb(profile_path)
 

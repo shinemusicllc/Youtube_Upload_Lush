@@ -182,11 +182,6 @@ class BrowserRuntimeManager:
         browser_prefs["check_default_browser"] = False
         preferences["browser"] = browser_prefs
 
-        signin_prefs = preferences.get("signin")
-        if not isinstance(signin_prefs, dict):
-            signin_prefs = {}
-        signin_prefs["allowed_on_next_startup"] = False
-        preferences["signin"] = signin_prefs
 
         preferences_path.write_text(
             json.dumps(preferences, ensure_ascii=True, separators=(",", ":")),
