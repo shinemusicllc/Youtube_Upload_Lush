@@ -240,8 +240,6 @@ def run_job(client: httpx.Client, config: WorkerConfig, job: dict) -> None:
     outputs_dir = config.work_root / "outputs"
     final_output_path: Path | None = None
     browser_upload_path: Path | None = None
-    upload_started = False
-    upload_cleanup_safe = False
     config.work_root.mkdir(parents=True, exist_ok=True)
     outputs_dir.mkdir(parents=True, exist_ok=True)
     if job_dir.exists():
@@ -278,7 +276,6 @@ def run_job(client: httpx.Client, config: WorkerConfig, job: dict) -> None:
         local_output_url = f"worker://{config.worker_name}/{final_output_path.as_posix()}"
 
         if config.youtube_upload_enabled:
-            upload_started = True
             report_progress(
                 status="uploading",
                 progress=0,
@@ -301,7 +298,6 @@ def run_job(client: httpx.Client, config: WorkerConfig, job: dict) -> None:
                     message=message,
                 ),
             )
-            upload_cleanup_safe = bool(upload_result.cleanup_safe)
             complete_job(
                 client,
                 config,
@@ -314,16 +310,11 @@ def run_job(client: httpx.Client, config: WorkerConfig, job: dict) -> None:
         else:
             complete_job(client, config, job_id, output_url=local_output_url)
     except Exception:
-        if (
-            not config.keep_job_dirs
-            and final_output_path is not None
-            and final_output_path.exists()
-            and not upload_started
-        ):
+        if not config.keep_job_dirs and final_output_path is not None and final_output_path.exists():
             final_output_path.unlink(missing_ok=True)
         raise
     finally:
-        if browser_upload_path is not None and upload_cleanup_safe:
+        if browser_upload_path is not None:
             browser_upload_path.unlink(missing_ok=True)
             try:
                 browser_upload_path.parent.rmdir()
