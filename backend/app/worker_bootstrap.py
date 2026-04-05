@@ -261,7 +261,7 @@ def _build_worker_env_file(request: WorkerBootstrapRequest) -> str:
             "BROWSER_SESSION_BIND_HOST=0.0.0.0",
             "BROWSER_SESSION_START_URL=https://studio.youtube.com",
             "BROWSER_SESSION_NOVNC_WEB_DIR=/usr/share/novnc",
-            "BROWSER_SESSION_CHROMIUM_BIN=google-chrome-stable",
+            "BROWSER_SESSION_CHROMIUM_BIN=chromium-browser",
             "WORKER_NETWORK_RETRY_BASE_SECONDS=3",
             "WORKER_NETWORK_RETRY_MAX_SECONDS=30",
             "WORKER_PROGRESS_RETRY_ATTEMPTS=3",

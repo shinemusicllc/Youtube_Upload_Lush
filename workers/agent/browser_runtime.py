@@ -76,6 +76,7 @@ class BrowserRuntimeManager:
     _NOVNC_CUSTOM_SCRIPT_TAG = (
         '    <script type="module" crossorigin="anonymous" src="paste_shortcuts.js"></script>'
     )
+    _PROFILE_META_FILE = ".browser-profile.json"
 
     def __init__(self, data_dir: Path) -> None:
         self.data_dir = data_dir
@@ -88,6 +89,36 @@ class BrowserRuntimeManager:
             "xdg_cache_home": profile_dir / ".xdg-cache",
         }
 
+    @classmethod
+    def profile_metadata_path(cls, profile_dir: Path) -> Path:
+        return profile_dir / cls._PROFILE_META_FILE
+
+    @classmethod
+    def save_profile_metadata(cls, profile_dir: Path, *, chromium_bin: str) -> None:
+        metadata_path = cls.profile_metadata_path(profile_dir)
+        payload = {
+            "chromium_bin": chromium_bin,
+        }
+        metadata_path.write_text(
+            json.dumps(payload, ensure_ascii=True, separators=(",", ":")),
+            encoding="utf-8",
+        )
+
+    @classmethod
+    def resolve_profile_chromium_bin(cls, profile_dir: Path, fallback_bin: str) -> str:
+        metadata_path = cls.profile_metadata_path(profile_dir)
+        if metadata_path.exists():
+            try:
+                payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                payload = {}
+            candidate = str(payload.get("chromium_bin") or "").strip()
+            if candidate:
+                resolved = shutil.which(candidate) or candidate
+                if shutil.which(resolved) or Path(resolved).exists():
+                    return resolved
+        return fallback_bin
+
     def load_config(self) -> BrowserRuntimeConfig:
         profile_root = Path(os.getenv("BROWSER_SESSION_PROFILE_ROOT", str(self.data_dir / "browser-profiles")))
         session_root = Path(os.getenv("BROWSER_SESSION_STATE_ROOT", str(self.data_dir / "browser-sessions")))
@@ -95,7 +126,7 @@ class BrowserRuntimeManager:
         chromium_candidates: list[str] = []
         if chromium_bin:
             chromium_candidates.append(chromium_bin)
-        chromium_candidates.extend(["google-chrome-stable", "google-chrome", "chromium-browser", "chromium"])
+        chromium_candidates.extend(["chromium-browser", "chromium", "google-chrome-stable", "google-chrome"])
         chromium_bin = self._resolve_executable(list(dict.fromkeys(chromium_candidates)))
         return BrowserRuntimeConfig(
             enabled=_truthy(os.getenv("BROWSER_SESSION_ENABLED")),
@@ -232,6 +263,7 @@ class BrowserRuntimeManager:
         log_dir.mkdir(parents=True, exist_ok=True)
         profile_dir.mkdir(parents=True, exist_ok=True)
         self._ensure_chromium_preferences(profile_dir)
+        self.save_profile_metadata(profile_dir, chromium_bin=config.chromium_bin)
 
         password = str(record["access_password"])
         password_file = session_dir / "vnc.passwd"
