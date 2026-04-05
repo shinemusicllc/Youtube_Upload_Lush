@@ -76,48 +76,9 @@ class BrowserRuntimeManager:
     _NOVNC_CUSTOM_SCRIPT_TAG = (
         '    <script type="module" crossorigin="anonymous" src="paste_shortcuts.js"></script>'
     )
-    _PROFILE_META_FILE = ".browser-profile.json"
 
     def __init__(self, data_dir: Path) -> None:
         self.data_dir = data_dir
-
-    @staticmethod
-    def profile_environment(profile_dir: Path) -> dict[str, Path]:
-        return {
-            "home": profile_dir / ".home",
-            "xdg_config_home": profile_dir / ".xdg-config",
-            "xdg_cache_home": profile_dir / ".xdg-cache",
-        }
-
-    @classmethod
-    def profile_metadata_path(cls, profile_dir: Path) -> Path:
-        return profile_dir / cls._PROFILE_META_FILE
-
-    @classmethod
-    def save_profile_metadata(cls, profile_dir: Path, *, chromium_bin: str) -> None:
-        metadata_path = cls.profile_metadata_path(profile_dir)
-        payload = {
-            "chromium_bin": chromium_bin,
-        }
-        metadata_path.write_text(
-            json.dumps(payload, ensure_ascii=True, separators=(",", ":")),
-            encoding="utf-8",
-        )
-
-    @classmethod
-    def resolve_profile_chromium_bin(cls, profile_dir: Path, fallback_bin: str) -> str:
-        metadata_path = cls.profile_metadata_path(profile_dir)
-        if metadata_path.exists():
-            try:
-                payload = json.loads(metadata_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                payload = {}
-            candidate = str(payload.get("chromium_bin") or "").strip()
-            if candidate:
-                resolved = shutil.which(candidate) or candidate
-                if shutil.which(resolved) or Path(resolved).exists():
-                    return resolved
-        return fallback_bin
 
     def load_config(self) -> BrowserRuntimeConfig:
         profile_root = Path(os.getenv("BROWSER_SESSION_PROFILE_ROOT", str(self.data_dir / "browser-profiles")))
@@ -128,6 +89,7 @@ class BrowserRuntimeManager:
             chromium_candidates.append(chromium_bin)
         chromium_candidates.extend(["chromium-browser", "chromium", "google-chrome-stable", "google-chrome"])
         chromium_bin = self._resolve_executable(list(dict.fromkeys(chromium_candidates)))
+        chromium_bin = self._prefer_real_chromium_binary(chromium_bin)
         return BrowserRuntimeConfig(
             enabled=_truthy(os.getenv("BROWSER_SESSION_ENABLED")),
             public_base_url=str(os.getenv("BROWSER_SESSION_PUBLIC_BASE_URL", "")).strip().rstrip("/"),
@@ -149,6 +111,33 @@ class BrowserRuntimeManager:
                 return resolved
         return candidates[0]
 
+    @staticmethod
+    def _prefer_real_chromium_binary(resolved_binary: str) -> str:
+        candidate = Path(str(resolved_binary or "").strip())
+        if not candidate:
+            return resolved_binary
+        if candidate.name in {"chromium-browser", "chromium"}:
+            chrome_stable = shutil.which("google-chrome-stable")
+            if chrome_stable:
+                return chrome_stable
+            chrome = shutil.which("google-chrome")
+            if chrome:
+                return chrome
+        return str(candidate)
+
+    @staticmethod
+    def resolve_matching_chromedriver(chromium_binary: str) -> str | None:
+        cleaned = Path(str(chromium_binary or "").strip())
+        if not cleaned:
+            return None
+        sibling_driver = cleaned.parent / "chromedriver"
+        if sibling_driver.exists():
+            return str(sibling_driver)
+        sibling_bundle_driver = cleaned.parent.parent / "chromedriver-linux64" / "chromedriver"
+        if sibling_bundle_driver.exists():
+            return str(sibling_bundle_driver)
+        return shutil.which("chromedriver")
+
     def ensure_available(self, config: BrowserRuntimeConfig) -> None:
         if not config.enabled:
             raise ValueError("Browser session chua duoc bat tren worker.")
@@ -158,7 +147,7 @@ class BrowserRuntimeManager:
             raise ValueError("Thieu BROWSER_SESSION_PUBLIC_BASE_URL tren worker.")
         if not config.novnc_web_dir.exists():
             raise ValueError(f"Khong tim thay noVNC web dir tai {config.novnc_web_dir}.")
-        if not shutil.which(config.chromium_bin):
+        if not Path(config.chromium_bin).exists() and not shutil.which(config.chromium_bin):
             raise ValueError(f"Khong tim thay Chromium binary '{config.chromium_bin}'.")
         for binary in ("Xvfb", "openbox", "x11vnc", "websockify"):
             if not shutil.which(binary):
@@ -166,6 +155,7 @@ class BrowserRuntimeManager:
 
     @staticmethod
     def _ensure_chromium_preferences(profile_dir: Path) -> None:
+        profile_dir.mkdir(parents=True, exist_ok=True)
         default_dir = profile_dir / "Default"
         default_dir.mkdir(parents=True, exist_ok=True)
         preferences_path = default_dir / "Preferences"
@@ -177,6 +167,7 @@ class BrowserRuntimeManager:
                 preferences = {}
 
         preferences["credentials_enable_service"] = False
+        preferences["credentials_enable_autosignin"] = False
         profile_prefs = preferences.get("profile")
         if not isinstance(profile_prefs, dict):
             profile_prefs = {}
@@ -199,6 +190,28 @@ class BrowserRuntimeManager:
 
         preferences_path.write_text(
             json.dumps(preferences, ensure_ascii=True, separators=(",", ":")),
+            encoding="utf-8",
+        )
+
+        local_state_path = profile_dir / "Local State"
+        local_state: dict[str, Any] = {}
+        if local_state_path.exists():
+            try:
+                local_state = json.loads(local_state_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                local_state = {}
+        browser_state = local_state.get("browser")
+        if not isinstance(browser_state, dict):
+            browser_state = {}
+        browser_state["enabled_labs_experiments"] = []
+        local_state["browser"] = browser_state
+        profile_state = local_state.get("profile")
+        if not isinstance(profile_state, dict):
+            profile_state = {}
+        profile_state["last_used"] = "Default"
+        local_state["profile"] = profile_state
+        local_state_path.write_text(
+            json.dumps(local_state, ensure_ascii=True, separators=(",", ":")),
             encoding="utf-8",
         )
 
@@ -263,7 +276,6 @@ class BrowserRuntimeManager:
         log_dir.mkdir(parents=True, exist_ok=True)
         profile_dir.mkdir(parents=True, exist_ok=True)
         self._ensure_chromium_preferences(profile_dir)
-        self.save_profile_metadata(profile_dir, chromium_bin=config.chromium_bin)
 
         password = str(record["access_password"])
         password_file = session_dir / "vnc.passwd"
@@ -292,14 +304,9 @@ class BrowserRuntimeManager:
 
         env = os.environ.copy()
         env["DISPLAY"] = display
-        profile_env = self.profile_environment(profile_dir)
-        env["HOME"] = str(profile_env["home"])
+        env["HOME"] = str(profile_dir)
         env["XDG_RUNTIME_DIR"] = str(session_dir / "xdg")
-        env["XDG_CONFIG_HOME"] = str(profile_env["xdg_config_home"])
-        env["XDG_CACHE_HOME"] = str(profile_env["xdg_cache_home"])
         Path(env["XDG_RUNTIME_DIR"]).mkdir(parents=True, exist_ok=True)
-        for path in profile_env.values():
-            path.mkdir(parents=True, exist_ok=True)
 
         openbox_log = (log_dir / "openbox.log").open("ab")
         openbox = subprocess.Popen(["openbox"], env=env, stdout=openbox_log, stderr=subprocess.STDOUT)
@@ -315,9 +322,12 @@ class BrowserRuntimeManager:
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
                 "--disable-dev-shm-usage",
-                "--disable-features=PasswordManagerOnboarding,PasswordsImport,Translate,MediaRouter,SigninIntercept,DiceWebSigninInterception",
+                "--disable-features=PasswordManagerOnboarding,PasswordsImport,Translate,MediaRouter,SigninIntercept,DiceWebSigninInterception,PasswordManagerShortcut,PasswordGeneration,PasswordCheck,EnablePasswordsAccountStorage",
+                "--disable-save-password-bubble",
+                "--enable-automation",
                 "--disable-sync",
                 "--disable-background-networking",
+                "--password-store=basic",
                 "--window-position=0,0",
                 f"--window-size={viewport_width},{viewport_height}",
                 f"--remote-debugging-port={record['debug_port']}",

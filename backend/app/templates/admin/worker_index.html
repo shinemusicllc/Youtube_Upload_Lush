@@ -231,43 +231,18 @@
                     >
                 </div>
 
-                <div class="space-y-2">
-                    <span class="field-label">Ki&#7875;u truy c&#7853;p SSH</span>
-                    <div class="grid gap-2 sm:grid-cols-2">
-                        <label class="flex cursor-pointer items-center gap-3 rounded-2xl border border-brand-100 bg-brand-50/60 px-4 py-3 text-[12px] font-medium text-brand-700">
-                            <input type="radio" name="auth_mode" value="password" checked data-create-auth-toggle>
-                            <span>Password</span>
-                        </label>
-                        <label class="flex cursor-pointer items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-[12px] font-medium text-slate-700">
-                            <input type="radio" name="auth_mode" value="ssh_key" data-create-auth-toggle>
-                            <span>SSH key</span>
-                        </label>
-                    </div>
-                </div>
-
-                <div data-create-auth-panel="password">
-                    <label class="field-label" for="create-bot-password">Password</label>
+                <div>
+                    <label class="field-label" for="create-bot-password">Password root</label>
                     <input
                         class="toolbar-input"
                         id="create-bot-password"
                         name="password"
                         type="password"
+                        required
                         autocomplete="new-password"
                         autocapitalize="off"
                         spellcheck="false"
                     >
-                </div>
-
-                <div data-create-auth-panel="ssh_key" hidden>
-                    <label class="field-label" for="create-bot-ssh-key">SSH key</label>
-                    <textarea
-                        class="toolbar-input min-h-[180px]"
-                        id="create-bot-ssh-key"
-                        name="ssh_private_key"
-                        spellcheck="false"
-                        placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
-                    ></textarea>
-                    <p class="mt-2 text-[11px] text-slate-500">D&#225;n nguy&#234;n SSH private key n&#7871;u VPS kh&#244;ng d&#249;ng password.</p>
                 </div>
             </div>
             <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
@@ -388,40 +363,18 @@
                         spellcheck="false"
                     >
                 </div>
-                <div class="space-y-2">
-                    <span class="field-label">Ki&#7875;u truy c&#7853;p SSH</span>
-                    <div class="grid gap-2 sm:grid-cols-2">
-                        <label class="flex cursor-pointer items-center gap-3 rounded-2xl border border-brand-100 bg-brand-50/60 px-4 py-3 text-[12px] font-medium text-brand-700">
-                            <input type="radio" name="auth_mode" value="password" checked data-delete-auth-toggle>
-                            <span>Password</span>
-                        </label>
-                        <label class="flex cursor-pointer items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-[12px] font-medium text-slate-700">
-                            <input type="radio" name="auth_mode" value="ssh_key" data-delete-auth-toggle>
-                            <span>SSH key</span>
-                        </label>
-                    </div>
-                </div>
-                <div data-delete-auth-panel="password">
-                    <label class="field-label" for="delete-bot-password">Password</label>
+                <div>
+                    <label class="field-label" for="delete-bot-password">Password root</label>
                     <input
                         class="toolbar-input"
                         id="delete-bot-password"
                         name="password"
                         type="password"
+                        required
                         autocomplete="new-password"
                         autocapitalize="off"
                         spellcheck="false"
                     >
-                </div>
-                <div data-delete-auth-panel="ssh_key" hidden>
-                    <label class="field-label" for="delete-bot-ssh-key">SSH key</label>
-                    <textarea
-                        class="toolbar-input min-h-[180px]"
-                        id="delete-bot-ssh-key"
-                        name="ssh_private_key"
-                        spellcheck="false"
-                        placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
-                    ></textarea>
                 </div>
             </div>
             <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
@@ -445,55 +398,17 @@
     const createBotSubmit = document.querySelector('[data-create-bot-submit]');
     const createBotIpInput = document.getElementById('create-bot-vps-ip');
     const createBotPasswordInput = document.getElementById('create-bot-password');
-    const createBotKeyInput = document.getElementById('create-bot-ssh-key');
-    const createAuthToggles = Array.from(document.querySelectorAll('[data-create-auth-toggle]'));
     const deleteBotDialog = document.getElementById('delete-bot-dialog');
     const deleteBotForm = document.querySelector('[data-delete-bot-form]');
     const deleteBotSubmit = document.querySelector('[data-delete-bot-submit]');
     const deleteBotSshUserInput = document.getElementById('delete-bot-ssh-user');
     const deleteBotPasswordInput = document.getElementById('delete-bot-password');
-    const deleteBotKeyInput = document.getElementById('delete-bot-ssh-key');
-    const deleteAuthToggles = Array.from(document.querySelectorAll('[data-delete-auth-toggle]'));
     const pollMs = 3000;
     let pollingController = null;
     let pollingTimer = null;
     let lastPayloadSignature = '';
     let lastEventCursor = tbody ? String(tbody.dataset.initialEventCursor || '').trim() : '';
     const shownEventIds = new Set();
-
-    function syncCreateAuthPanels() {
-      const selectedToggle = createAuthToggles.find(function (input) {
-        return input.checked;
-      });
-      const selectedMode = selectedToggle ? selectedToggle.value : 'password';
-      document.querySelectorAll('[data-create-auth-panel]').forEach(function (panel) {
-        const isActive = panel.dataset.createAuthPanel === selectedMode;
-        panel.hidden = !isActive;
-      });
-      if (createBotPasswordInput) {
-        createBotPasswordInput.required = selectedMode === 'password';
-      }
-      if (createBotKeyInput) {
-        createBotKeyInput.required = selectedMode === 'ssh_key';
-      }
-    }
-
-    function syncDeleteAuthPanels() {
-      const selectedToggle = deleteAuthToggles.find(function (input) {
-        return input.checked;
-      });
-      const selectedMode = selectedToggle ? selectedToggle.value : 'password';
-      document.querySelectorAll('[data-delete-auth-panel]').forEach(function (panel) {
-        const isActive = panel.dataset.deleteAuthPanel === selectedMode;
-        panel.hidden = !isActive;
-      });
-      if (deleteBotPasswordInput) {
-        deleteBotPasswordInput.required = selectedMode === 'password';
-      }
-      if (deleteBotKeyInput) {
-        deleteBotKeyInput.required = selectedMode === 'ssh_key';
-      }
-    }
 
     function showSystemNotice(message, type) {
       const text = String(message || '').trim();
@@ -534,10 +449,9 @@
       if (form) {
         form.reset();
       }
-      if (createAuthToggles.length > 0) {
-        createAuthToggles[0].checked = true;
+      if (createBotPasswordInput) {
+        createBotPasswordInput.value = '';
       }
-      syncCreateAuthPanels();
       setSubmitLoading(createBotSubmit, false, 'Đang cài đặt...');
     }
 
@@ -549,24 +463,14 @@
       if (form) {
         form.reset();
       }
-      if (deleteAuthToggles.length > 0) {
-        deleteAuthToggles[0].checked = true;
-      }
       if (deleteBotSshUserInput) {
         deleteBotSshUserInput.value = 'root';
       }
-      syncDeleteAuthPanels();
+      if (deleteBotPasswordInput) {
+        deleteBotPasswordInput.value = '';
+      }
       setSubmitLoading(deleteBotSubmit, false, 'Đang gỡ BOT...');
     }
-
-    createAuthToggles.forEach(function (toggle) {
-      toggle.addEventListener('change', syncCreateAuthPanels);
-    });
-    deleteAuthToggles.forEach(function (toggle) {
-      toggle.addEventListener('change', syncDeleteAuthPanels);
-    });
-    syncCreateAuthPanels();
-    syncDeleteAuthPanels();
 
     function escapeHtml(value) {
       return String(value === null || value === undefined ? '' : value)
@@ -855,9 +759,8 @@
       const payload = {
         vps_ip: String(formData.get('vps_ip') || '').trim(),
         ssh_user: String(formData.get('ssh_user') || '').trim() || 'root',
-        auth_mode: String(formData.get('auth_mode') || 'password').trim() || 'password',
-        password: String(formData.get('password') || ''),
-        ssh_private_key: String(formData.get('ssh_private_key') || '')
+        auth_mode: 'password',
+        password: String(formData.get('password') || '')
       };
       try {
         const response = await fetch('/api/admin/bots/install', {
@@ -895,9 +798,8 @@
       const workerId = String(formData.get('Id') || '').trim();
       const payload = {
         ssh_user: String(formData.get('ssh_user') || '').trim() || 'root',
-        auth_mode: String(formData.get('auth_mode') || 'password').trim() || 'password',
-        password: String(formData.get('password') || ''),
-        ssh_private_key: String(formData.get('ssh_private_key') || '')
+        auth_mode: 'password',
+        password: String(formData.get('password') || '')
       };
       try {
         const response = await fetch('/api/admin/bots/' + encodeURIComponent(workerId), {

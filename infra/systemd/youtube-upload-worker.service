@@ -7,10 +7,12 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=/opt/youtube-upload-lush
 EnvironmentFile=/etc/youtube-upload-worker.env
+Environment=HOME=/opt/youtube-upload-lush-runtime/system-home
 ExecStart=/opt/youtube-upload-lush/.venv/bin/python -m workers.agent.main
 Restart=always
 RestartSec=5
-User=root
+User=ytworker
+Group=ytworker
 
 [Install]
 WantedBy=multi-user.target
