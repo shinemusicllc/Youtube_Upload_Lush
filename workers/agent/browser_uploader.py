@@ -990,13 +990,18 @@ def upload_video_via_browser(
 
         service = ChromeService()
         runtime_dir.mkdir(parents=True, exist_ok=True)
+        profile_env = browser_runtime.profile_environment(profile_path)
         service.env = {
             **os.environ,
             "DISPLAY": display,
-            "HOME": str(profile_path),
+            "HOME": str(profile_env["home"]),
             "XDG_RUNTIME_DIR": str(runtime_dir / "xdg"),
+            "XDG_CONFIG_HOME": str(profile_env["xdg_config_home"]),
+            "XDG_CACHE_HOME": str(profile_env["xdg_cache_home"]),
         }
         Path(service.env["XDG_RUNTIME_DIR"]).mkdir(parents=True, exist_ok=True)
+        for path in profile_env.values():
+            path.mkdir(parents=True, exist_ok=True)
         driver = webdriver.Chrome(service=service, options=options)
         wait = WebDriverWait(driver, 90)
 

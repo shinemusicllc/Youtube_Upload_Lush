@@ -80,6 +80,14 @@ class BrowserRuntimeManager:
     def __init__(self, data_dir: Path) -> None:
         self.data_dir = data_dir
 
+    @staticmethod
+    def profile_environment(profile_dir: Path) -> dict[str, Path]:
+        return {
+            "home": profile_dir / ".home",
+            "xdg_config_home": profile_dir / ".xdg-config",
+            "xdg_cache_home": profile_dir / ".xdg-cache",
+        }
+
     def load_config(self) -> BrowserRuntimeConfig:
         profile_root = Path(os.getenv("BROWSER_SESSION_PROFILE_ROOT", str(self.data_dir / "browser-profiles")))
         session_root = Path(os.getenv("BROWSER_SESSION_STATE_ROOT", str(self.data_dir / "browser-sessions")))
@@ -252,14 +260,14 @@ class BrowserRuntimeManager:
 
         env = os.environ.copy()
         env["DISPLAY"] = display
-        env["HOME"] = str(session_dir / "home")
+        profile_env = self.profile_environment(profile_dir)
+        env["HOME"] = str(profile_env["home"])
         env["XDG_RUNTIME_DIR"] = str(session_dir / "xdg")
-        env["XDG_CONFIG_HOME"] = str(session_dir / "xdg-config")
-        env["XDG_CACHE_HOME"] = str(session_dir / "xdg-cache")
+        env["XDG_CONFIG_HOME"] = str(profile_env["xdg_config_home"])
+        env["XDG_CACHE_HOME"] = str(profile_env["xdg_cache_home"])
         Path(env["XDG_RUNTIME_DIR"]).mkdir(parents=True, exist_ok=True)
-        Path(env["HOME"]).mkdir(parents=True, exist_ok=True)
-        Path(env["XDG_CONFIG_HOME"]).mkdir(parents=True, exist_ok=True)
-        Path(env["XDG_CACHE_HOME"]).mkdir(parents=True, exist_ok=True)
+        for path in profile_env.values():
+            path.mkdir(parents=True, exist_ok=True)
 
         openbox_log = (log_dir / "openbox.log").open("ab")
         openbox = subprocess.Popen(["openbox"], env=env, stdout=openbox_log, stderr=subprocess.STDOUT)
