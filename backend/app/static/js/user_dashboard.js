@@ -2031,7 +2031,20 @@
       }
     };
 
+    const stopBrowserSessionAutoConfirm = () => {
+      if (browserSessionAutoConfirmTimer) {
+        window.clearTimeout(browserSessionAutoConfirmTimer);
+        browserSessionAutoConfirmTimer = null;
+      }
+      browserSessionAutoConfirmTimerKey = "";
+      browserSessionAutoConfirmDeadlineAt = 0;
+    };
+
+    const BROWSER_SESSION_AUTO_CONFIRM_DELAY_MS = 8000;
     let browserSessionAutoConfirmInFlight = false;
+    let browserSessionAutoConfirmTimer = null;
+    let browserSessionAutoConfirmTimerKey = "";
+    let browserSessionAutoConfirmDeadlineAt = 0;
     let workerPickerLaunchInFlight = false;
     let pendingBrowserWorker = null;
 
@@ -2088,8 +2101,13 @@
       if (mode === "ready") {
         launchPanel.classList.add("border-emerald-200", "bg-emerald-50/80");
         launchSpinner.classList.add("hidden");
-        launchTitle.textContent = "Bấm Đăng nhập Google";
-        launchDescription.innerHTML = "Đăng nhập Google đường dẫn sẽ tự động chuyển đến trang <strong>YouTube Studio</strong>. Hãy chọn đúng kênh cần thêm.";
+        if (canAutoConfirmBrowserSession(session)) {
+          launchTitle.textContent = "Đã nhận diện kênh. Đang chờ lưu profile...";
+          launchDescription.innerHTML = "Giữ nguyên noVNC thêm vài giây để Chromium kịp lưu cookie/profile. App sẽ tự xác nhận khi phiên đã an toàn để đóng.";
+        } else {
+          launchTitle.textContent = "Bấm Đăng nhập Google";
+          launchDescription.innerHTML = "Đăng nhập Google đường dẫn sẽ tự động chuyển đến trang <strong>YouTube Studio</strong>. Hãy chọn đúng kênh cần thêm.";
+        }
         return;
       }
 
@@ -2135,16 +2153,24 @@
       }
       const ready = isBrowserSessionReady(session);
       if (!session) {
+        stopBrowserSessionAutoConfirm();
         setLaunchState("launching", null);
       } else if (ready) {
         setLaunchState("ready", session);
       } else if (session.status === "failed") {
+        stopBrowserSessionAutoConfirm();
         setLaunchState("failed", session);
       } else {
+        stopBrowserSessionAutoConfirm();
         setLaunchState("launching", session);
       }
+      const autoConfirmPending =
+        canAutoConfirmBrowserSession(session) &&
+        browserSessionAutoConfirmDeadlineAt > Date.now() &&
+        browserSessionAutoConfirmTimerKey === `${session?.session_id || ""}:${session?.detected_channel_id || ""}`;
       openSessionButton.disabled = !ready;
-      confirmSessionButton.disabled = browserSessionAutoConfirmInFlight || !session || !["awaiting_confirmation", "confirmed"].includes(session.status);
+      confirmSessionButton.textContent = autoConfirmPending ? "Đang lưu profile..." : "Đã đăng nhập";
+      confirmSessionButton.disabled = browserSessionAutoConfirmInFlight || autoConfirmPending || !session || !["awaiting_confirmation", "confirmed"].includes(session.status);
       closeSessionButton.disabled = !session;
     };
 
@@ -2155,6 +2181,7 @@
     const closeModal = () => {
       modal.classList.add("hidden");
       stopBrowserSessionPolling();
+      stopBrowserSessionAutoConfirm();
     };
 
     const openWorkerPickerModal = () => {
@@ -2223,8 +2250,33 @@
         }
       } finally {
         browserSessionAutoConfirmInFlight = false;
-        confirmSessionButton.disabled = false;
+        renderBrowserSessionState(activeBrowserSession);
       }
+    };
+
+    const scheduleBrowserSessionAutoConfirm = (session) => {
+      if (!canAutoConfirmBrowserSession(session) || modal.classList.contains("hidden")) {
+        stopBrowserSessionAutoConfirm();
+        return;
+      }
+      const timerKey = `${session.session_id}:${session.detected_channel_id}`;
+      if (browserSessionAutoConfirmTimer && browserSessionAutoConfirmTimerKey === timerKey) {
+        return;
+      }
+      stopBrowserSessionAutoConfirm();
+      browserSessionAutoConfirmTimerKey = timerKey;
+      browserSessionAutoConfirmDeadlineAt = Date.now() + BROWSER_SESSION_AUTO_CONFIRM_DELAY_MS;
+      renderBrowserSessionState(session);
+      browserSessionAutoConfirmTimer = window.setTimeout(async () => {
+        browserSessionAutoConfirmTimer = null;
+        browserSessionAutoConfirmDeadlineAt = 0;
+        if (modal.classList.contains("hidden")) return;
+        const currentSession = activeBrowserSession;
+        if (!currentSession || `${currentSession.session_id}:${currentSession.detected_channel_id || ""}` !== timerKey) {
+          return;
+        }
+        await confirmBrowserSession({ auto: true });
+      }, BROWSER_SESSION_AUTO_CONFIRM_DELAY_MS);
     };
 
     const refreshBrowserSession = async (silent = false) => {
@@ -2236,9 +2288,7 @@
           throw new Error(payload.detail || "Không thể tải browser session.");
         }
         renderBrowserSessionState(payload);
-        if (!browserSessionAutoConfirmInFlight && !modal.classList.contains("hidden") && canAutoConfirmBrowserSession(payload)) {
-          void confirmBrowserSession({ auto: true });
-        }
+        scheduleBrowserSessionAutoConfirm(payload);
         return payload;
       } catch (error) {
         if (!silent) {
