@@ -64,13 +64,13 @@
                     {% set created_parts = (worker.created_at or '').split(' ') %}
                     {% set compact_operation_row = worker.row_dimmed and worker.actions_disabled %}
                     {% set operation_is_delete = worker.operation_kind == 'decommission' %}
-                    {% set operation_shell_class = 'border-brand-100 bg-white shadow-[0_12px_28px_rgba(93,103,223,0.08)]' %}
-                    {% set operation_icon_class = 'bg-brand-50 text-brand-600' %}
-                    {% set operation_spinner_class = 'border-brand-200 border-t-brand-600' %}
+                    {% set operation_shell_class = 'border-indigo-100 bg-white shadow-[0_12px_28px_rgba(79,70,229,0.10)]' %}
+                    {% set operation_icon_class = 'bg-indigo-50 text-indigo-600' %}
+                    {% set operation_spinner_class = 'border-indigo-200 border-t-indigo-600' %}
                     {% if operation_is_delete %}
-                    {% set operation_shell_class = 'border-orange-100 bg-white shadow-[0_12px_28px_rgba(249,115,22,0.08)]' %}
-                    {% set operation_icon_class = 'bg-orange-50 text-orange-600' %}
-                    {% set operation_spinner_class = 'border-orange-200 border-t-orange-600' %}
+                    {% set operation_shell_class = 'border-rose-100 bg-white shadow-[0_12px_28px_rgba(244,63,94,0.10)]' %}
+                    {% set operation_icon_class = 'bg-rose-50 text-rose-600' %}
+                    {% set operation_spinner_class = 'border-rose-200 border-t-rose-600' %}
                     {% endif %}
                     <tr
                         data-worker-row-id="{{ worker.id }}"
@@ -459,6 +459,7 @@
     let pollingTimer = null;
     let lastPayloadSignature = '';
     let lastEventCursor = tbody ? String(tbody.dataset.initialEventCursor || '').trim() : '';
+    const shownEventIds = new Set();
 
     function syncCreateAuthPanels() {
       const selectedToggle = createAuthToggles.find(function (input) {
@@ -618,14 +619,14 @@
       const isDelete = worker.operation_kind === 'decommission';
       return isDelete
         ? {
-            shell: 'border-orange-100 bg-white shadow-[0_12px_28px_rgba(249,115,22,0.08)]',
-            icon: 'bg-orange-50 text-orange-600',
-            spinner: 'border-orange-200 border-t-orange-600'
+            shell: 'border-rose-100 bg-white shadow-[0_12px_28px_rgba(244,63,94,0.10)]',
+            icon: 'bg-rose-50 text-rose-600',
+            spinner: 'border-rose-200 border-t-rose-600'
           }
         : {
-            shell: 'border-brand-100 bg-white shadow-[0_12px_28px_rgba(93,103,223,0.08)]',
-            icon: 'bg-brand-50 text-brand-600',
-            spinner: 'border-brand-200 border-t-brand-600'
+            shell: 'border-indigo-100 bg-white shadow-[0_12px_28px_rgba(79,70,229,0.10)]',
+            icon: 'bg-indigo-50 text-indigo-600',
+            spinner: 'border-indigo-200 border-t-indigo-600'
           };
     }
 
@@ -965,6 +966,17 @@
       }
       const events = Array.isArray(payload.events) ? payload.events : [];
       events.forEach(function (item) {
+        const eventId = String(item && item.id ? item.id : '').trim();
+        if (eventId) {
+          if (shownEventIds.has(eventId)) {
+            return;
+          }
+          shownEventIds.add(eventId);
+          if (shownEventIds.size > 100) {
+            shownEventIds.clear();
+            shownEventIds.add(eventId);
+          }
+        }
         showSystemNotice(item && item.message ? item.message : '', item && item.level ? item.level : 'info');
       });
       const items = Array.isArray(payload.items) ? payload.items : [];

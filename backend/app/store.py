@@ -873,11 +873,11 @@ class AppStore:
         mapping = {
             ("install", "queued"): (
                 "Đang xếp hàng cài đặt...",
-                "inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold text-amber-700",
+                "inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[10px] font-semibold text-indigo-700",
             ),
             ("install", "running"): (
                 "Đang cài đặt...",
-                "inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[10px] font-semibold text-sky-700",
+                "inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[10px] font-semibold text-indigo-700",
             ),
             ("install", "awaiting_registration"): (
                 "Chờ BOT kết nối",
@@ -889,11 +889,11 @@ class AppStore:
             ),
             ("decommission", "queued"): (
                 "Đang xếp hàng gỡ BOT...",
-                "inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold text-amber-700",
+                "inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[10px] font-semibold text-rose-700",
             ),
             ("decommission", "running"): (
                 "Đang gỡ BOT...",
-                "inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-[10px] font-semibold text-orange-700",
+                "inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[10px] font-semibold text-rose-700",
             ),
             ("decommission", "failed"): (
                 "Gỡ BOT lỗi",
@@ -957,10 +957,10 @@ class AppStore:
         latest_id = self._latest_admin_notification_id(manager_ids=manager_ids, scope=scope)
         if not normalized_after_id:
             return {"items": [], "cursor": latest_id}
+        if normalized_after_id == latest_id:
+            return {"items": [], "cursor": latest_id}
 
         seen_after = False
-        if normalized_after_id == latest_id:
-            seen_after = True
         items: list[dict[str, Any]] = []
         for item in self.admin_notifications:
             if str(item.get("scope") or "").strip() != scope:
