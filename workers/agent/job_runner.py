@@ -88,8 +88,8 @@ def _safe_upload_title_file_name(title: str | None, suffix: str) -> str:
     return f"{stem}{normalized_suffix}"
 
 
-def _prepare_browser_upload_file(job_dir: Path, source_path: Path, *, title: str | None) -> Path:
-    upload_dir = job_dir / "browser-upload"
+def _prepare_browser_upload_file(job_id: str, source_path: Path, *, title: str | None) -> Path:
+    upload_dir = Path.home() / "Downloads" / "youtube-upload-lush" / job_id
     upload_dir.mkdir(parents=True, exist_ok=True)
     staged_path = upload_dir / _safe_upload_title_file_name(title, source_path.suffix or ".mp4")
     staged_path.unlink(missing_ok=True)
@@ -239,6 +239,7 @@ def run_job(client: httpx.Client, config: WorkerConfig, job: dict) -> None:
     downloads_dir = job_dir / "downloads"
     outputs_dir = config.work_root / "outputs"
     final_output_path: Path | None = None
+    browser_upload_path: Path | None = None
     config.work_root.mkdir(parents=True, exist_ok=True)
     outputs_dir.mkdir(parents=True, exist_ok=True)
     if job_dir.exists():
@@ -283,7 +284,7 @@ def run_job(client: httpx.Client, config: WorkerConfig, job: dict) -> None:
             )
             target = get_job_youtube_target(client, config, job_id)
             browser_upload_path = _prepare_browser_upload_file(
-                job_dir,
+                job_id,
                 final_output_path,
                 title=target.title,
             )
@@ -313,5 +314,12 @@ def run_job(client: httpx.Client, config: WorkerConfig, job: dict) -> None:
             final_output_path.unlink(missing_ok=True)
         raise
     finally:
+        if browser_upload_path is not None:
+            browser_upload_path.unlink(missing_ok=True)
+            try:
+                browser_upload_path.parent.rmdir()
+                browser_upload_path.parent.parent.rmdir()
+            except OSError:
+                pass
         if not config.keep_job_dirs and job_dir.exists():
             shutil.rmtree(job_dir, ignore_errors=True)
