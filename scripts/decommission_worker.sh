@@ -26,6 +26,7 @@ rm -rf /root/.cache/google-chrome
 rm -rf /root/.config/chromium
 rm -rf /root/.cache/chromium
 rm -rf /root/snap/chromium
+rm -rf /root/Downloads/youtube-upload-lush
 if id -u "$WORKER_SYSTEM_USER" >/dev/null 2>&1; then
   userdel -r "$WORKER_SYSTEM_USER" || true
 fi

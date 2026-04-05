@@ -386,50 +386,6 @@ def _fill_upload_metadata(
     raise RuntimeError("Khong the xac nhan title/description trong YouTube Studio upload dialog.")
 
 
-def _collect_upload_dialog_editors(driver: webdriver.Chrome) -> list[object]:
-    script = """
-    const dialog = document.querySelector('ytcp-uploads-dialog') || document;
-    const selectors = [
-      '#textbox',
-      '[contenteditable="true"]',
-      'textarea',
-      'input:not([type="file"])',
-      '[role="textbox"]'
-    ];
-    const nodes = [];
-    for (const selector of selectors) {
-      for (const node of dialog.querySelectorAll(selector)) {
-        if (!node || nodes.includes(node)) continue;
-        const rect = node.getBoundingClientRect();
-        const style = window.getComputedStyle(node);
-        if (!rect || rect.width < 8 || rect.height < 8) continue;
-        if (style.display === 'none' || style.visibility === 'hidden') continue;
-        const text = [
-          node.getAttribute('aria-label') || '',
-          node.getAttribute('label') || '',
-          node.getAttribute('placeholder') || '',
-          node.id || '',
-          node.name || '',
-          node.textContent || ''
-        ].join(' ').toLowerCase();
-        nodes.push({
-          element: node,
-          score:
-            (text.includes('title') || text.includes('tiêu đề') ? 4 : 0) +
-            (text.includes('description') || text.includes('mô tả') ? 2 : 0) +
-            (node.id === 'textbox' ? 1 : 0),
-        });
-      }
-    }
-    nodes.sort((a, b) => b.score - a.score);
-    return nodes.map((item) => item.element);
-    """
-    try:
-        return list(driver.execute_script(script) or [])
-    except Exception:
-        return []
-
-
 def _find_title_and_description_boxes(driver: webdriver.Chrome, wait: WebDriverWait) -> tuple[object, object | None]:
     def _locate(drv: webdriver.Chrome):
         visible = _collect_upload_dialog_editors(drv)
