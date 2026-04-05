@@ -2057,6 +2057,17 @@
     const isBrowserSessionReady = (session) => !!(session?.novnc_url && ["awaiting_confirmation", "confirmed"].includes(session.status));
     const canAutoConfirmBrowserSession = (session) =>
       !!(session?.session_id && session?.detected_channel_id && ["awaiting_confirmation", "confirmed"].includes(session.status));
+    const isTransientBrowserSessionError = (message) => {
+      const normalized = String(message || "").trim().toLowerCase();
+      return normalized === "khong the doc chromium remote debugging endpoint." ||
+        normalized === "không thể đọc chromium remote debugging endpoint.";
+    };
+    const shouldRenderBrowserSessionError = (session) => {
+      if (!session?.last_error) return false;
+      if (session?.status === "failed") return true;
+      if (isBrowserSessionReady(session) && isTransientBrowserSessionError(session.last_error)) return false;
+      return false;
+    };
 
     const formatBrowserSessionStatus = (status) => {
       const mapping = {
@@ -2114,7 +2125,7 @@
       if (expiryNode) expiryNode.textContent = formatExpiry(session?.expires_at);
       if (currentUrlNode) currentUrlNode.textContent = session?.current_url || "Chưa có thông tin phiên.";
       if (errorNode) {
-        if (session?.last_error) {
+        if (shouldRenderBrowserSessionError(session)) {
           errorNode.textContent = session.last_error;
           errorNode.classList.remove("hidden");
         } else {
