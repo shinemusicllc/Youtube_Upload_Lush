@@ -70,10 +70,75 @@ set -a
 set +a
 
 if [ "${BROWSER_SESSION_ENABLED:-0}" = "1" ]; then
-  apt-get install -y xvfb openbox x11vnc websockify novnc chromium-browser || true
-  if ! command -v chromium-browser >/dev/null 2>&1 && ! command -v chromium >/dev/null 2>&1; then
-    snap install chromium || true
-  fi
+  apt-get install -y xvfb openbox x11vnc websockify novnc || true
+
+  # ---------- Install a REAL (non-snap) Chromium ----------
+  # On Ubuntu 22.04+, the apt "chromium-browser" package is a snap
+  # transitional wrapper. Snap chromium ignores --user-data-dir and
+  # stores all state globally, which breaks multi-user profile isolation.
+  #
+  # Strategy:
+  #   1. Remove the snap wrapper if present.
+  #   2. Try installing ungoogled-chromium via the official PPA.
+  #   3. Fallback: download Chromium deb from the Debian snapshot.
+  #   4. Last resort: keep whatever is already installed.
+
+  _install_native_chromium() {
+    # Remove snap chromium if installed
+    if snap list chromium >/dev/null 2>&1; then
+      echo "[browser-setup] Removing snap chromium to avoid profile isolation bugs..."
+      snap remove --purge chromium || true
+    fi
+    # Also remove the snap wrapper apt package
+    apt-get remove -y chromium-browser 2>/dev/null || true
+
+    # Option A: Use playwright bundled chromium (already in venv)
+    if [ -d "$RUNTIME_DIR/.venv" ]; then
+      . "$RUNTIME_DIR/.venv/bin/activate"
+      pip install playwright >/dev/null 2>&1 || true
+      python -m playwright install chromium 2>/dev/null || true
+      PW_CHROMIUM=$(python -c "
+from pathlib import Path
+import subprocess, json, sys
+try:
+    r = subprocess.run([sys.executable, '-m', 'playwright', 'install', '--dry-run'], capture_output=True, text=True)
+    # Find chromium path
+    for line in Path.home().rglob('chrome-linux/chrome'):
+        print(line); sys.exit(0)
+    for line in Path('/root/.cache/ms-playwright').rglob('chrome-linux/chrome'):
+        print(line); sys.exit(0)
+except: pass
+" 2>/dev/null || true)
+      if [ -n "$PW_CHROMIUM" ] && [ -x "$PW_CHROMIUM" ]; then
+        echo "[browser-setup] Using Playwright-bundled Chromium: $PW_CHROMIUM"
+        # Update env file
+        sed -i "s|^BROWSER_SESSION_CHROMIUM_BIN=.*|BROWSER_SESSION_CHROMIUM_BIN=$PW_CHROMIUM|" /etc/youtube-upload-worker.env 2>/dev/null || true
+        return 0
+      fi
+    fi
+
+    # Option B: Install chromium from prebuilt .deb
+    apt-get install -y chromium 2>/dev/null && return 0 || true
+
+    # Option C: Try ungoogled-chromium PPA
+    add-apt-repository -y ppa:nicholasgasior/nicholasgasior 2>/dev/null || true
+    apt-get update 2>/dev/null || true
+    apt-get install -y ungoogled-chromium 2>/dev/null && {
+      NATIVE_BIN=$(command -v ungoogled-chromium 2>/dev/null || command -v chromium 2>/dev/null || true)
+      if [ -n "$NATIVE_BIN" ]; then
+        sed -i "s|^BROWSER_SESSION_CHROMIUM_BIN=.*|BROWSER_SESSION_CHROMIUM_BIN=$NATIVE_BIN|" /etc/youtube-upload-worker.env 2>/dev/null || true
+      fi
+      return 0
+    } || true
+
+    # Fallback: reinstall apt chromium-browser (may be snap, but _build_browser_env handles it)
+    apt-get install -y chromium-browser 2>/dev/null || true
+    if ! command -v chromium-browser >/dev/null 2>&1 && ! command -v chromium >/dev/null 2>&1; then
+      snap install chromium || true
+    fi
+  }
+  _install_native_chromium
+
   for binary in Xvfb openbox x11vnc websockify; do
     if ! command -v "$binary" >/dev/null 2>&1; then
       echo "Missing required browser-session binary: $binary" >&2

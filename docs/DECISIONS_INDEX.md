@@ -23,6 +23,7 @@
 | DEC-018 | Bootstrap/decommission worker phai chiu duoc Windows line endings va viec tai tao worker tren cung VPS: script upload sang Linux phai duoc normalize LF, venv phai tao o runtime dir, failed install row khong duoc giu slot `worker-XX`, va requirement worker phai du de boot tren may trang | Active | worker bootstrap + admin ops | High |
 | DEC-019 | Worker browser/upload live se tam thoi bam sat flow on dinh gan `012e614`: worker service chay duoi `root`, browser canonical la `chromium-browser`/`chromium`, va chi giu lai cleanup stale `Xvfb` + decommission cleanup de tranh state cu sot lai | Active | worker runtime + browser profile | High |
 | DEC-020 | `admin` va `manager` duoc xem nhu account workspace rieng tren cung VPS, nhung `ChannelRecord` van global theo `channel_id` nen `confirm_browser_session` phai chan viec link them mot kenh da thuoc account khac | Active | admin workspace + shared VPS isolation | High |
+| DEC-021 | Neu worker phai dung snap-backed `chromium-browser`, runtime phai override `SNAP_USER_COMMON`, `SNAP_USER_DATA`, `SNAP_REAL_HOME` va `XDG_*` theo tung `browser_profile_path`; bootstrap BOT moi van uu tien browser non-snap, nhung login va upload phai dung cung mot env builder de profile isolation hoat dong ca voi snap | Active | worker runtime + browser profile isolation | High |
 
 ## Notes
 - `docs/DECISIONS.md` van giu full history va ly do chi tiet.

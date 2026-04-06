@@ -20,7 +20,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-from .browser_runtime import BrowserRuntimeManager
+from .browser_runtime import BrowserRuntimeManager, _build_browser_env
 from .config import WorkerConfig
 from .control_plane import YouTubeUploadTarget
 
@@ -943,13 +943,13 @@ def upload_video_via_browser(
             raise RuntimeError("Khong the khoi dong Xvfb cho browser upload.")
 
         runtime_dir.mkdir(parents=True, exist_ok=True)
-        runtime_env = {
-            **os.environ,
-            "DISPLAY": display,
-            "HOME": str(profile_path),
-            "XDG_RUNTIME_DIR": str(runtime_dir / "xdg"),
-        }
-        Path(runtime_env["XDG_RUNTIME_DIR"]).mkdir(parents=True, exist_ok=True)
+        runtime_env = _build_browser_env(
+            base_env=os.environ.copy(),
+            display=display,
+            profile_dir=profile_path,
+            session_dir=runtime_dir,
+            chromium_bin=browser_config.chromium_bin,
+        )
 
         openbox_process = subprocess.Popen(
             ["openbox"],
