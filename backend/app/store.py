@@ -1329,7 +1329,7 @@ class AppStore:
 
     def _normalize_visible_admin_relationships(self) -> bool:
         changed = False
-        valid_user_ids = {user.id for user in self.users if user.role == "user"}
+        valid_user_ids = {user.id for user in self.users if user.role in {"user", "manager", "admin"}}
         valid_worker_ids = {worker.id for worker in self.workers}
         valid_channel_ids = {channel.id for channel in self.channels}
 
@@ -2363,8 +2363,8 @@ class AppStore:
 
     def _workspace_channels_for_user(self, user: UserSummary | str) -> list[ChannelRecord]:
         current_user = self._require_workspace_user(user if isinstance(user, str) else user.id)
-        linked_channel_ids = self._user_channel_ids(current_user.id)
         worker_ids = self._workspace_worker_ids_for_user(current_user)
+        linked_channel_ids = self._user_channel_ids(current_user.id)
         channels = [channel for channel in self.channels if channel.id in linked_channel_ids]
         if worker_ids:
             channels = [channel for channel in channels if channel.worker_id in worker_ids]
@@ -2720,6 +2720,16 @@ class AppStore:
         existing_channel = next((item for item in self.channels if item.channel_id == channel_id), None)
         now = self._now()
         if existing_channel:
+            linked_user_ids = {
+                str(link.get("user_id") or "").strip()
+                for link in self.channel_user_links
+                if str(link.get("channel_id") or "").strip() == existing_channel.id
+            }
+            if linked_user_ids and str(user.id or "").strip() not in linked_user_ids:
+                raise ValueError(
+                    "Kênh này đang gắn với tài khoản khác trên hệ thống. "
+                    "Hãy đăng xuất hoặc chọn đúng kênh trước khi xác nhận."
+                )
             channel = existing_channel
         else:
             channel = ChannelRecord(
@@ -3300,18 +3310,10 @@ class AppStore:
         ]
 
     def _user_worker_count(self, user: UserSummary) -> int:
-        if user.role == "manager":
-            return len([worker for worker in self.workers if worker.manager_id == user.id])
-        if user.role == "admin":
-            return len(self.workers)
-        return len([link for link in self.user_worker_links if link["user_id"] == user.id])
+        return len(self._assigned_worker_links_for_user(user.id))
 
     def _user_channel_count(self, user: UserSummary) -> int:
-        if user.role == "manager":
-            return len([channel for channel in self.channels if self._resolve_channel_manager_id(channel) == user.id])
-        if user.role == "admin":
-            return len(self.channels)
-        return len([link for link in self.channel_user_links if link["user_id"] == user.id])
+        return len(self._user_channel_ids(user.id))
 
     def _channel_users(self, channel: ChannelRecord) -> list[str]:
         assigned_ids = [link["user_id"] for link in self.channel_user_links if link["channel_id"] == channel.id]
@@ -5817,10 +5819,7 @@ class AppStore:
 
     def delete_user_connected_channel(self, channel_id: str, *, user_id: str) -> None:
         channel = self._find_channel(channel_id)
-        has_access = any(
-            link["channel_id"] == channel.id and link["user_id"] == user_id
-            for link in self.channel_user_links
-        )
+        has_access = self._user_has_channel_access(user_id, channel.id)
         if not has_access:
             raise ValueError("Bạn không có quyền xóa kênh này.")
         self.delete_channel(channel.id)

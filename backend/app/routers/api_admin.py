@@ -407,12 +407,28 @@ async def update_admin_bot(request: Request, bot_id: str, payload: AdminBotUpdat
     current_user = require_admin_access(request)
     _enforce_worker_scope(request, bot_id)
     manager_id = current_user.id if current_user.role == "manager" else payload.manager_id
+    assigned_user_id = payload.assigned_user_id
+    if current_user.role == "admin" and manager_id:
+        try:
+            selected_owner = store._find_user(manager_id)
+        except KeyError:
+            selected_owner = None
+        if selected_owner is not None and selected_owner.role == "admin" and selected_owner.id == current_user.id:
+            try:
+                existing_worker = store._find_worker(bot_id)
+            except KeyError:
+                existing_worker = None
+            fallback_manager_id = str(existing_worker.manager_id or "").strip() if existing_worker else ""
+            assigned_user_id = current_user.id
+            manager_id = fallback_manager_id or manager_id
+        else:
+            assigned_user_id = None
     store.update_bot(
         bot_id,
         payload.name,
         None,
         manager_id,
-        assigned_user_id=payload.assigned_user_id,
+        assigned_user_id=assigned_user_id,
         viewer_role=current_user.role,
         viewer_id=current_user.id,
         updated_by=current_user.username,

@@ -21,7 +21,8 @@
 | DEC-016 | Them worker/BOT moi se di qua mot duong SSH bootstrap duy nhat tren control-plane; UI admin va CLI chi la hai mat goi chung mot helper, khong bootstrap qua Telegram | Active | admin ops + deploy | High |
 | DEC-017 | `Xoa BOT` phai la decommission that tren VPS va `Them BOT` phai hien row provisioning live ngay trong Danh sach BOT | Active | admin ops + BOT UI | High |
 | DEC-018 | Bootstrap/decommission worker phai chiu duoc Windows line endings va viec tai tao worker tren cung VPS: script upload sang Linux phai duoc normalize LF, venv phai tao o runtime dir, failed install row khong duoc giu slot `worker-XX`, va requirement worker phai du de boot tren may trang | Active | worker bootstrap + admin ops | High |
-| DEC-019 | Worker service phai chay duoi Linux user rieng `ytworker`, va browser canonical cho login/upload phai uu tien binary non-snap (`google-chrome-stable`) de profile kenh bam mot `profile_dir` that | Active | worker runtime + browser profile | High |
+| DEC-019 | Worker browser/upload live se tam thoi bam sat flow on dinh gan `012e614`: worker service chay duoi `root`, browser canonical la `chromium-browser`/`chromium`, va chi giu lai cleanup stale `Xvfb` + decommission cleanup de tranh state cu sot lai | Active | worker runtime + browser profile | High |
+| DEC-020 | `admin` va `manager` duoc xem nhu account workspace rieng tren cung VPS, nhung `ChannelRecord` van global theo `channel_id` nen `confirm_browser_session` phai chan viec link them mot kenh da thuoc account khac | Active | admin workspace + shared VPS isolation | High |
 
 ## Notes
 - `docs/DECISIONS.md` van giu full history va ly do chi tiet.
