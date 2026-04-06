@@ -2055,8 +2055,30 @@
     };
 
     const isBrowserSessionReady = (session) => !!(session?.novnc_url && ["awaiting_confirmation", "confirmed"].includes(session.status));
+    const hasConfirmableStudioUrl = (session) => {
+      const currentUrl = String(session?.current_url || "").trim();
+      if (!currentUrl) return false;
+      try {
+        const parsed = new URL(currentUrl);
+        const host = String(parsed.hostname || "").toLowerCase();
+        if (host === "studio.youtube.com") {
+          return parsed.pathname.includes("/channel/") || !!parsed.searchParams.get("channel_id");
+        }
+        if (host === "youtube.com" || host === "www.youtube.com" || host === "m.youtube.com") {
+          return parsed.pathname.startsWith("/channel/");
+        }
+      } catch (_error) {
+        return false;
+      }
+      return false;
+    };
     const canAutoConfirmBrowserSession = (session) =>
-      !!(session?.session_id && session?.detected_channel_id && ["awaiting_confirmation", "confirmed"].includes(session.status));
+      !!(
+        session?.session_id &&
+        session?.detected_channel_id &&
+        hasConfirmableStudioUrl(session) &&
+        ["awaiting_confirmation", "confirmed"].includes(session.status)
+      );
     const isTransientBrowserSessionError = (message) => {
       const normalized = String(message || "").trim().toLowerCase();
       return normalized === "khong the doc chromium remote debugging endpoint." ||

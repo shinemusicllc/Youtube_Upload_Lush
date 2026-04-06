@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, urlparse
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
@@ -587,7 +587,11 @@ class BrowserRuntimeManager:
 
         page_tabs = [item for item in tabs if item.get("type") == "page"]
         current = next(
-            (item for item in page_tabs if "studio.youtube.com" in str(item.get("url") or "")),
+            (
+                item
+                for item in page_tabs
+                if (urlparse(str(item.get("url") or "").strip()).hostname or "").lower() == "studio.youtube.com"
+            ),
             page_tabs[0] if page_tabs else None,
         )
         current_url = str((current or {}).get("url") or "").strip()
@@ -602,14 +606,21 @@ class BrowserRuntimeManager:
 
     @staticmethod
     def _extract_channel_identity(url: str, title: str) -> dict[str, str | None]:
+        parsed = urlparse(str(url or "").strip())
+        host = (parsed.hostname or "").lower()
+        path = parsed.path or ""
+        query = parse_qs(parsed.query)
         channel_id = None
-        for marker in ("/channel/", "channel_id="):
-            if marker == "/channel/" and marker in url:
-                channel_id = url.split("/channel/", 1)[1].split("/", 1)[0].split("?", 1)[0]
-                break
-            if marker == "channel_id=" and marker in url:
-                channel_id = url.split("channel_id=", 1)[1].split("&", 1)[0]
-                break
+
+        if host == "studio.youtube.com":
+            if "/channel/" in path:
+                channel_id = path.split("/channel/", 1)[1].split("/", 1)[0].strip() or None
+            else:
+                channel_ids = query.get("channel_id", [])
+                channel_id = channel_ids[0].strip() if channel_ids and channel_ids[0].strip() else None
+        elif host in {"www.youtube.com", "youtube.com", "m.youtube.com"}:
+            if path.startswith("/channel/"):
+                channel_id = path.split("/channel/", 1)[1].split("/", 1)[0].strip() or None
 
         cleaned_title = title.replace(" - YouTube Studio", "").replace(" - YouTube", "").strip()
         if cleaned_title and cleaned_title.lower() in {"youtube studio", "dashboard"}:

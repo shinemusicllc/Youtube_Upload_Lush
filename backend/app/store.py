@@ -1617,6 +1617,25 @@ class AppStore:
             return video_id or None
         return None
 
+    @staticmethod
+    def _extract_browser_session_channel_identity(url: str | None) -> str | None:
+        if not url:
+            return None
+        parsed = urlparse(url.strip())
+        host = (parsed.hostname or "").lower()
+        path = parsed.path or ""
+        query = parse_qs(parsed.query)
+        if host == "studio.youtube.com":
+            if "/channel/" in path:
+                channel_id = path.split("/channel/", 1)[1].split("/", 1)[0].strip()
+                return channel_id or None
+            query_channel_ids = query.get("channel_id", [])
+            return query_channel_ids[0].strip() if query_channel_ids and query_channel_ids[0].strip() else None
+        if host in {"www.youtube.com", "youtube.com", "m.youtube.com"} and path.startswith("/channel/"):
+            channel_id = path.split("/channel/", 1)[1].split("/", 1)[0].strip()
+            return channel_id or None
+        return None
+
     def _job_uploaded_asset_ids(self, job: RenderJobRecord) -> set[str]:
         return {
             str(asset.asset_id).strip()
@@ -2836,11 +2855,18 @@ class AppStore:
             raise ValueError("Browser session không còn ở trạng thái xác nhận hợp lệ.")
 
         self._sync_browser_session_details(session)
-        channel_id = str(session.detected_channel_id or "").strip()
+        session_channel_id = self._extract_browser_session_channel_identity(session.current_url)
+        channel_id = str(session_channel_id or session.detected_channel_id or "").strip()
         channel_name = str(session.detected_channel_name or "").strip() or channel_id
         if not channel_id:
             raise ValueError("Chưa nhận diện được channel. Hãy mở YouTube Studio đúng kênh rồi thử lại.")
+        if not session_channel_id:
+            raise ValueError(
+                "Phiên đăng nhập chưa đứng tại YouTube Studio của kênh cần thêm. "
+                "Hãy mở đúng YouTube Studio rồi thử xác nhận lại."
+            )
 
+        session.detected_channel_id = channel_id
         public_metadata = self._fetch_public_youtube_channel_metadata(channel_id)
         channel_name = str(public_metadata.get("channel_name") or "").strip() or channel_name
         avatar_url = str(public_metadata.get("avatar_url") or "").strip() or None
