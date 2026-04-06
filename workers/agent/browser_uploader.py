@@ -906,8 +906,6 @@ def upload_video_via_browser(
     if not profile_path.exists():
         raise RuntimeError(f"Khong tim thay Chrome profile cua kenh tai {profile_path}.")
 
-    browser_runtime._ensure_chromium_preferences(profile_path)
-
     _kill_profile_processes(profile_path)
     for lock_name in ("SingletonCookie", "SingletonLock", "SingletonSocket"):
         (profile_path / lock_name).unlink(missing_ok=True)
@@ -941,16 +939,12 @@ def upload_video_via_browser(
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-background-networking")
         options.add_argument("--disable-sync")
-        options.add_argument("--disable-features=PasswordManagerOnboarding,PasswordsImport,Translate,MediaRouter,SigninIntercept,DiceWebSigninInterception,PasswordManagerShortcut,PasswordGeneration,PasswordCheck,EnablePasswordsAccountStorage")
-        options.add_argument("--disable-save-password-bubble")
-        options.add_argument("--disable-blink-features=AutomationControlled")
-        options.add_argument("--password-store=basic")
+        options.add_argument("--disable-features=PasswordManagerOnboarding,PasswordsImport,Translate,MediaRouter,SigninIntercept,DiceWebSigninInterception")
         options.add_argument("--window-size=1440,900")
         options.add_argument("--lang=en-US")
 
+        service = ChromeService()
         runtime_dir.mkdir(parents=True, exist_ok=True)
-        chromedriver_path = BrowserRuntimeManager.resolve_matching_chromedriver(browser_config.chromium_bin)
-        service = ChromeService(executable_path=chromedriver_path) if chromedriver_path else ChromeService()
         service.env = {
             **os.environ,
             "DISPLAY": display,

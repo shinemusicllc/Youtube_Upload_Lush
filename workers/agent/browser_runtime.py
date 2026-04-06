@@ -87,9 +87,8 @@ class BrowserRuntimeManager:
         chromium_candidates: list[str] = []
         if chromium_bin:
             chromium_candidates.append(chromium_bin)
-        chromium_candidates.extend(["chromium-browser", "chromium", "google-chrome-stable", "google-chrome"])
+        chromium_candidates.extend(["google-chrome-stable", "google-chrome", "chromium-browser", "chromium"])
         chromium_bin = self._resolve_executable(list(dict.fromkeys(chromium_candidates)))
-        chromium_bin = self._prefer_real_chromium_binary(chromium_bin)
         return BrowserRuntimeConfig(
             enabled=_truthy(os.getenv("BROWSER_SESSION_ENABLED")),
             public_base_url=str(os.getenv("BROWSER_SESSION_PUBLIC_BASE_URL", "")).strip().rstrip("/"),
@@ -111,33 +110,6 @@ class BrowserRuntimeManager:
                 return resolved
         return candidates[0]
 
-    @staticmethod
-    def _prefer_real_chromium_binary(resolved_binary: str) -> str:
-        candidate = Path(str(resolved_binary or "").strip())
-        if not candidate:
-            return resolved_binary
-        if candidate.name in {"chromium-browser", "chromium"}:
-            chrome_stable = shutil.which("google-chrome-stable")
-            if chrome_stable:
-                return chrome_stable
-            chrome = shutil.which("google-chrome")
-            if chrome:
-                return chrome
-        return str(candidate)
-
-    @staticmethod
-    def resolve_matching_chromedriver(chromium_binary: str) -> str | None:
-        cleaned = Path(str(chromium_binary or "").strip())
-        if not cleaned:
-            return None
-        sibling_driver = cleaned.parent / "chromedriver"
-        if sibling_driver.exists():
-            return str(sibling_driver)
-        sibling_bundle_driver = cleaned.parent.parent / "chromedriver-linux64" / "chromedriver"
-        if sibling_bundle_driver.exists():
-            return str(sibling_bundle_driver)
-        return shutil.which("chromedriver")
-
     def ensure_available(self, config: BrowserRuntimeConfig) -> None:
         if not config.enabled:
             raise ValueError("Browser session chua duoc bat tren worker.")
@@ -147,7 +119,7 @@ class BrowserRuntimeManager:
             raise ValueError("Thieu BROWSER_SESSION_PUBLIC_BASE_URL tren worker.")
         if not config.novnc_web_dir.exists():
             raise ValueError(f"Khong tim thay noVNC web dir tai {config.novnc_web_dir}.")
-        if not Path(config.chromium_bin).exists() and not shutil.which(config.chromium_bin):
+        if not shutil.which(config.chromium_bin):
             raise ValueError(f"Khong tim thay Chromium binary '{config.chromium_bin}'.")
         for binary in ("Xvfb", "openbox", "x11vnc", "websockify"):
             if not shutil.which(binary):
@@ -155,7 +127,6 @@ class BrowserRuntimeManager:
 
     @staticmethod
     def _ensure_chromium_preferences(profile_dir: Path) -> None:
-        profile_dir.mkdir(parents=True, exist_ok=True)
         default_dir = profile_dir / "Default"
         default_dir.mkdir(parents=True, exist_ok=True)
         preferences_path = default_dir / "Preferences"
@@ -167,7 +138,6 @@ class BrowserRuntimeManager:
                 preferences = {}
 
         preferences["credentials_enable_service"] = False
-        preferences["credentials_enable_autosignin"] = False
         profile_prefs = preferences.get("profile")
         if not isinstance(profile_prefs, dict):
             profile_prefs = {}
@@ -185,7 +155,6 @@ class BrowserRuntimeManager:
         signin_prefs = preferences.get("signin")
         if not isinstance(signin_prefs, dict):
             signin_prefs = {}
-        signin_prefs["allowed"] = False
         signin_prefs["allowed_on_next_startup"] = False
         preferences["signin"] = signin_prefs
 
@@ -193,33 +162,6 @@ class BrowserRuntimeManager:
             json.dumps(preferences, ensure_ascii=True, separators=(",", ":")),
             encoding="utf-8",
         )
-
-        first_run_sentinel = profile_dir / "First Run"
-        if not first_run_sentinel.exists():
-            first_run_sentinel.write_text("", encoding="utf-8")
-
-        local_state_path = profile_dir / "Local State"
-        local_state: dict[str, Any] = {}
-        if local_state_path.exists():
-            try:
-                local_state = json.loads(local_state_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                local_state = {}
-        browser_state = local_state.get("browser")
-        if not isinstance(browser_state, dict):
-            browser_state = {}
-        browser_state["enabled_labs_experiments"] = []
-        local_state["browser"] = browser_state
-        profile_state = local_state.get("profile")
-        if not isinstance(profile_state, dict):
-            profile_state = {}
-        profile_state["last_used"] = "Default"
-        local_state["profile"] = profile_state
-        local_state_path.write_text(
-            json.dumps(local_state, ensure_ascii=True, separators=(",", ":")),
-            encoding="utf-8",
-        )
-
     @staticmethod
     def _build_novnc_url(base_url: str, web_port: int, access_password: str) -> str:
         encoded_password = quote(access_password, safe="")
@@ -327,12 +269,9 @@ class BrowserRuntimeManager:
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
                 "--disable-dev-shm-usage",
-                "--disable-features=PasswordManagerOnboarding,PasswordsImport,Translate,MediaRouter,SigninIntercept,DiceWebSigninInterception,PasswordManagerShortcut,PasswordGeneration,PasswordCheck,EnablePasswordsAccountStorage",
-                "--disable-save-password-bubble",
-                "--disable-blink-features=AutomationControlled",
+                "--disable-features=PasswordManagerOnboarding,PasswordsImport,Translate,MediaRouter,SigninIntercept,DiceWebSigninInterception",
                 "--disable-sync",
                 "--disable-background-networking",
-                "--password-store=basic",
                 "--window-position=0,0",
                 f"--window-size={viewport_width},{viewport_height}",
                 f"--remote-debugging-port={record['debug_port']}",
