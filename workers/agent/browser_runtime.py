@@ -15,6 +15,10 @@ from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
 
+def _truthy(value: str | None) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _is_snap_chromium(chromium_bin: str) -> bool:
     """Detect whether the resolved chromium binary is a snap wrapper."""
     resolved = shutil.which(chromium_bin) or chromium_bin
@@ -24,8 +28,6 @@ def _is_snap_chromium(chromium_bin: str) -> bool:
         real = resolved
     if "/snap/" in real:
         return True
-    # Ubuntu's apt chromium-browser is often a tiny shell script that
-    # exec's the snap version.  Peek at the first 512 bytes.
     try:
         head = Path(resolved).read_bytes()[:512]
         if b"snap" in head and (b"chromium" in head or b"CHROMIUM" in head):
@@ -33,56 +35,6 @@ def _is_snap_chromium(chromium_bin: str) -> bool:
     except OSError:
         pass
     return False
-
-
-def _build_browser_env(
-    *,
-    base_env: dict[str, str],
-    display: str,
-    profile_dir: Path,
-    session_dir: Path,
-    chromium_bin: str,
-) -> dict[str, str]:
-    """Build an environment dict that forces browser state into *profile_dir*.
-
-    For native (non-snap) chromium, setting HOME + --user-data-dir is
-    sufficient.  For snap chromium we additionally override every XDG
-    and snap-specific variable so the confined process writes its state
-    (cookies, local-storage, etc.) into the per-channel profile folder
-    instead of the global ~/snap/chromium/ location.
-    """
-    xdg_runtime = session_dir / "xdg"
-    xdg_runtime.mkdir(parents=True, exist_ok=True)
-
-    env = {
-        **base_env,
-        "DISPLAY": display,
-        "HOME": str(profile_dir),
-        "XDG_RUNTIME_DIR": str(xdg_runtime),
-        # XDG overrides — both snap and native chromium honour these.
-        "XDG_CONFIG_HOME": str(profile_dir / ".config"),
-        "XDG_CACHE_HOME": str(profile_dir / ".cache"),
-        "XDG_DATA_HOME": str(profile_dir / ".local" / "share"),
-    }
-
-    if _is_snap_chromium(chromium_bin):
-        # Snap uses $SNAP_USER_COMMON and $SNAP_USER_DATA to locate its
-        # per-user state.  Override them so each profile dir gets its
-        # own isolated snap data tree.
-        snap_common = profile_dir / "snap" / "chromium" / "common"
-        snap_data = profile_dir / "snap" / "chromium" / "current"
-        snap_common.mkdir(parents=True, exist_ok=True)
-        snap_data.mkdir(parents=True, exist_ok=True)
-        env["SNAP_USER_COMMON"] = str(snap_common)
-        env["SNAP_USER_DATA"] = str(snap_data)
-        # Also override SNAP_REAL_HOME so the snap sees the right HOME.
-        env["SNAP_REAL_HOME"] = str(profile_dir)
-
-    return env
-
-
-def _truthy(value: str | None) -> bool:
-    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _pid_is_running(pid: int | None) -> bool:
@@ -101,6 +53,55 @@ def _pid_is_running(pid: int | None) -> bool:
         if len(stat_parts) >= 3 and stat_parts[2] == "Z":
             return False
     return True
+
+
+def _build_browser_env(
+    *,
+    base_env: dict[str, str],
+    display: str,
+    profile_dir: Path,
+    session_dir: Path,
+    chromium_bin: str,
+) -> dict[str, str]:
+    """Build an environment dict that forces browser state into *profile_dir*.
+
+    Native Chrome/Chromium will honor HOME + XDG overrides. Snap-backed
+    chromium additionally needs snap-specific paths overridden or it will
+    keep leaking state into the global `~/snap/chromium` tree.
+    """
+    xdg_runtime = session_dir / "xdg-runtime"
+    xdg_config = profile_dir / "xdg" / "config"
+    xdg_cache = profile_dir / "xdg" / "cache"
+    xdg_data = profile_dir / "xdg" / "data"
+
+    for path in (xdg_runtime, xdg_config, xdg_cache, xdg_data):
+        path.mkdir(parents=True, exist_ok=True)
+    try:
+        xdg_runtime.chmod(0o700)
+    except OSError:
+        pass
+
+    env = {
+        **base_env,
+        "DISPLAY": display,
+        "HOME": str(profile_dir),
+        "DBUS_SESSION_BUS_ADDRESS": "/dev/null",
+        "XDG_RUNTIME_DIR": str(xdg_runtime),
+        "XDG_CONFIG_HOME": str(xdg_config),
+        "XDG_CACHE_HOME": str(xdg_cache),
+        "XDG_DATA_HOME": str(xdg_data),
+    }
+
+    if _is_snap_chromium(chromium_bin):
+        snap_common = profile_dir / "snap" / "chromium" / "common"
+        snap_data = profile_dir / "snap" / "chromium" / "current"
+        snap_common.mkdir(parents=True, exist_ok=True)
+        snap_data.mkdir(parents=True, exist_ok=True)
+        env["SNAP_USER_COMMON"] = str(snap_common)
+        env["SNAP_USER_DATA"] = str(snap_data)
+        env["SNAP_REAL_HOME"] = str(profile_dir)
+
+    return env
 
 
 def _terminate_pid(pid: int | None, *, timeout: float = 5.0) -> None:
