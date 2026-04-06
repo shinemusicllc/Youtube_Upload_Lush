@@ -103,7 +103,7 @@ def _pid_is_running(pid: int | None) -> bool:
     return True
 
 
-def _terminate_pid(pid: int | None) -> None:
+def _terminate_pid(pid: int | None, *, timeout: float = 5.0) -> None:
     if not pid or pid <= 0:
         return
     try:
@@ -111,7 +111,7 @@ def _terminate_pid(pid: int | None) -> None:
     except OSError:
         return
 
-    deadline = time.time() + 5
+    deadline = time.time() + timeout
     while time.time() < deadline:
         if not _pid_is_running(pid):
             return
@@ -121,6 +121,60 @@ def _terminate_pid(pid: int | None) -> None:
         os.kill(pid, signal.SIGKILL)
     except OSError:
         return
+
+
+def _graceful_shutdown_chromium(pid: int | None, profile_dir: Path | None = None) -> None:
+    """Gracefully close Chromium so cookies, local-storage and session
+    data are flushed to disk before the process exits.
+
+    Strategy:
+      1. Send SIGTERM and wait up to 8s for the process to finish.
+         Chromium hooks SIGTERM and performs an orderly shutdown
+         including flushing its LevelDB / SQLite stores.
+      2. After the process exits, give the filesystem an extra second
+         to settle (particularly relevant on networked/slow disks).
+      3. If the process refuses to die within the timeout, SIGKILL.
+      4. If *profile_dir* is given, verify the Cookies file exists
+         after shutdown — log a warning if it does not.
+    """
+    if not pid or pid <= 0:
+        return
+
+    # Step 1 — ask nicely
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except OSError:
+        return
+
+    deadline = time.time() + 8.0
+    while time.time() < deadline:
+        if not _pid_is_running(pid):
+            break
+        time.sleep(0.25)
+    else:
+        # Step 3 — force-kill
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+        time.sleep(0.5)
+
+    # Step 2 — let filesystem settle
+    time.sleep(1.0)
+
+    # Step 4 — verify cookies were actually written
+    if profile_dir:
+        cookies_path = profile_dir / "Default" / "Cookies"
+        if not cookies_path.exists():
+            # Also check one level up (some --user-data-dir layouts)
+            alt = profile_dir / "Cookies"
+            if not alt.exists():
+                print(
+                    f"[browser_runtime] WARNING: Cookies file not found after "
+                    f"graceful shutdown in {profile_dir}. "
+                    f"Login session may NOT have been persisted.",
+                    flush=True,
+                )
 
 
 def _cleanup_display_state(display_number: int) -> None:
@@ -181,7 +235,7 @@ class BrowserRuntimeManager:
         chromium_candidates: list[str] = []
         if chromium_bin:
             chromium_candidates.append(chromium_bin)
-        chromium_candidates.extend(["chromium-browser", "chromium"])
+        chromium_candidates.extend(["google-chrome-stable", "google-chrome", "chromium-browser", "chromium"])
         chromium_bin = self._resolve_executable(list(dict.fromkeys(chromium_candidates)))
         return BrowserRuntimeConfig(
             enabled=_truthy(os.getenv("BROWSER_SESSION_ENABLED")),
@@ -482,8 +536,20 @@ class BrowserRuntimeManager:
         return sessions
 
     def stop(self, record: dict[str, Any]) -> None:
-        for key in ("websockify_pid", "x11vnc_pid", "chromium_pid", "openbox_pid", "xvfb_pid"):
+        # Kill ancillary processes first (reverse dependency order)
+        for key in ("websockify_pid", "x11vnc_pid"):
             _terminate_pid(int(record.get(key) or 0) or None)
+
+        # Graceful shutdown for Chromium — wait for cookies/session flush
+        chromium_pid = int(record.get("chromium_pid") or 0) or None
+        profile_path_str = str(record.get("profile_path") or "").strip()
+        profile_dir = Path(profile_path_str) if profile_path_str else None
+        _graceful_shutdown_chromium(chromium_pid, profile_dir)
+
+        # Clean up remaining display processes
+        for key in ("openbox_pid", "xvfb_pid"):
+            _terminate_pid(int(record.get(key) or 0) or None)
+
         session_path = str(record.get("session_path") or "").strip()
         if session_path:
             shutil.rmtree(session_path, ignore_errors=True)

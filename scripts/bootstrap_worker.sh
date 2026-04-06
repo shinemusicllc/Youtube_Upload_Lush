@@ -60,7 +60,7 @@ BROWSER_SESSION_DEBUG_PORT_BASE=19220
 BROWSER_SESSION_BIND_HOST=0.0.0.0
 BROWSER_SESSION_START_URL=https://studio.youtube.com
 BROWSER_SESSION_NOVNC_WEB_DIR=/usr/share/novnc
-BROWSER_SESSION_CHROMIUM_BIN=chromium-browser
+BROWSER_SESSION_CHROMIUM_BIN=google-chrome-stable
 EOF
   echo "Da tao /etc/youtube-upload-worker.env, vui long cap nhat gia tri truoc khi start service."
 fi
@@ -70,75 +70,64 @@ set -a
 set +a
 
 if [ "${BROWSER_SESSION_ENABLED:-0}" = "1" ]; then
-  apt-get install -y xvfb openbox x11vnc websockify novnc || true
+  apt-get install -y xvfb openbox x11vnc websockify novnc ca-certificates curl gnupg wget || true
 
-  # ---------- Install a REAL (non-snap) Chromium ----------
-  # On Ubuntu 22.04+, the apt "chromium-browser" package is a snap
-  # transitional wrapper. Snap chromium ignores --user-data-dir and
-  # stores all state globally, which breaks multi-user profile isolation.
-  #
-  # Strategy:
-  #   1. Remove the snap wrapper if present.
-  #   2. Try installing ungoogled-chromium via the official PPA.
-  #   3. Fallback: download Chromium deb from the Debian snapshot.
-  #   4. Last resort: keep whatever is already installed.
+  # ---------- Install Google Chrome Stable (.deb) ----------
+  # Why Chrome Stable instead of apt chromium-browser?
+  #   - On Ubuntu 22.04+ the apt "chromium-browser" is a snap wrapper.
+  #   - Snap chromium ignores --user-data-dir and stores ALL state
+  #     globally, breaking multi-user profile isolation.
+  #   - Google Chrome Stable is a native .deb that fully respects
+  #     --user-data-dir, making profile isolation trivial.
 
-  _install_native_chromium() {
-    # Remove snap chromium if installed
-    if snap list chromium >/dev/null 2>&1; then
-      echo "[browser-setup] Removing snap chromium to avoid profile isolation bugs..."
-      snap remove --purge chromium || true
+  _install_google_chrome() {
+    # If google-chrome-stable already installed — nothing to do
+    if command -v google-chrome-stable >/dev/null 2>&1; then
+      echo "[browser-setup] google-chrome-stable already installed."
+      return 0
     fi
-    # Also remove the snap wrapper apt package
+
+    echo "[browser-setup] Installing Google Chrome Stable..."
+
+    # Remove snap chromium if present (conflicts with profile isolation)
+    if command -v snap >/dev/null 2>&1 && snap list chromium >/dev/null 2>&1; then
+      echo "[browser-setup] Removing snap chromium..."
+      snap remove --purge chromium 2>/dev/null || true
+    fi
     apt-get remove -y chromium-browser 2>/dev/null || true
 
-    # Option A: Use playwright bundled chromium (already in venv)
-    if [ -d "$RUNTIME_DIR/.venv" ]; then
-      . "$RUNTIME_DIR/.venv/bin/activate"
-      pip install playwright >/dev/null 2>&1 || true
-      python -m playwright install chromium 2>/dev/null || true
-      PW_CHROMIUM=$(python -c "
-from pathlib import Path
-import subprocess, json, sys
-try:
-    r = subprocess.run([sys.executable, '-m', 'playwright', 'install', '--dry-run'], capture_output=True, text=True)
-    # Find chromium path
-    for line in Path.home().rglob('chrome-linux/chrome'):
-        print(line); sys.exit(0)
-    for line in Path('/root/.cache/ms-playwright').rglob('chrome-linux/chrome'):
-        print(line); sys.exit(0)
-except: pass
-" 2>/dev/null || true)
-      if [ -n "$PW_CHROMIUM" ] && [ -x "$PW_CHROMIUM" ]; then
-        echo "[browser-setup] Using Playwright-bundled Chromium: $PW_CHROMIUM"
-        # Update env file
-        sed -i "s|^BROWSER_SESSION_CHROMIUM_BIN=.*|BROWSER_SESSION_CHROMIUM_BIN=$PW_CHROMIUM|" /etc/youtube-upload-worker.env 2>/dev/null || true
-        return 0
-      fi
-    fi
+    # Add Google's official apt repo
+    wget -qO- https://dl.google.com/linux/linux_signing_key.pub \
+      | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg 2>/dev/null
+    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" \
+      > /etc/apt/sources.list.d/google-chrome.list
+    apt-get update -qq
+    apt-get install -y google-chrome-stable
 
-    # Option B: Install chromium from prebuilt .deb
-    apt-get install -y chromium 2>/dev/null && return 0 || true
-
-    # Option C: Try ungoogled-chromium PPA
-    add-apt-repository -y ppa:nicholasgasior/nicholasgasior 2>/dev/null || true
-    apt-get update 2>/dev/null || true
-    apt-get install -y ungoogled-chromium 2>/dev/null && {
-      NATIVE_BIN=$(command -v ungoogled-chromium 2>/dev/null || command -v chromium 2>/dev/null || true)
-      if [ -n "$NATIVE_BIN" ]; then
-        sed -i "s|^BROWSER_SESSION_CHROMIUM_BIN=.*|BROWSER_SESSION_CHROMIUM_BIN=$NATIVE_BIN|" /etc/youtube-upload-worker.env 2>/dev/null || true
-      fi
-      return 0
-    } || true
-
-    # Fallback: reinstall apt chromium-browser (may be snap, but _build_browser_env handles it)
-    apt-get install -y chromium-browser 2>/dev/null || true
-    if ! command -v chromium-browser >/dev/null 2>&1 && ! command -v chromium >/dev/null 2>&1; then
-      snap install chromium || true
-    fi
+    echo "[browser-setup] Google Chrome Stable installed successfully."
   }
-  _install_native_chromium
+  _install_google_chrome
 
+  # ---------- Remove stale ChromeDriver ----------
+  # We intentionally let Selenium Manager resolve the matching driver
+  # at runtime so Google Chrome auto-updates do not leave an old
+  # chromedriver binary behind.
+  rm -f /usr/local/bin/chromedriver /usr/bin/chromedriver 2>/dev/null || true
+  apt-get remove -y chromium-chromedriver chromium-driver google-chrome-driver 2>/dev/null || true
+
+  # ---------- Update env file ----------
+  # Point BROWSER_SESSION_CHROMIUM_BIN to google-chrome-stable
+  if command -v google-chrome-stable >/dev/null 2>&1; then
+    if [ -f /etc/youtube-upload-worker.env ]; then
+      if grep -q "^BROWSER_SESSION_CHROMIUM_BIN=" /etc/youtube-upload-worker.env; then
+        sed -i "s|^BROWSER_SESSION_CHROMIUM_BIN=.*|BROWSER_SESSION_CHROMIUM_BIN=google-chrome-stable|" /etc/youtube-upload-worker.env
+      else
+        echo "BROWSER_SESSION_CHROMIUM_BIN=google-chrome-stable" >> /etc/youtube-upload-worker.env
+      fi
+    fi
+  fi
+
+  # ---------- Verify required binaries ----------
   for binary in Xvfb openbox x11vnc websockify; do
     if ! command -v "$binary" >/dev/null 2>&1; then
       echo "Missing required browser-session binary: $binary" >&2
@@ -149,10 +138,12 @@ except: pass
     echo "Missing noVNC web assets at ${BROWSER_SESSION_NOVNC_WEB_DIR:-/usr/share/novnc}" >&2
     exit 1
   fi
-  if ! command -v "${BROWSER_SESSION_CHROMIUM_BIN:-chromium-browser}" >/dev/null 2>&1 && ! command -v chromium >/dev/null 2>&1; then
-    echo "Missing Chromium binary for browser session." >&2
+  CHROME_BIN="${BROWSER_SESSION_CHROMIUM_BIN:-google-chrome-stable}"
+  if ! command -v "$CHROME_BIN" >/dev/null 2>&1; then
+    echo "Missing Chrome/Chromium binary: $CHROME_BIN" >&2
     exit 1
   fi
+  echo "[browser-setup] Using browser: $CHROME_BIN ($(${CHROME_BIN} --version 2>/dev/null || echo 'unknown'))"
 fi
 
 systemctl daemon-reload
