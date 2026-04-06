@@ -318,7 +318,7 @@
                     >
                         <option value="" hidden>-- Ch&#7885;n Manager --</option>
                         {% for manager in dashboard.bot_manager_options %}
-                        <option value="{{ manager.id }}">
+                        <option value="{% if manager.role == 'admin' %}__admin_workspace__{% else %}{{ manager.id }}{% endif %}">
                             {{ manager.username }}{% if manager.role == 'admin' %} (Admin workspace){% endif %}
                         </option>
                         {% endfor %}

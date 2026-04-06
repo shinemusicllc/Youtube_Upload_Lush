@@ -5165,23 +5165,25 @@ class AppStore:
         worker = self._find_worker(worker_id)
         if not name.strip():
             raise ValueError("Tên BOT là bắt buộc.")
-        if not manager_id:
-            raise ValueError("Vui lòng chọn manager.")
-
         worker.name = name.strip()
         normalized_group = str(group or "").strip()
-        manager = self._find_user(manager_id)
-        allowed_manager_roles = {"manager"}
-        if viewer_role == "admin" and viewer_id and manager.id == viewer_id:
-            allowed_manager_roles.add("admin")
-        if viewer_role == "manager" and viewer_id and manager.id == viewer_id:
-            allowed_manager_roles.add("manager")
-        if manager.role not in allowed_manager_roles:
-            raise ValueError("Manager được chọn không hợp lệ.")
-
         normalized_user_id = str(assigned_user_id or "").strip()
+        manager: UserSummary | None = None
+        if manager_id:
+            manager = self._find_user(manager_id)
+            allowed_manager_roles = {"manager"}
+            if viewer_role == "admin" and viewer_id and manager.id == viewer_id:
+                allowed_manager_roles.add("admin")
+            if viewer_role == "manager" and viewer_id and manager.id == viewer_id:
+                allowed_manager_roles.add("manager")
+            if manager.role not in allowed_manager_roles:
+                raise ValueError("Manager được chọn không hợp lệ.")
+        elif not (viewer_role == "admin" and viewer_id and normalized_user_id == viewer_id):
+            raise ValueError("Vui lòng chọn manager.")
 
         if viewer_role == "manager":
+            if manager is None:
+                raise ValueError("Manager được chọn không hợp lệ.")
             if viewer_id and manager.id != viewer_id:
                 raise ValueError("Manager không được đổi phạm vi BOT sang manager khác.")
             if worker.manager_id and worker.manager_id != manager.id:
@@ -5230,13 +5232,35 @@ class AppStore:
             self._save_state()
             return
 
-        manager_changed = worker.manager_id != manager.id
+        current_manager_id = str(worker.manager_id or "").strip()
+        next_manager_id = str(manager.id if manager else current_manager_id).strip()
+        manager_changed = current_manager_id != next_manager_id
         if manager_changed:
             worker_links = [link for link in self.user_worker_links if str(link.get("worker_id") or "").strip() == worker.id]
             worker_channels = [channel for channel in self.channels if str(channel.worker_id or "").strip() == worker.id]
-            if worker_links or worker_channels:
+            worker_link_user_ids = {
+                str(link.get("user_id") or "").strip()
+                for link in worker_links
+                if str(link.get("user_id") or "").strip()
+            }
+            can_drop_self_workspace_link = (
+                not worker_channels
+                and viewer_id is not None
+                and worker_link_user_ids == {str(viewer_id).strip()}
+            )
+            if can_drop_self_workspace_link:
+                self.user_worker_links = [
+                    link
+                    for link in self.user_worker_links
+                    if not (
+                        str(link.get("worker_id") or "").strip() == worker.id
+                        and str(link.get("user_id") or "").strip() == str(viewer_id).strip()
+                    )
+                ]
+            elif worker_links or worker_channels:
                 raise ValueError("BOT đang có user hoặc kênh gắn kèm. Hãy gỡ dữ liệu trước khi đổi manager.")
-        self._apply_worker_manager(worker, manager)
+        if manager is not None:
+            self._apply_worker_manager(worker, manager)
         if normalized_group:
             worker.group = normalized_group
         if normalized_user_id:

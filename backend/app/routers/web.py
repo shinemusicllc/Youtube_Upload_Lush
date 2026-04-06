@@ -995,24 +995,24 @@ async def admin_bot_update(request: Request):
     _enforce_worker_scope(current_admin, worker_id)
     name = str(form.get("Name") or form.get("name") or "").strip()
     group = str(form.get("Group") or form.get("group") or "").strip() or None
-    manager_id = _force_manager_binding(current_admin, str(form.get("UserIdManager") or form.get("manager_id") or "").strip() or None)
+    raw_manager_id = str(form.get("UserIdManager") or form.get("manager_id") or "").strip()
+    manager_id = _force_manager_binding(current_admin, raw_manager_id or None)
     assigned_user_id = str(form.get("UserId") or form.get("user_id") or "").strip() or None
     return_user_id = str(form.get("return_user_id") or "").strip() or None
     return_manager_ids = [str(value).strip() for value in form.getlist("return_manager_ids") if str(value).strip()]
-    if current_admin.role == "admin" and manager_id:
+    if current_admin.role == "admin" and raw_manager_id == "__admin_workspace__":
+        try:
+            existing_worker = store._find_worker(worker_id)
+        except KeyError:
+            existing_worker = None
+        manager_id = str(existing_worker.manager_id or "").strip() if existing_worker else None
+        assigned_user_id = current_admin.id
+    elif current_admin.role == "admin" and manager_id:
         try:
             selected_owner = store._find_user(manager_id)
         except KeyError:
             selected_owner = None
-        if selected_owner is not None and selected_owner.role == "admin" and selected_owner.id == current_admin.id:
-            try:
-                existing_worker = store._find_worker(worker_id)
-            except KeyError:
-                existing_worker = None
-            fallback_manager_id = str(existing_worker.manager_id or "").strip() if existing_worker else ""
-            assigned_user_id = current_admin.id
-            manager_id = fallback_manager_id or manager_id
-        else:
+        if selected_owner is None or selected_owner.role != "admin" or selected_owner.id != current_admin.id:
             assigned_user_id = None
     if assigned_user_id:
         _enforce_user_scope(current_admin, assigned_user_id)
