@@ -970,6 +970,7 @@ def upload_video_via_browser(
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
                 "--disable-dev-shm-usage",
+                "--password-store=basic",
                 "--disable-background-networking",
                 "--disable-sync",
                 "--disable-features=PasswordManagerOnboarding,PasswordsImport,Translate,MediaRouter,SigninIntercept,DiceWebSigninInterception",

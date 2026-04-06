@@ -420,6 +420,7 @@ class BrowserRuntimeManager:
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
                 "--disable-dev-shm-usage",
+                "--password-store=basic",
                 "--disable-features=PasswordManagerOnboarding,PasswordsImport,Translate,MediaRouter,SigninIntercept,DiceWebSigninInterception",
                 "--disable-sync",
                 "--disable-background-networking",
