@@ -5,8 +5,6 @@ APP_DIR="${APP_DIR:-/opt/youtube-upload-lush}"
 RUNTIME_DIR="${RUNTIME_DIR:-/opt/youtube-upload-lush-runtime}"
 REPO_URL="${REPO_URL:-https://github.com/shinemusicllc/Youtube_Upload_Lush.git}"
 BRANCH="${BRANCH:-main}"
-WORKER_SYSTEM_USER="${WORKER_SYSTEM_USER:-ytworker}"
-WORKER_SYSTEM_HOME="${WORKER_SYSTEM_HOME:-$RUNTIME_DIR/system-home}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/git_runtime_layout.sh"
@@ -16,15 +14,6 @@ apt-get install -y ffmpeg
 
 mkdir -p "$RUNTIME_DIR"
 install_base_packages
-if ! getent group "$WORKER_SYSTEM_USER" >/dev/null 2>&1; then
-  groupadd --system "$WORKER_SYSTEM_USER"
-fi
-if id -u "$WORKER_SYSTEM_USER" >/dev/null 2>&1; then
-  usermod --home "$WORKER_SYSTEM_HOME" --shell /usr/sbin/nologin "$WORKER_SYSTEM_USER" || true
-else
-  useradd --system --gid "$WORKER_SYSTEM_USER" --home-dir "$WORKER_SYSTEM_HOME" --shell /usr/sbin/nologin "$WORKER_SYSTEM_USER"
-fi
-install -d -m 0755 -o "$WORKER_SYSTEM_USER" -g "$WORKER_SYSTEM_USER" "$WORKER_SYSTEM_HOME"
 mkdir -p "$RUNTIME_DIR/.backup" "$RUNTIME_DIR/worker-data"
 adopt_runtime_path "$APP_DIR" "$RUNTIME_DIR" ".venv" ".venv"
 adopt_runtime_path "$APP_DIR" "$RUNTIME_DIR" ".backup" ".backup"
@@ -42,7 +31,6 @@ fi
 . .venv/bin/activate
 pip install --upgrade pip
 pip install -r workers/agent/requirements.txt
-chown -R "$WORKER_SYSTEM_USER:$WORKER_SYSTEM_USER" "$RUNTIME_DIR"
 
 cp infra/systemd/youtube-upload-worker.service /etc/systemd/system/youtube-upload-worker.service
 
@@ -82,18 +70,9 @@ set -a
 set +a
 
 if [ "${BROWSER_SESSION_ENABLED:-0}" = "1" ]; then
-  apt-get install -y xvfb openbox x11vnc websockify novnc wget gnupg ca-certificates || true
-  if ! command -v chromium-browser >/dev/null 2>&1 && ! command -v chromium >/dev/null 2>&1 && ! command -v google-chrome-stable >/dev/null 2>&1 && ! command -v google-chrome >/dev/null 2>&1; then
-    install -d -m 0755 /etc/apt/keyrings
-    if [ ! -f /etc/apt/keyrings/google-chrome.gpg ]; then
-      wget -q -O- https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor >/etc/apt/keyrings/google-chrome.gpg
-      chmod 0644 /etc/apt/keyrings/google-chrome.gpg
-    fi
-    cat >/etc/apt/sources.list.d/google-chrome.list <<'EOF'
-deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.gpg] https://dl.google.com/linux/chrome/deb/ stable main
-EOF
-    apt-get update
-    apt-get install -y google-chrome-stable
+  apt-get install -y xvfb openbox x11vnc websockify novnc chromium-browser || true
+  if ! command -v chromium-browser >/dev/null 2>&1 && ! command -v chromium >/dev/null 2>&1; then
+    snap install chromium || true
   fi
   for binary in Xvfb openbox x11vnc websockify; do
     if ! command -v "$binary" >/dev/null 2>&1; then
@@ -105,11 +84,7 @@ EOF
     echo "Missing noVNC web assets at ${BROWSER_SESSION_NOVNC_WEB_DIR:-/usr/share/novnc}" >&2
     exit 1
   fi
-  if ! command -v "${BROWSER_SESSION_CHROMIUM_BIN:-chromium-browser}" >/dev/null 2>&1 \
-    && ! command -v chromium-browser >/dev/null 2>&1 \
-    && ! command -v chromium >/dev/null 2>&1 \
-    && ! command -v google-chrome-stable >/dev/null 2>&1 \
-    && ! command -v google-chrome >/dev/null 2>&1; then
+  if ! command -v "${BROWSER_SESSION_CHROMIUM_BIN:-chromium-browser}" >/dev/null 2>&1 && ! command -v chromium >/dev/null 2>&1; then
     echo "Missing Chromium binary for browser session." >&2
     exit 1
   fi

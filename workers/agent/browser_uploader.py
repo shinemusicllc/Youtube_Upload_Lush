@@ -848,13 +848,6 @@ def _wait_for_legacy_draft_upload_completion(
     raise RuntimeError("Khong xac nhan duoc YouTube da hoan tat pha upload transfer.")
 
 
-def _delete_profile_indexeddb(profile_path: Path) -> None:
-    try:
-        shutil.rmtree(profile_path / "Default" / "IndexedDB", ignore_errors=True)
-    except Exception:
-        pass
-
-
 def _emit_upload_progress(
     progress_callback: UploadProgressCallback | None,
     ratio: float,

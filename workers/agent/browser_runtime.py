@@ -57,6 +57,34 @@ def _terminate_pid(pid: int | None) -> None:
         return
 
 
+def _cleanup_display_state(display_number: int) -> None:
+    display = f":{int(display_number)}"
+    try:
+        result = subprocess.run(
+            ["ps", "-eo", "pid=,args="],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except Exception:
+        result = None
+    if result is not None:
+        marker = f"Xvfb {display}"
+        for line in result.stdout.splitlines():
+            text = line.strip()
+            if not text or marker not in text:
+                continue
+            parts = text.split(None, 1)
+            try:
+                _terminate_pid(int(parts[0]))
+            except (ValueError, IndexError):
+                continue
+    Path(f"/tmp/.X{int(display_number)}-lock").unlink(missing_ok=True)
+    Path("/tmp/.X11-unix", f"X{int(display_number)}").unlink(missing_ok=True)
+
+
 @dataclass
 class BrowserRuntimeConfig:
     enabled: bool
@@ -87,7 +115,7 @@ class BrowserRuntimeManager:
         chromium_candidates: list[str] = []
         if chromium_bin:
             chromium_candidates.append(chromium_bin)
-        chromium_candidates.extend(["google-chrome-stable", "google-chrome", "chromium-browser", "chromium"])
+        chromium_candidates.extend(["chromium-browser", "chromium"])
         chromium_bin = self._resolve_executable(list(dict.fromkeys(chromium_candidates)))
         return BrowserRuntimeConfig(
             enabled=_truthy(os.getenv("BROWSER_SESSION_ENABLED")),
@@ -235,6 +263,7 @@ class BrowserRuntimeManager:
 
         display_number = int(record["display_number"])
         display = f":{display_number}"
+        _cleanup_display_state(display_number)
         viewport = config.viewport if "x" not in config.viewport else config.viewport.replace("x", ",")
         viewport_width, viewport_height = [part.strip() for part in viewport.split(",", 1)]
         geometry = f"{viewport_width}x{viewport_height}x24"
