@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import time
 import unicodedata
@@ -238,6 +239,23 @@ def _pick_display_number(start: int = 300, end: int = 360) -> int:
         if not Path(f"/tmp/.X11-unix/X{candidate}").exists():
             return candidate
     raise RuntimeError("Khong tim thay DISPLAY trong de mo browser upload.")
+
+
+def _pick_unused_tcp_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+def _wait_for_debug_endpoint(port: int, *, timeout_seconds: float = 20.0) -> None:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=1.0):
+                return
+        except OSError:
+            time.sleep(0.25)
+    raise RuntimeError("Chromium khong mo remote debugging endpoint kip thoi.")
 
 
 def _stop_process(process: subprocess.Popen[bytes] | None) -> None:
@@ -906,6 +924,8 @@ def upload_video_via_browser(
     display_number = _pick_display_number()
     display = f":{display_number}"
     xvfb_process: subprocess.Popen[bytes] | None = None
+    openbox_process: subprocess.Popen[bytes] | None = None
+    chromium_process: subprocess.Popen[bytes] | None = None
     driver: webdriver.Chrome | None = None
     studio_url = f"https://studio.youtube.com/channel/{target.channel_id}/videos?d=ud"
     upload_committed = False
@@ -922,35 +942,63 @@ def upload_video_via_browser(
         if xvfb_process.poll() is not None:
             raise RuntimeError("Khong the khoi dong Xvfb cho browser upload.")
 
-        options = ChromeOptions()
-        options.binary_location = browser_config.chromium_bin
-        options.add_argument(f"--user-data-dir={profile_path}")
-        options.add_argument("--no-first-run")
-        options.add_argument("--no-default-browser-check")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-setuid-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--disable-background-networking")
-        options.add_argument("--disable-sync")
-        options.add_argument("--disable-features=PasswordManagerOnboarding,PasswordsImport,Translate,MediaRouter,SigninIntercept,DiceWebSigninInterception")
-        options.add_argument("--window-size=1440,900")
-        options.add_argument("--lang=en-US")
-
-        service = ChromeService()
         runtime_dir.mkdir(parents=True, exist_ok=True)
-        service.env = {
+        runtime_env = {
             **os.environ,
             "DISPLAY": display,
             "HOME": str(profile_path),
             "XDG_RUNTIME_DIR": str(runtime_dir / "xdg"),
         }
-        Path(service.env["XDG_RUNTIME_DIR"]).mkdir(parents=True, exist_ok=True)
+        Path(runtime_env["XDG_RUNTIME_DIR"]).mkdir(parents=True, exist_ok=True)
+
+        openbox_process = subprocess.Popen(
+            ["openbox"],
+            env=runtime_env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        time.sleep(0.4)
+
+        debug_port = _pick_unused_tcp_port()
+        chromium_log = (runtime_dir / "chromium.log").open("ab")
+        chromium_process = subprocess.Popen(
+            [
+                browser_config.chromium_bin,
+                f"--user-data-dir={profile_path}",
+                "--no-first-run",
+                "--no-default-browser-check",
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-background-networking",
+                "--disable-sync",
+                "--disable-features=PasswordManagerOnboarding,PasswordsImport,Translate,MediaRouter,SigninIntercept,DiceWebSigninInterception",
+                "--window-size=1440,900",
+                "--lang=en-US",
+                f"--remote-debugging-port={debug_port}",
+                studio_url,
+            ],
+            env=runtime_env,
+            stdout=chromium_log,
+            stderr=subprocess.STDOUT,
+        )
+        time.sleep(1.5)
+        if chromium_process.poll() is not None:
+            raise RuntimeError("Chromium da thoat ngay sau khi khoi dong browser upload.")
+        _wait_for_debug_endpoint(debug_port)
+
+        options = ChromeOptions()
+        options.binary_location = browser_config.chromium_bin
+        options.add_experimental_option("debuggerAddress", f"127.0.0.1:{debug_port}")
+
+        service = ChromeService(log_output=str(runtime_dir / "chromedriver.log"))
         driver = webdriver.Chrome(service=service, options=options)
         wait = WebDriverWait(driver, 90)
 
         if progress_callback:
             progress_callback(0.01, "Da mo Chrome profile cua kenh")
-        driver.get(studio_url)
+        if "studio.youtube.com" not in (driver.current_url or ""):
+            driver.get(studio_url)
 
         _attach_file_to_upload_dialog(
             driver,
@@ -1026,6 +1074,8 @@ def upload_video_via_browser(
                 driver.quit()
             except Exception:
                 pass
+        _stop_process(chromium_process)
+        _stop_process(openbox_process)
         _stop_process(xvfb_process)
         shutil.rmtree(runtime_dir, ignore_errors=True)
 
