@@ -268,7 +268,7 @@
                 {% if dashboard.manager_binding_locked %}
                 <p class="section-note">S&#7917;a t&#234;n BOT, gi&#7919; manager c&#7889; &#273;&#7883;nh v&#224; g&#225;n user d&#249;ng BOT ngay t&#7841;i Danh s&#225;ch BOT. Manager ch&#7881; thao t&#225;c trong ph&#7841;m vi user do ch&#237;nh m&#236;nh qu&#7843;n l&#253;.</p>
                 {% else %}
-                <p class="section-note">S&#7917;a t&#234;n BOT v&#224; ch&#7885;n manager ngay t&#7841;i Danh s&#225;ch BOT. Admin c&#243; th&#7875; ch&#7885;n manager ho&#7863;c ch&#237;nh t&#224;i kho&#7843;n admin.</p>
+                <p class="section-note">S&#7917;a t&#234;n BOT, ch&#7885;n manager v&#224; c&#243; th&#7875; g&#225;n th&#234;m BOT cho ch&#237;nh admin ngay t&#7841;i Danh s&#225;ch BOT. Admin mu&#7889;n d&#249;ng BOT trong workspace /app th&#236; ch&#7881; c&#7847;n g&#225;n BOT cho ch&#237;nh m&#236;nh, kh&#244;ng c&#7847;n &#273;&#7893;i manager.</p>
                 {% endif %}
             </div>
             <div class="space-y-4 px-5 py-5">
@@ -323,6 +323,27 @@
                         </option>
                         {% endfor %}
                     </select>
+                </div>
+                <div>
+                    <label class="field-label" for="edit-bot-user-id">User dùng BOT</label>
+                    <select
+                        class="toolbar-select"
+                        id="edit-bot-user-id"
+                        name="UserId"
+                        data-admin-select-search="true"
+                        data-admin-select-search-placeholder="Gõ để tìm user..."
+                    >
+                        <option value="">-- Giữ nguyên, không gán thêm --</option>
+                        {% for user in dashboard.bot_user_options %}
+                        <option value="{{ user.id }}">
+                            {{ user.username }}{% if user.role == 'manager' %} (Manager){% elif user.role == 'admin' %} (Chính admin){% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <p class="mt-2 text-[12px] leading-5 text-slate-500">
+                        Muốn dùng BOT này trong workspace <span class="font-medium text-slate-700">Điều phối Render</span> của admin thì chọn
+                        <span class="font-medium text-slate-700">chính tài khoản admin</span> tại đây. Không cần đổi manager của BOT.
+                    </p>
                 </div>
                 {% endif %}
             </div>

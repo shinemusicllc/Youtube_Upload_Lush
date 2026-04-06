@@ -5177,6 +5177,8 @@ class AppStore:
         if manager.role not in allowed_manager_roles:
             raise ValueError("Manager được chọn không hợp lệ.")
 
+        normalized_user_id = str(assigned_user_id or "").strip()
+
         if viewer_role == "manager":
             if viewer_id and manager.id != viewer_id:
                 raise ValueError("Manager không được đổi phạm vi BOT sang manager khác.")
@@ -5186,7 +5188,6 @@ class AppStore:
             self._apply_worker_manager(worker, manager)
             if normalized_group:
                 worker.group = normalized_group
-            normalized_user_id = str(assigned_user_id or "").strip()
 
             if normalized_user_id:
                 assigned_user = self._find_user(normalized_user_id)
@@ -5236,6 +5237,44 @@ class AppStore:
         self._apply_worker_manager(worker, manager)
         if normalized_group:
             worker.group = normalized_group
+        if normalized_user_id:
+            assigned_user = self._find_user(normalized_user_id)
+            if assigned_user.role == "user":
+                assigned_user_manager_id = self._resolved_user_manager_id(assigned_user)
+                if assigned_user_manager_id != manager.id:
+                    raise ValueError("User phải thuộc manager đã chọn.")
+            elif assigned_user.role == "manager":
+                if assigned_user.id != manager.id:
+                    raise ValueError("Manager chỉ được chọn chính mình trong BOT này.")
+            elif assigned_user.role == "admin":
+                if not viewer_id or assigned_user.id != viewer_id:
+                    raise ValueError("Admin chỉ được tự gán BOT cho chính tài khoản admin đang đăng nhập.")
+            else:
+                raise ValueError("User được chọn không hợp lệ.")
+            existing_link = next(
+                (
+                    link
+                    for link in self.user_worker_links
+                    if str(link.get("worker_id") or "").strip() == worker.id
+                    and str(link.get("user_id") or "").strip() == assigned_user.id
+                ),
+                None,
+            )
+            if existing_link is None:
+                next_id = max([int(item.get("id") or 0) for item in self.user_worker_links], default=0) + 1
+                self.user_worker_links.append(
+                    {
+                        "id": next_id,
+                        "user_id": assigned_user.id,
+                        "worker_id": worker.id,
+                        "threads": self._fixed_assignment_threads(),
+                        "bot_type": "1080p",
+                        "note": "VPS duoc cap",
+                    }
+                )
+            else:
+                existing_link["threads"] = self._fixed_assignment_threads()
+                existing_link["note"] = str(existing_link.get("note") or "").strip() or "VPS duoc cap"
         self._save_state()
 
     def reconcile_assignment_target_bots(
