@@ -67,14 +67,48 @@
                     <input class="toolbar-input" type="password" name="password" value="" placeholder="&#272;&#7875; tr&#7889;ng n&#7871;u kh&#244;ng &#273;&#7893;i" autocomplete="new-password" autocapitalize="off" spellcheck="false">
             </label>
 
-            <div class="flex items-center justify-end gap-3 border-t border-slate-200 pt-4">
-                <a href="/admin/user/index" class="action-btn action-btn-slate px-4 py-2 text-[13px]">Quay lại</a>
-                <button type="submit" class="action-btn action-btn-emerald px-4 py-2 text-[13px]">
-                    <i data-lucide="save" class="h-4 w-4"></i>
-                    Cập nhật
+            <label class="block">
+                <span class="mb-2 block text-[12px] font-semibold text-slate-700">Telegram ID</span>
+                <input
+                    class="toolbar-input"
+                    id="user-edit-telegram"
+                    type="text"
+                    name="telegram"
+                    value="{{ dashboard.user_record.telegram }}"
+                    inputmode="numeric"
+                    placeholder="Nh&#7853;p chat_id Telegram d&#7841;ng s&#7889;"
+                    autocapitalize="off"
+                    spellcheck="false"
+                >
+            </label>
+
+            <div class="flex items-center justify-between gap-3 border-t border-slate-200 pt-4">
+                <button
+                    type="button"
+                    class="action-btn action-btn-primary px-4 py-2 text-[13px]"
+                    data-telegram-link-trigger
+                    data-target-input="user-edit-telegram"
+                    data-user-id-source="user-edit-id"
+                >
+                    <i data-lucide="send" class="h-4 w-4"></i>
+                    Lấy Telegram ID
                 </button>
+                <div class="flex items-center gap-3">
+                    <a href="/admin/user/index" class="action-btn action-btn-slate px-4 py-2 text-[13px]">Quay lại</a>
+                    <button type="submit" class="action-btn action-btn-emerald px-4 py-2 text-[13px]">
+                        <i data-lucide="save" class="h-4 w-4"></i>
+                        Cập nhật
+                    </button>
+                </div>
             </div>
         </form>
     </div>
+
+    <input type="hidden" id="user-edit-id" value="{{ dashboard.user_record.id }}">
+    {% include "admin/_telegram_link_dialog.html" %}
 </section>
+{% endblock %}
+
+{% block page_scripts %}
+{% include "admin/_telegram_link_script.html" %}
 {% endblock %}

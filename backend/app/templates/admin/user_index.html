@@ -94,6 +94,7 @@
                                     data-dialog-open="edit-user-dialog"
                                     data-user-id="{{ user.id }}"
                                     data-username="{{ user.username }}"
+                                    data-telegram="{{ user.telegram }}"
                                     data-manager-id="{{ user.manager_id }}"
                                     data-role="{{ user.role }}"
                                     data-can-edit-username="{{ 'true' if dashboard.current_user.role == 'admin' or (dashboard.current_user.role == 'manager' and user.role == 'user') else 'false' }}"
@@ -101,6 +102,7 @@
                                     <i data-lucide="pencil" class="h-3.5 w-3.5"></i>
                                     Sửa
                                 </button>
+                                {% if user.can_delete %}
                                 <button
                                     type="button"
                                     class="action-btn action-btn-rose"
@@ -111,6 +113,7 @@
                                     <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
                                     Xóa
                                 </button>
+                                {% endif %}
                                 <form method="post" action="/admin/user/delete" data-bulk-delete-form class="hidden">
                                     <input type="hidden" name="userId" value="{{ user.id }}">
                                 </form>
@@ -142,6 +145,10 @@
                     <label class="field-label" for="edit-password">Pass</label>
                     <input class="toolbar-input" id="edit-password" name="Password" type="password" value="" placeholder="&#272;&#7875; tr&#7889;ng n&#7871;u kh&#244;ng &#273;&#7893;i" autocomplete="new-password" autocapitalize="off" spellcheck="false">
                 </div>
+                <div>
+                    <label class="field-label" for="edit-telegram">Telegram ID</label>
+                    <input class="toolbar-input" id="edit-telegram" name="TelegramId" inputmode="numeric" placeholder="Nh&#7853;p chat_id Telegram d&#7841;ng s&#7889;">
+                </div>
                 <div id="edit-manager-wrap">
                     <label class="field-label" for="edit-manager-id">Manager</label>
                     {% if dashboard.current_user.role == 'manager' and dashboard.manager_form_options %}
@@ -163,13 +170,27 @@
                     {% endif %}
                 </div>
             </div>
-            <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
-                <button type="button" class="action-btn action-btn-slate" data-dialog-close>Đóng</button>
-                <button type="submit" class="action-btn action-btn-emerald">Lưu thay đổi</button>
+            <div class="flex items-center justify-between gap-3 border-t border-slate-200 px-5 py-4">
+                <button
+                    type="button"
+                    class="action-btn action-btn-primary"
+                    data-telegram-link-trigger
+                    data-target-input="edit-telegram"
+                    data-user-id-source="edit-user-id"
+                >
+                    <i data-lucide="send" class="h-3.5 w-3.5"></i>
+                    Lấy Telegram ID
+                </button>
+                <div class="flex items-center gap-2">
+                    <button type="button" class="action-btn action-btn-slate" data-dialog-close>Đóng</button>
+                    <button type="submit" class="action-btn action-btn-emerald">Lưu thay đổi</button>
+                </div>
             </div>
         </form>
     </div>
 </dialog>
+
+{% include "admin/_telegram_link_dialog.html" %}
 
 <dialog id="delete-user-dialog" class="admin-dialog">
     <div class="panel">
@@ -198,6 +219,7 @@
     const editUsernameInput = document.getElementById('edit-username');
     const editUsernameNote = document.getElementById('edit-username-note');
     const editPasswordInput = document.getElementById('edit-password');
+    const editTelegramInput = document.getElementById('edit-telegram');
     const managerSelect = document.getElementById('edit-manager-id');
     const managerDisplay = document.getElementById('edit-manager-display');
     const managerLocked = {{ 'true' if dashboard.current_user.role == 'manager' else 'false' }};
@@ -207,6 +229,9 @@
         document.getElementById('edit-user-id').value = button.dataset.userId || '';
         editUsernameInput.value = button.dataset.username || '';
         editPasswordInput.value = '';
+        if (editTelegramInput) {
+          editTelegramInput.value = button.dataset.telegram || '';
+        }
         if (managerSelect && managerSelect.tagName === 'SELECT' && !managerLocked) {
           managerSelect.value = button.dataset.managerId || managerSelect.value || '';
           managerSelect.dispatchEvent(new Event('change', { bubbles: true }));
@@ -237,4 +262,5 @@
     });
   });
 </script>
+{% include "admin/_telegram_link_script.html" %}
 {% endblock %}

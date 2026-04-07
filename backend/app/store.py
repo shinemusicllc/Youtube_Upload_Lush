@@ -133,6 +133,24 @@ class AppStore:
     def _telegram_alert_chat_id() -> str:
         return str(os.getenv("TELEGRAM_ALERT_CHAT_ID", "")).strip()
 
+    @staticmethod
+    def _telegram_link_ttl_seconds() -> int:
+        raw_value = str(os.getenv("TELEGRAM_LINK_TTL_SECONDS", "600")).strip()
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            value = 600
+        return max(120, value)
+
+    @staticmethod
+    def _normalize_telegram_chat_id(value: str | None) -> str:
+        normalized = str(value or "").strip()
+        if not normalized:
+            return ""
+        if not re.fullmatch(r"-?\d+", normalized):
+            raise ValueError("Telegram ID phai la chat_id dang so.")
+        return normalized
+
     def __init__(self) -> None:
         now = self._now()
         self.data_dir = Path(__file__).resolve().parents[1] / "data"
@@ -153,6 +171,7 @@ class AppStore:
         self.worker_round_robin_cursor: dict[str, str] = {}
         self.worker_connection_profiles: dict[str, dict[str, Any]] = {}
         self.worker_operation_tasks: list[dict[str, Any]] = []
+        self.telegram_link_requests: dict[str, dict[str, Any]] = {}
         self.admin_notifications: list[dict[str, Any]] = []
         self._worker_state_lock = RLock()
         self._monitor_stop_event = Event()
@@ -1197,15 +1216,15 @@ class AppStore:
             except Exception as exc:
                 print(f"[worker_monitor] reconcile failed: {exc}", flush=True)
 
-    def _send_telegram_alert(self, message: str) -> bool:
+    def _send_telegram_alert(self, message: str, *, chat_id: str | None = None) -> bool:
         bot_token = self._telegram_alert_bot_token()
-        chat_id = self._telegram_alert_chat_id()
-        if not bot_token or not chat_id:
+        resolved_chat_id = self._normalize_telegram_chat_id(chat_id or self._telegram_alert_chat_id())
+        if not bot_token or not resolved_chat_id:
             return False
 
         encoded_message = urlencode(
             {
-                "chat_id": chat_id,
+                "chat_id": resolved_chat_id,
                 "text": message,
             }
         ).encode("utf-8")
@@ -1223,15 +1242,201 @@ class AppStore:
             print(f"[telegram_alert] failed: {exc}", flush=True)
             return False
 
+    def _telegram_api_payload(self, method: str, *, params: dict[str, str] | None = None) -> dict[str, Any]:
+        bot_token = self._telegram_alert_bot_token()
+        if not bot_token:
+            raise ValueError("Bot Telegram thong bao chua duoc cau hinh.")
+
+        normalized_method = str(method or "").strip().strip("/")
+        if not normalized_method:
+            raise ValueError("Telegram API method khong hop le.")
+
+        request_url = f"https://api.telegram.org/bot{bot_token}/{normalized_method}"
+        if params:
+            request_url = f"{request_url}?{urlencode(params)}"
+
+        request = Request(
+            request_url,
+            headers={"Accept": "application/json"},
+            method="GET",
+        )
+        try:
+            with urlopen(request, timeout=10) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except Exception as exc:
+            raise ValueError("Khong the ket noi Telegram Bot API.") from exc
+
+        if not payload.get("ok"):
+            description = str(payload.get("description") or "").strip() or "Telegram Bot API tra ve loi."
+            raise ValueError(description)
+        return payload
+
+    def _telegram_bot_identity(self) -> dict[str, str]:
+        payload = self._telegram_api_payload("getMe")
+        result = payload.get("result") or {}
+        username = str(result.get("username") or "").strip()
+        first_name = str(result.get("first_name") or "").strip()
+        if not username:
+            raise ValueError("Bot Telegram chua co username cong khai.")
+        return {
+            "username": username,
+            "display_name": first_name or username,
+            "deep_link_base": f"https://t.me/{username}",
+        }
+
+    @staticmethod
+    def _extract_telegram_link_code(text: str) -> str:
+        normalized = str(text or "").strip()
+        if not normalized:
+            return ""
+        for pattern in (
+            r"^/start(?:@[A-Za-z0-9_]+)?\s+([A-Za-z0-9_-]+)$",
+            r"^/link(?:@[A-Za-z0-9_]+)?\s+([A-Za-z0-9_-]+)$",
+        ):
+            match = re.fullmatch(pattern, normalized)
+            if match:
+                return str(match.group(1) or "").strip()
+        return ""
+
+    def _cleanup_expired_telegram_link_requests(self, *, now: datetime | None = None) -> None:
+        current_time = now or self._now(trim=False)
+        ttl = timedelta(seconds=self._telegram_link_ttl_seconds())
+        expired_codes = [
+            code
+            for code, request in self.telegram_link_requests.items()
+            if current_time - request.get("created_at", current_time) > ttl
+        ]
+        for code in expired_codes:
+            self.telegram_link_requests.pop(code, None)
+
+    def create_telegram_link_request(self, user_id: str) -> dict[str, Any]:
+        self._find_user(user_id)
+        now = self._now(trim=False)
+        self._cleanup_expired_telegram_link_requests(now=now)
+        bot_identity = self._telegram_bot_identity()
+        code = secrets.token_urlsafe(6).replace("-", "").replace("_", "")
+        expires_at = now + timedelta(seconds=self._telegram_link_ttl_seconds())
+        self.telegram_link_requests[code] = {
+            "user_id": user_id,
+            "code": code,
+            "created_at": now,
+            "expires_at": expires_at,
+            "chat_id": "",
+            "telegram_username": "",
+            "telegram_name": "",
+        }
+        return {
+            "code": code,
+            "bot_username": bot_identity["username"],
+            "bot_display_name": bot_identity["display_name"],
+            "deep_link_url": f"{bot_identity['deep_link_base']}?start={quote(code)}",
+            "expires_in_seconds": self._telegram_link_ttl_seconds(),
+        }
+
+    def get_telegram_link_request_status(self, user_id: str, code: str) -> dict[str, Any]:
+        cleaned_code = str(code or "").strip()
+        if not cleaned_code:
+            raise ValueError("Thieu ma lien ket Telegram.")
+
+        now = self._now(trim=False)
+        self._cleanup_expired_telegram_link_requests(now=now)
+        request_state = self.telegram_link_requests.get(cleaned_code)
+        if request_state is None or str(request_state.get("user_id") or "").strip() != str(user_id or "").strip():
+            raise KeyError("Ma lien ket Telegram da het han hoac khong ton tai.")
+
+        expires_at = request_state.get("expires_at")
+        if isinstance(expires_at, datetime) and expires_at <= now:
+            self.telegram_link_requests.pop(cleaned_code, None)
+            raise ValueError("Ma lien ket Telegram da het han. Hay tao lai ma moi.")
+
+        if not request_state.get("chat_id"):
+            payload = self._telegram_api_payload("getUpdates", params={"limit": "100"})
+            updates = payload.get("result") or []
+            for update in reversed(updates):
+                message = update.get("message") or update.get("edited_message") or {}
+                matched_code = self._extract_telegram_link_code(message.get("text") or "")
+                if matched_code != cleaned_code:
+                    continue
+                chat = message.get("chat") or {}
+                chat_id = self._normalize_telegram_chat_id(str(chat.get("id") or "").strip())
+                if not chat_id:
+                    continue
+                sender = message.get("from") or {}
+                display_name = " ".join(
+                    [
+                        str(sender.get("first_name") or "").strip(),
+                        str(sender.get("last_name") or "").strip(),
+                    ]
+                ).strip()
+                request_state["chat_id"] = chat_id
+                request_state["telegram_username"] = str(sender.get("username") or "").strip()
+                request_state["telegram_name"] = display_name
+                break
+
+        chat_id = str(request_state.get("chat_id") or "").strip()
+        if chat_id:
+            return {
+                "status": "linked",
+                "chat_id": chat_id,
+                "telegram_username": str(request_state.get("telegram_username") or "").strip(),
+                "telegram_name": str(request_state.get("telegram_name") or "").strip(),
+            }
+
+        expires_in_seconds = 0
+        if isinstance(expires_at, datetime):
+            expires_in_seconds = max(0, int((expires_at - now).total_seconds()))
+        return {
+            "status": "pending",
+            "expires_in_seconds": expires_in_seconds,
+        }
+
+    def _telegram_linked_confirmation_message(self, user: UserSummary) -> str:
+        return (
+            "Tài khoản Telegram này đã được thêm để nhận thông báo từ app YouTube Upload.\n"
+            f"Tài khoản app: {user.username}\n"
+            "Nếu muốn ngắt thông báo, hãy xóa Telegram ID trong mục Cập nhật user rồi lưu lại."
+        )
+
+    def _telegram_unlinked_confirmation_message(self, user: UserSummary) -> str:
+        return (
+            "Tài khoản Telegram này đã được ngắt khỏi hệ thống thông báo của app YouTube Upload.\n"
+            f"Tài khoản app: {user.username}\n"
+            "Từ bây giờ tài khoản này sẽ không nhận thông báo mới từ app nữa."
+        )
+
+    def _user_telegram_chat_id(self, user_id: str) -> str:
+        meta = self._user_meta_record(user_id)
+        try:
+            return self._normalize_telegram_chat_id(meta.get("telegram"))
+        except ValueError:
+            return ""
+
+    def _worker_telegram_recipient_chat_ids(self, worker_id: str) -> list[str]:
+        chat_ids: list[str] = []
+        seen_ids: set[str] = set()
+        for user in self._assigned_users_for_worker(worker_id):
+            chat_id = self._user_telegram_chat_id(user.id)
+            if not chat_id or chat_id in seen_ids:
+                continue
+            chat_ids.append(chat_id)
+            seen_ids.add(chat_id)
+        try:
+            fallback_chat_id = self._normalize_telegram_chat_id(self._telegram_alert_chat_id())
+        except ValueError:
+            fallback_chat_id = ""
+        if fallback_chat_id and fallback_chat_id not in seen_ids:
+            chat_ids.append(fallback_chat_id)
+        return chat_ids
+
     def _worker_offline_message(self, worker: WorkerRecord, *, now: datetime) -> str:
         worker_name = worker.name or worker.id
-        manager_name = worker.manager_name or "khong ro"
+        manager_name = worker.manager_name or "không rõ"
         return (
-            "[CANH BAO] BOT mat ket noi qua 3 phut\n"
+            "[CẢNH BÁO] BOT mất kết nối quá 3 phút\n"
             f"BOT: {worker_name}\n"
             f"BOT ID: {worker.id}\n"
             f"Manager: {manager_name}\n"
-            "Trang thai: BOT chua tu ket noi lai voi control-plane"
+            "Trạng thái: BOT chưa tự kết nối lại với control-plane"
         )
 
     def _reconcile_worker_connectivity(self, *, now: datetime) -> bool:
@@ -1265,7 +1470,8 @@ class AppStore:
             if worker.offline_alert_sent_at is not None:
                 continue
             message = self._worker_offline_message(worker, now=now)
-            if self._send_telegram_alert(message):
+            recipient_chat_ids = self._worker_telegram_recipient_chat_ids(worker.id)
+            if any(self._send_telegram_alert(message, chat_id=chat_id) for chat_id in recipient_chat_ids):
                 worker.offline_alert_sent_at = now
                 changed = True
         if changed:
@@ -3076,8 +3282,6 @@ class AppStore:
             include = user.role == "manager"
             if viewer_role == "manager" and viewer_id:
                 include = user.id == viewer_id
-            if viewer_id and user.id == viewer_id and viewer_role in {"admin", "manager"}:
-                include = True
             if not include or user.id in seen_ids:
                 continue
             options.append(
@@ -4115,7 +4319,15 @@ class AppStore:
             resolved_manager_id = user.manager_id or (manager.id if manager else "")
 
             if viewer_role == "manager":
-                if user.role != "user" or not viewer_id or resolved_manager_id != viewer_id:
+                if not viewer_id:
+                    continue
+                if user.role == "manager":
+                    if user.id != viewer_id:
+                        continue
+                elif user.role == "user":
+                    if resolved_manager_id != viewer_id:
+                        continue
+                else:
                     continue
 
             include_row = True
@@ -4130,6 +4342,8 @@ class AppStore:
 
             role_label, role_class = self._role_badge(user.role)
             meta = self._user_meta_record(user.id)
+            row_manager_name = user.manager_name or (user.username if user.role == "manager" else "-")
+            row_manager_id = manager.id if manager else (user.id if user.role == "manager" else "")
             rows.append(
                 {
                     "index": len(rows) + 1,
@@ -4141,11 +4355,13 @@ class AppStore:
                     "role": user.role,
                     "role_label": role_label,
                     "role_class": role_class,
-                    "manager_name": user.manager_name or "-",
-                    "manager_id": manager.id if manager else "",
+                    "manager_name": row_manager_name,
+                    "manager_id": row_manager_id,
+                    "telegram": meta.get("telegram") or "",
                     "updated_meta": f"{meta.get('updated_by') or '-'} • {self._format_compact_datetime(meta.get('updated_at'))}",
                     "total_channels": self._user_channel_count(user),
                     "total_workers": self._user_worker_count(user),
+                    "can_delete": not (viewer_role == "manager" and viewer_id and user.role == "manager" and user.id == viewer_id),
                 }
             )
         return rows
@@ -4329,21 +4545,62 @@ class AppStore:
         viewer_id: str | None = None,
     ) -> list[dict[str, Any]]:
         options: list[dict[str, Any]] = []
+        viewer_scope_manager_id = str(viewer_id or "").strip()
         for user in self.users:
+            scope_locked = False
+            self_assignable = False
             if user.role == "user":
                 manager_id = self._resolved_user_manager_id(user)
-                if viewer_role == "manager" and viewer_id and manager_id != viewer_id:
-                    continue
                 assigned_workers = self._workspace_workers_for_user(user.id)
+                if viewer_role == "manager" and viewer_scope_manager_id and manager_id != viewer_scope_manager_id:
+                    assigned_workers = [
+                        worker
+                        for worker in assigned_workers
+                        if str(worker.manager_id or "").strip() == viewer_scope_manager_id
+                    ]
+                    if not assigned_workers:
+                        continue
+                    scope_locked = True
                 role_label = "User"
             elif user.role == "manager" and viewer_role == "manager" and viewer_id and user.id == viewer_id:
                 manager_id = user.id
                 assigned_workers = self._workspace_workers_for_user(user.id)
                 role_label = "Manager"
+                self_assignable = True
+            elif user.role == "manager" and viewer_role == "manager" and viewer_scope_manager_id:
+                manager_id = user.id
+                assigned_workers = [
+                    worker
+                    for worker in self._workspace_workers_for_user(user.id)
+                    if str(worker.manager_id or "").strip() == viewer_scope_manager_id
+                ]
+                if not assigned_workers:
+                    continue
+                role_label = "Manager"
+                scope_locked = True
+            elif user.role == "manager" and viewer_role == "admin":
+                manager_id = user.id
+                assigned_workers = self._workspace_workers_for_user(user.id)
+                if not assigned_workers:
+                    continue
+                role_label = "Manager"
+                scope_locked = True
             elif user.role == "admin" and viewer_role == "admin" and viewer_id and user.id == viewer_id:
                 manager_id = ""
                 assigned_workers = self._workspace_workers_for_user(user.id)
                 role_label = "Admin"
+                self_assignable = True
+            elif user.role == "admin" and viewer_role == "manager" and viewer_scope_manager_id:
+                assigned_workers = [
+                    worker
+                    for worker in self._workspace_workers_for_user(user.id)
+                    if str(worker.manager_id or "").strip() == viewer_scope_manager_id
+                ]
+                if not assigned_workers:
+                    continue
+                manager_id = viewer_scope_manager_id
+                role_label = "Admin"
+                scope_locked = True
             else:
                 continue
             assigned_worker = assigned_workers[0] if assigned_workers else None
@@ -4364,6 +4621,8 @@ class AppStore:
                     "assigned_worker_names": assigned_worker_names,
                     "assigned_worker_count": len(assigned_workers),
                     "assigned_worker_names_text": ", ".join(assigned_worker_names),
+                    "scope_locked": scope_locked,
+                    "self_assignable": self_assignable,
                 }
             )
         options.sort(
@@ -4514,6 +4773,36 @@ class AppStore:
         self._close_orphan_browser_sessions_for_user(cleaned_user_id)
         return len(affected_channels)
 
+    def _purge_worker_assignment_scope(self, worker_id: str, *, session_reason: str) -> None:
+        cleaned_worker_id = str(worker_id or "").strip()
+        if not cleaned_worker_id:
+            return
+
+        linked_user_ids = {
+            str(link.get("user_id") or "").strip()
+            for link in self.user_worker_links
+            if str(link.get("worker_id") or "").strip() == cleaned_worker_id and str(link.get("user_id") or "").strip()
+        }
+        for user_id in linked_user_ids:
+            self._clear_user_worker_channels(user_id, cleaned_worker_id)
+
+        self._clear_worker_channels(cleaned_worker_id)
+
+        removed_jobs = [
+            job for job in self.jobs if str(job.worker_name or "").strip() == cleaned_worker_id
+        ]
+        for job in removed_jobs:
+            self._purge_job_artifacts(job, exclude_job_id=job.id)
+        self.jobs = [job for job in self.jobs if str(job.worker_name or "").strip() != cleaned_worker_id]
+
+        self.user_worker_links = [
+            link for link in self.user_worker_links if str(link.get("worker_id") or "").strip() != cleaned_worker_id
+        ]
+
+        for user_id in linked_user_ids:
+            self._close_user_worker_browser_sessions(user_id, cleaned_worker_id, reason=session_reason)
+            self._close_orphan_browser_sessions_for_user(user_id)
+
     def get_admin_user_index_context(
         self,
         *,
@@ -4614,6 +4903,7 @@ class AppStore:
                     "display_name": user.username,
                     "role": user.role,
                     "manager_id": manager.id if manager else "",
+                    "telegram": meta.get("telegram") or "",
                     "password": "",
                 },
             }
@@ -4716,6 +5006,7 @@ class AppStore:
             "raw_name": placeholder_name,
             "group": str(task.get("group") or "").strip() or "-",
             "assigned_user_id": "",
+            "assigned_user_ids": [],
             "assigned_user_name": "",
             "assigned_user_names_text": "",
             "status_key": f"{task.get('kind')}-{task.get('status')}",
@@ -4774,6 +5065,7 @@ class AppStore:
             status_label, status_class = self._worker_status_badge(worker.status)
             thread_summary = self._worker_thread_summary(worker)
             assigned_users = self._assigned_users_for_worker(worker.id)
+            assigned_user_ids = [user.id for user in assigned_users]
             assigned_user_names = [user.username for user in assigned_users]
             if len(assigned_users) == 1:
                 assigned_user_id = assigned_users[0].id
@@ -4794,6 +5086,7 @@ class AppStore:
                 "raw_name": self._resolve_worker_display_name(worker.id),
                 "group": worker.group or worker.manager_name,
                 "assigned_user_id": assigned_user_id,
+                "assigned_user_ids": assigned_user_ids,
                 "assigned_user_name": assigned_user_name,
                 "assigned_user_names_text": ", ".join(assigned_user_names),
                 "status_key": worker.status,
@@ -5103,10 +5396,13 @@ class AppStore:
         username: str,
         password: str | None,
         manager_id: str | None,
+        telegram: str | None = None,
         actor_role: str = "admin",
         updated_by: str = "admin",
     ) -> UserSummary:
         user = self._find_user(user_id)
+        previous_telegram = self._user_telegram_chat_id(user_id)
+        next_telegram = previous_telegram
 
         old_username = user.username
         can_edit_username = actor_role == "admin" or (actor_role == "manager" and user.role == "user")
@@ -5130,12 +5426,24 @@ class AppStore:
             user.manager_name = None
 
         meta = self._user_meta_record(user_id)
-        meta["telegram"] = ""
+        if telegram is not None:
+            next_telegram = self._normalize_telegram_chat_id(telegram)
+            meta["telegram"] = next_telegram
         if password and password.strip():
             self._set_user_password(user_id, password.strip(), updated_at=self._now())
         meta["updated_by"] = updated_by
         meta["updated_at"] = self._now()
         self._save_state()
+        if next_telegram and next_telegram != previous_telegram:
+            self._send_telegram_alert(
+                self._telegram_linked_confirmation_message(user),
+                chat_id=next_telegram,
+            )
+        elif previous_telegram and not next_telegram:
+            self._send_telegram_alert(
+                self._telegram_unlinked_confirmation_message(user),
+                chat_id=previous_telegram,
+            )
         return user
 
     def update_role_manager(self, user_id: str, promote: bool, updated_by: str = "admin") -> None:
@@ -5184,6 +5492,8 @@ class AppStore:
         manager_id: str | None,
         *,
         assigned_user_id: str | None = None,
+        assigned_user_ids: list[str] | None = None,
+        confirm_manager_transfer_cleanup: bool = False,
         viewer_role: str = "admin",
         viewer_id: str | None = None,
         updated_by: str = "admin",
@@ -5194,18 +5504,21 @@ class AppStore:
         worker.name = name.strip()
         normalized_group = str(group or "").strip()
         normalized_user_id = str(assigned_user_id or "").strip()
+        normalized_user_ids: list[str] = []
+        seen_user_ids: set[str] = set()
+        if assigned_user_ids is not None:
+            for raw_user_id in assigned_user_ids:
+                user_id = str(raw_user_id or "").strip()
+                if not user_id or user_id in seen_user_ids:
+                    continue
+                normalized_user_ids.append(user_id)
+                seen_user_ids.add(user_id)
         manager: UserSummary | None = None
-        if manager_id:
-            manager = self._find_user(manager_id)
-            allowed_manager_roles = {"manager"}
-            if viewer_role == "admin" and viewer_id and manager.id == viewer_id:
-                allowed_manager_roles.add("admin")
-            if viewer_role == "manager" and viewer_id and manager.id == viewer_id:
-                allowed_manager_roles.add("manager")
-            if manager.role not in allowed_manager_roles:
+        normalized_manager_id = str(manager_id or "").strip()
+        if normalized_manager_id:
+            manager = self._find_user(normalized_manager_id)
+            if manager.role != "manager":
                 raise ValueError("Manager được chọn không hợp lệ.")
-        elif not (viewer_role == "admin" and viewer_id and normalized_user_id == viewer_id):
-            raise ValueError("Vui lòng chọn manager.")
 
         if viewer_role == "manager":
             if manager is None:
@@ -5219,7 +5532,73 @@ class AppStore:
             if normalized_group:
                 worker.group = normalized_group
 
-            if normalized_user_id:
+            current_worker_links = [
+                link for link in self.user_worker_links if str(link.get("worker_id") or "").strip() == worker.id
+            ]
+            current_links_by_user_id = {
+                str(link.get("user_id") or "").strip(): link
+                for link in current_worker_links
+                if str(link.get("user_id") or "").strip()
+            }
+            current_user_ids = set(current_links_by_user_id.keys())
+
+            if assigned_user_ids is not None:
+                selected_users: list[UserSummary] = []
+                for selected_user_id in normalized_user_ids:
+                    assigned_user = self._find_user(selected_user_id)
+                    already_assigned = assigned_user.id in current_user_ids
+                    if assigned_user.role == "user":
+                        assigned_user_manager_id = self._resolved_user_manager_id(assigned_user)
+                        if assigned_user_manager_id != manager.id and not already_assigned:
+                            raise ValueError("User phải thuộc manager hiện tại.")
+                    elif assigned_user.role == "manager":
+                        if assigned_user.id != manager.id and not already_assigned:
+                            raise ValueError("Manager chỉ được chọn chính mình trong BOT này.")
+                    elif assigned_user.role == "admin":
+                        if not already_assigned:
+                            raise ValueError("User được chọn không hợp lệ.")
+                    else:
+                        raise ValueError("User được chọn không hợp lệ.")
+                    selected_users.append(assigned_user)
+
+                current_links_by_user_id = {
+                    str(link.get("user_id") or "").strip(): link
+                    for link in current_worker_links
+                    if str(link.get("user_id") or "").strip()
+                }
+                selected_user_ids = {user.id for user in selected_users}
+
+                for removed_user_id in current_user_ids - selected_user_ids:
+                    self._clear_user_worker_channels(removed_user_id, worker.id)
+
+                self.user_worker_links = [
+                    link
+                    for link in self.user_worker_links
+                    if not (
+                        str(link.get("worker_id") or "").strip() == worker.id
+                        and str(link.get("user_id") or "").strip() in (current_user_ids - selected_user_ids)
+                    )
+                ]
+
+                next_id = max([int(item.get("id") or 0) for item in self.user_worker_links], default=0) + 1
+                for assigned_user in selected_users:
+                    existing_link = current_links_by_user_id.get(assigned_user.id)
+                    if existing_link is None:
+                        self.user_worker_links.append(
+                            {
+                                "id": next_id,
+                                "user_id": assigned_user.id,
+                                "worker_id": worker.id,
+                                "threads": self._fixed_assignment_threads(),
+                                "bot_type": "1080p",
+                                "note": "VPS duoc cap",
+                            }
+                        )
+                        next_id += 1
+                    else:
+                        existing_link["threads"] = self._fixed_assignment_threads()
+                        existing_link["note"] = str(existing_link.get("note") or "").strip() or "VPS duoc cap"
+            elif normalized_user_id:
                 assigned_user = self._find_user(normalized_user_id)
                 if assigned_user.role == "user":
                     assigned_user_manager_id = self._resolved_user_manager_id(assigned_user)
@@ -5228,6 +5607,9 @@ class AppStore:
                 elif assigned_user.role == "manager":
                     if assigned_user.id != manager.id:
                         raise ValueError("Manager chỉ được chọn chính mình trong BOT này.")
+                elif assigned_user.role == "admin":
+                    if assigned_user.id not in current_user_ids:
+                        raise ValueError("User được chọn không hợp lệ.")
                 else:
                     raise ValueError("User được chọn không hợp lệ.")
                 existing_link = next(
@@ -5259,11 +5641,12 @@ class AppStore:
             return
 
         current_manager_id = str(worker.manager_id or "").strip()
-        next_manager_id = str(manager.id if manager else current_manager_id).strip()
+        next_manager_id = str(manager.id if manager else "").strip()
         manager_changed = current_manager_id != next_manager_id
         if manager_changed:
             worker_links = [link for link in self.user_worker_links if str(link.get("worker_id") or "").strip() == worker.id]
             worker_channels = [channel for channel in self.channels if str(channel.worker_id or "").strip() == worker.id]
+            worker_jobs = [job for job in self.jobs if str(job.worker_name or "").strip() == worker.id]
             worker_link_user_ids = {
                 str(link.get("user_id") or "").strip()
                 for link in worker_links
@@ -5271,6 +5654,7 @@ class AppStore:
             }
             can_drop_self_workspace_link = (
                 not worker_channels
+                and not worker_jobs
                 and viewer_id is not None
                 and worker_link_user_ids == {str(viewer_id).strip()}
             )
@@ -5283,13 +5667,89 @@ class AppStore:
                         and str(link.get("user_id") or "").strip() == str(viewer_id).strip()
                     )
                 ]
-            elif worker_links or worker_channels:
-                raise ValueError("BOT đang có user hoặc kênh gắn kèm. Hãy gỡ dữ liệu trước khi đổi manager.")
-        if manager is not None:
-            self._apply_worker_manager(worker, manager)
+            elif worker_links or worker_channels or worker_jobs:
+                if not confirm_manager_transfer_cleanup:
+                    raise ValueError(
+                        "Đổi manager BOT này sẽ xóa sạch dữ liệu user/kênh/job của manager hiện tại. "
+                        "Hãy xác nhận cảnh báo rồi thử lại."
+                    )
+                self._purge_worker_assignment_scope(
+                    worker.id,
+                    session_reason="Session da dong do BOT da duoc chuyen sang manager khac.",
+                )
+        self._apply_worker_manager(worker, manager)
         if normalized_group:
             worker.group = normalized_group
-        if normalized_user_id:
+        if manager is None:
+            self._save_state()
+            return
+        current_worker_links = [
+            link for link in self.user_worker_links if str(link.get("worker_id") or "").strip() == worker.id
+        ]
+        current_links_by_user_id = {
+            str(link.get("user_id") or "").strip(): link
+            for link in current_worker_links
+            if str(link.get("user_id") or "").strip()
+        }
+        current_user_ids = set(current_links_by_user_id.keys())
+
+        if assigned_user_ids is not None:
+            selected_users: list[UserSummary] = []
+            for selected_user_id in normalized_user_ids:
+                assigned_user = self._find_user(selected_user_id)
+                already_assigned = assigned_user.id in current_user_ids
+                if assigned_user.role == "user":
+                    assigned_user_manager_id = self._resolved_user_manager_id(assigned_user)
+                    if assigned_user_manager_id != manager.id and not already_assigned:
+                        raise ValueError("User phải thuộc manager đã chọn.")
+                elif assigned_user.role == "manager":
+                    if assigned_user.id != manager.id and not already_assigned:
+                        raise ValueError("Manager chỉ được chọn chính mình trong BOT này.")
+                elif assigned_user.role == "admin":
+                    if not already_assigned and (not viewer_id or assigned_user.id != viewer_id):
+                        raise ValueError("Admin chỉ được tự gán BOT cho chính tài khoản admin đang đăng nhập.")
+                else:
+                    raise ValueError("User được chọn không hợp lệ.")
+                selected_users.append(assigned_user)
+
+            current_links_by_user_id = {
+                str(link.get("user_id") or "").strip(): link
+                for link in current_worker_links
+                if str(link.get("user_id") or "").strip()
+            }
+            selected_user_ids = {user.id for user in selected_users}
+
+            for removed_user_id in current_user_ids - selected_user_ids:
+                self._clear_user_worker_channels(removed_user_id, worker.id)
+
+            self.user_worker_links = [
+                link
+                for link in self.user_worker_links
+                if not (
+                    str(link.get("worker_id") or "").strip() == worker.id
+                    and str(link.get("user_id") or "").strip() in (current_user_ids - selected_user_ids)
+                )
+            ]
+
+            next_id = max([int(item.get("id") or 0) for item in self.user_worker_links], default=0) + 1
+            for assigned_user in selected_users:
+                existing_link = current_links_by_user_id.get(assigned_user.id)
+                if existing_link is None:
+                    self.user_worker_links.append(
+                        {
+                            "id": next_id,
+                            "user_id": assigned_user.id,
+                            "worker_id": worker.id,
+                            "threads": self._fixed_assignment_threads(),
+                            "bot_type": "1080p",
+                            "note": "VPS duoc cap",
+                        }
+                    )
+                    next_id += 1
+                else:
+                    existing_link["threads"] = self._fixed_assignment_threads()
+                    existing_link["note"] = str(existing_link.get("note") or "").strip() or "VPS duoc cap"
+        elif normalized_user_id:
             assigned_user = self._find_user(normalized_user_id)
             if assigned_user.role == "user":
                 assigned_user_manager_id = self._resolved_user_manager_id(assigned_user)

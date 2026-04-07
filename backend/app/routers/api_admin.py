@@ -28,6 +28,7 @@ class AdminUserUpdatePayload(BaseModel):
     username: str
     password: str | None = None
     manager_id: str | None = None
+    telegram: str | None = None
 
 
 class AdminResetPasswordPayload(BaseModel):
@@ -50,6 +51,8 @@ class AdminBotUpdatePayload(BaseModel):
     group: str | None = None
     manager_id: str | None = None
     assigned_user_id: str | None = None
+    assigned_user_ids: list[str] | None = None
+    confirm_manager_transfer_cleanup: bool = False
 
 
 class AdminBotThreadPayload(BaseModel):
@@ -224,6 +227,8 @@ async def get_admin_user_detail(request: Request, user_id: str):
 async def create_admin_user(request: Request, payload: AdminUserCreatePayload):
     current_user = require_admin_access(request)
     manager_id = current_user.id if current_user.role == "manager" else payload.manager_id
+    if manager_id == "__bot_empty__":
+        manager_id = None
     result = store.create_admin_user(
         username=payload.username,
         display_name=payload.username,
@@ -241,11 +246,14 @@ async def update_admin_user(request: Request, user_id: str, payload: AdminUserUp
     current_user = require_admin_access(request)
     _enforce_user_scope(request, user_id)
     manager_id = current_user.id if current_user.role == "manager" else payload.manager_id
+    payload_fields = getattr(payload, "model_fields_set", getattr(payload, "__fields_set__", set()))
+    telegram = payload.telegram if "telegram" in payload_fields else None
     store.update_admin_user(
         user_id=user_id,
         username=payload.username,
         password=payload.password,
         manager_id=manager_id,
+        telegram=telegram,
         actor_role=current_user.role,
         updated_by=current_user.username,
     )
@@ -408,26 +416,34 @@ async def update_admin_bot(request: Request, bot_id: str, payload: AdminBotUpdat
     _enforce_worker_scope(request, bot_id)
     manager_id = current_user.id if current_user.role == "manager" else payload.manager_id
     assigned_user_id = payload.assigned_user_id
-    if current_user.role == "admin" and manager_id == "__admin_workspace__":
+    assigned_user_ids = [str(value).strip() for value in (payload.assigned_user_ids or []) if str(value).strip()]
+    existing_assigned_user_ids = set()
+    if payload.assigned_user_ids is not None:
         try:
-            existing_worker = store._find_worker(bot_id)
+            existing_assigned_user_ids = {user.id for user in store._assigned_users_for_worker(bot_id)}
         except KeyError:
-            existing_worker = None
-        manager_id = str(existing_worker.manager_id or "").strip() if existing_worker else None
-        assigned_user_id = current_user.id
-    elif current_user.role == "admin" and manager_id:
+            existing_assigned_user_ids = set()
+    if current_user.role == "admin" and manager_id:
         try:
             selected_owner = store._find_user(manager_id)
         except KeyError:
             selected_owner = None
-        if selected_owner is None or selected_owner.role != "admin" or selected_owner.id != current_user.id:
+        if selected_owner is None or selected_owner.role != "manager":
             assigned_user_id = None
+    if assigned_user_id and not assigned_user_ids:
+        _enforce_user_scope(request, assigned_user_id)
+    for selected_user_id in assigned_user_ids:
+        if current_user.role == "manager" and selected_user_id in existing_assigned_user_ids:
+            continue
+        _enforce_user_scope(request, selected_user_id)
     store.update_bot(
         bot_id,
         payload.name,
-        None,
+        payload.group,
         manager_id,
         assigned_user_id=assigned_user_id,
+        assigned_user_ids=assigned_user_ids if payload.assigned_user_ids is not None else None,
+        confirm_manager_transfer_cleanup=bool(payload.confirm_manager_transfer_cleanup),
         viewer_role=current_user.role,
         viewer_id=current_user.id,
         updated_by=current_user.username,

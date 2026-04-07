@@ -713,6 +713,7 @@ async def admin_user_update(request: Request):
         target_user.username if target_user else ""
     )
     password = str(form.get("Password") or form.get("password") or "").strip() or None
+    telegram = str(form.get("TelegramId") or form.get("telegram") or "").strip()
     manager_id = _force_manager_binding(current_admin, str(form.get("UserIdManager") or form.get("manager_id") or "").strip() or None)
 
     try:
@@ -721,6 +722,7 @@ async def admin_user_update(request: Request):
             username=username,
             password=password,
             manager_id=manager_id,
+            telegram=telegram,
             actor_role=current_admin.role,
             updated_by=current_admin.username,
         )
@@ -729,6 +731,34 @@ async def admin_user_update(request: Request):
         return _redirect_with_notice("/admin/user/index", "Đã cập nhật user.", "success")
     except (KeyError, ValueError) as exc:
         return _redirect_with_notice("/admin/user/index", str(exc), "error")
+
+
+@router.post("/admin/user/telegram-link/request")
+async def admin_user_telegram_link_request(request: Request):
+    current_admin = require_admin_access(request)
+    form = await request.form()
+    user_id = str(form.get("userId") or form.get("UserId") or form.get("user_id") or "").strip()
+    try:
+        _enforce_user_scope(current_admin, user_id)
+        payload = store.create_telegram_link_request(user_id)
+        return JSONResponse({"ok": True, **payload})
+    except (HTTPException, KeyError, ValueError) as exc:
+        error_message = exc.detail if isinstance(exc, HTTPException) else str(exc)
+        status_code = exc.status_code if isinstance(exc, HTTPException) else 400
+        return JSONResponse({"ok": False, "error": error_message}, status_code=status_code)
+
+
+@router.get("/admin/user/telegram-link/status")
+async def admin_user_telegram_link_status(request: Request, userId: str, code: str):
+    current_admin = require_admin_access(request)
+    try:
+        _enforce_user_scope(current_admin, userId)
+        payload = store.get_telegram_link_request_status(userId, code)
+        return JSONResponse({"ok": True, **payload})
+    except (HTTPException, KeyError, ValueError) as exc:
+        error_message = exc.detail if isinstance(exc, HTTPException) else str(exc)
+        status_code = exc.status_code if isinstance(exc, HTTPException) else 400
+        return JSONResponse({"ok": False, "error": error_message}, status_code=status_code)
 
 
 @router.get("/admin/user/resetpassword", response_class=HTMLResponse)
@@ -996,26 +1026,38 @@ async def admin_bot_update(request: Request):
     name = str(form.get("Name") or form.get("name") or "").strip()
     group = str(form.get("Group") or form.get("group") or "").strip() or None
     raw_manager_id = str(form.get("UserIdManager") or form.get("manager_id") or "").strip()
+    if raw_manager_id == "__bot_empty__":
+        raw_manager_id = ""
     manager_id = _force_manager_binding(current_admin, raw_manager_id or None)
     assigned_user_id = str(form.get("UserId") or form.get("user_id") or "").strip() or None
+    assigned_user_ids = [
+        str(value).strip()
+        for value in list(form.getlist("UserIds")) + list(form.getlist("user_ids"))
+        if str(value).strip()
+    ]
+    confirm_manager_transfer_cleanup = str(form.get("confirm_manager_transfer_cleanup") or "").strip() == "1"
+    manage_user_assignments = str(form.get("manage_user_assignments") or "").strip() == "1"
     return_user_id = str(form.get("return_user_id") or "").strip() or None
     return_manager_ids = [str(value).strip() for value in form.getlist("return_manager_ids") if str(value).strip()]
-    if current_admin.role == "admin" and raw_manager_id == "__admin_workspace__":
+    existing_assigned_user_ids = set()
+    if manage_user_assignments:
         try:
-            existing_worker = store._find_worker(worker_id)
+            existing_assigned_user_ids = {user.id for user in store._assigned_users_for_worker(worker_id)}
         except KeyError:
-            existing_worker = None
-        manager_id = str(existing_worker.manager_id or "").strip() if existing_worker else None
-        assigned_user_id = current_admin.id
-    elif current_admin.role == "admin" and manager_id:
+            existing_assigned_user_ids = set()
+    if current_admin.role == "admin" and manager_id:
         try:
             selected_owner = store._find_user(manager_id)
         except KeyError:
             selected_owner = None
-        if selected_owner is None or selected_owner.role != "admin" or selected_owner.id != current_admin.id:
+        if selected_owner is None or selected_owner.role != "manager":
             assigned_user_id = None
-    if assigned_user_id:
+    if assigned_user_id and not assigned_user_ids:
         _enforce_user_scope(current_admin, assigned_user_id)
+    for selected_user_id in assigned_user_ids:
+        if current_admin.role == "manager" and selected_user_id in existing_assigned_user_ids:
+            continue
+        _enforce_user_scope(current_admin, selected_user_id)
 
     try:
         store.update_bot(
@@ -1024,6 +1066,8 @@ async def admin_bot_update(request: Request):
             group,
             manager_id,
             assigned_user_id=assigned_user_id,
+            assigned_user_ids=assigned_user_ids if manage_user_assignments else None,
+            confirm_manager_transfer_cleanup=confirm_manager_transfer_cleanup,
             viewer_role=current_admin.role,
             viewer_id=current_admin.id,
             updated_by=current_admin.username,

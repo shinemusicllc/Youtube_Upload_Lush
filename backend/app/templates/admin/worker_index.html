@@ -1,6 +1,144 @@
 {% extends "admin/_layout.html" %}
 
 {% block content %}
+<style>
+    .bot-user-picker {
+        position: relative;
+    }
+
+    .bot-user-picker-button {
+        width: 100%;
+        min-height: 44px;
+        border: 1px solid rgb(203 213 225);
+        border-radius: 10px;
+        background: #ffffff;
+        color: rgb(15 23 42);
+        font-size: 13px;
+        padding: 10px 12px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        transition: border-color 120ms ease, box-shadow 120ms ease;
+    }
+
+    .bot-user-picker-button:focus-visible {
+        outline: none;
+        border-color: rgba(93, 103, 223, 0.72);
+        box-shadow: 0 0 0 2px rgba(93, 103, 223, 0.1);
+    }
+
+    .bot-user-picker-button:disabled {
+        cursor: not-allowed;
+        background: rgb(248 250 252);
+        color: rgb(100 116 139);
+    }
+
+    .bot-user-picker-summary {
+        min-width: 0;
+        flex: 1 1 auto;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        text-align: left;
+    }
+
+    .bot-user-picker-summary.is-placeholder {
+        color: rgb(100 116 139);
+    }
+
+    .bot-user-picker-menu {
+        position: fixed;
+        z-index: 220;
+        border: 1px solid rgb(226 232 240);
+        border-radius: 10px;
+        background: #ffffff;
+        box-shadow: 0 18px 34px rgba(15, 23, 42, 0.12);
+        padding: 0;
+    }
+
+    .bot-user-picker-list {
+        display: flex;
+        flex-direction: column;
+        padding: 6px 0;
+    }
+
+    .bot-user-picker-option {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 14px;
+        cursor: pointer;
+        transition: background-color 120ms ease;
+    }
+
+    .bot-user-picker-option:hover {
+        background: rgb(248 250 252);
+    }
+
+    .bot-user-picker-option.is-locked {
+        cursor: not-allowed;
+    }
+
+    .bot-user-picker-option.is-locked:hover {
+        background: #ffffff;
+    }
+
+    .bot-user-picker-option[hidden] {
+        display: none;
+    }
+
+    .bot-user-picker-checkbox {
+        width: 18px;
+        height: 18px;
+        margin-top: 1px;
+        border: 1px solid rgb(203 213 225);
+        border-radius: 6px;
+        background: #ffffff;
+        color: transparent;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+        transition: border-color 120ms ease, background-color 120ms ease, color 120ms ease;
+    }
+
+    .bot-user-picker-option.is-checked .bot-user-picker-checkbox {
+        border-color: rgb(93 103 223);
+        background: rgb(93 103 223);
+        color: #ffffff;
+    }
+
+    .bot-user-picker-option.is-locked .bot-user-picker-checkbox,
+    .bot-user-picker-option.is-locked.is-checked .bot-user-picker-checkbox {
+        border-color: rgb(203 213 225);
+        background: rgb(241 245 249);
+        color: rgb(148 163 184);
+    }
+
+    .bot-user-picker-option.is-locked .bot-user-picker-label {
+        color: rgb(100 116 139);
+    }
+
+    .bot-user-picker-label {
+        color: rgb(15 23 42);
+        font-size: 13px;
+        font-weight: 600;
+        line-height: 1.35;
+        display: block;
+    }
+
+    .bot-user-picker-empty {
+        color: rgb(100 116 139);
+        font-size: 12px;
+        padding: 12px 14px;
+        border-top: 1px solid rgb(241 245 249);
+    }
+
+    .bot-user-picker-empty[hidden] {
+        display: none;
+    }
+</style>
 <section class="space-y-6">
     {% include "admin/_admin_notice.html" %}
 
@@ -144,10 +282,6 @@
                                     <i data-lucide="link-2" class="h-3.5 w-3.5"></i>
                                     DS k&#234;nh
                                 </a>
-                                <a href="/admin/bot/userofbot?botId={{ worker.id }}&botName={{ worker.raw_name }}" class="action-btn action-btn-primary whitespace-nowrap">
-                                    <i data-lucide="users" class="h-3.5 w-3.5"></i>
-                                    DS user
-                                </a>
                                 <button
                                     type="button"
                                     class="action-btn action-btn-emerald whitespace-nowrap"
@@ -157,6 +291,7 @@
                                     data-worker-group="{{ worker.group or '' }}"
                                     data-manager-id="{{ worker.manager_id }}"
                                     data-user-id="{{ worker.assigned_user_id }}"
+                                    data-user-ids="{{ worker.assigned_user_ids | join(',') }}"
                                 >
                                     <i data-lucide="pencil" class="h-3.5 w-3.5"></i>
                                     S&#7917;a
@@ -255,7 +390,7 @@
 
 <dialog id="edit-bot-dialog" class="admin-dialog">
     <div class="panel">
-        <form method="post" action="/admin/bot/update">
+        <form method="post" action="/admin/bot/update" id="edit-bot-form">
             {% for manager_id in dashboard.selected_manager_ids %}
             <input type="hidden" name="return_manager_ids" value="{{ manager_id }}">
             {% endfor %}
@@ -263,16 +398,18 @@
             <input type="hidden" name="return_user_id" value="{{ dashboard.focus_user.id }}">
             {% endif %}
 
-            <div class="border-b border-slate-200 px-5 py-4">
-                <h3 class="section-title">C&#7853;p nh&#7853;t BOT</h3>
+                <div class="border-b border-slate-200 px-5 py-4">
+                    <h3 class="section-title">C&#7853;p nh&#7853;t BOT</h3>
                 {% if dashboard.manager_binding_locked %}
                 <p class="section-note">S&#7917;a t&#234;n BOT, gi&#7919; manager c&#7889; &#273;&#7883;nh v&#224; g&#225;n user d&#249;ng BOT ngay t&#7841;i Danh s&#225;ch BOT. Manager ch&#7881; thao t&#225;c trong ph&#7841;m vi user do ch&#237;nh m&#236;nh qu&#7843;n l&#253;.</p>
                 {% else %}
-                <p class="section-note">S&#7917;a t&#234;n BOT v&#224; ch&#7885;n manager. N&#7871;u ch&#7885;n d&#242;ng <span class="font-medium text-slate-700">Admin workspace</span> th&#236; BOT s&#7869; &#273;&#432;&#7907;c c&#7845;p th&#234;m cho ch&#237;nh admin &#273;&#7875; d&#249;ng trong /app, nh&#432;ng kh&#244;ng &#273;&#7893;i manager hi&#7879;n t&#7841;i c&#7911;a BOT.</p>
+                <p class="section-note">S&#7917;a t&#234;n BOT, ch&#7885;n manager v&#224; g&#225;n user d&#249;ng BOT. N&#7871;u BOT hi&#7879;n &#273;ang &#273;&#432;&#7907;c admin ho&#7863;c manager d&#249;ng th&#236; t&#224;i kho&#7843;n &#273;&#243; c&#361;ng s&#7869; xu&#7845;t hi&#7879;n trong danh s&#225;ch Users &#273;&#7875; b&#7841;n gi&#7919; ho&#7863;c g&#7905;.</p>
                 {% endif %}
             </div>
             <div class="space-y-4 px-5 py-5">
                 <input type="hidden" name="Id" id="edit-bot-id">
+                <input type="hidden" name="manage_user_assignments" value="1">
+                <input type="hidden" name="confirm_manager_transfer_cleanup" id="edit-bot-manager-transfer-cleanup" value="0">
                 <div>
                     <label class="field-label" for="edit-bot-name">T&#234;n BOT</label>
                     <input class="toolbar-input" id="edit-bot-name" name="Name" required>
@@ -288,23 +425,6 @@
                     <input type="hidden" name="UserIdManager" value="{{ dashboard.bot_manager_options[0].id }}">
                     {% endif %}
                 </div>
-                <div>
-                    <label class="field-label" for="edit-bot-user-id">Users</label>
-                    <select
-                        class="toolbar-select"
-                        id="edit-bot-user-id"
-                        name="UserId"
-                        data-admin-select-search="true"
-                        data-admin-select-search-placeholder="G&#245; &#273;&#7875; t&#236;m user..."
-                    >
-                        <option value="" hidden>-- Ch&#7885;n user --</option>
-                        {% for user in dashboard.bot_user_options %}
-                        <option value="{{ user.id }}">
-                            {{ user.username }}{% if user.role == 'manager' %} (Ch&#237;nh b&#7841;n){% elif user.role == 'admin' %} (Admin){% endif %}
-                        </option>
-                        {% endfor %}
-                    </select>
-                </div>
                 {% else %}
                 <div>
                     <label class="field-label" for="edit-bot-manager-id">Managers</label>
@@ -314,17 +434,64 @@
                         name="UserIdManager"
                         data-admin-select-search="true"
                         data-admin-select-search-placeholder="G&#245; &#273;&#7875; t&#236;m manager..."
-                        required
                     >
                         <option value="" hidden>-- Ch&#7885;n Manager --</option>
+                        <option value="__bot_empty__">BOT tr&#7889;ng</option>
                         {% for manager in dashboard.bot_manager_options %}
-                        <option value="{% if manager.role == 'admin' %}__admin_workspace__{% else %}{{ manager.id }}{% endif %}">
-                            {{ manager.username }}{% if manager.role == 'admin' %} (Admin workspace){% endif %}
+                        <option value="{{ manager.id }}">
+                            {{ manager.username }}
                         </option>
                         {% endfor %}
                     </select>
                 </div>
                 {% endif %}
+                <div>
+                    <label class="field-label" for="edit-bot-user-picker-button">Users</label>
+                    <div
+                        class="bot-user-picker"
+                        data-bot-user-picker
+                        data-viewer-role="{% if dashboard.manager_binding_locked %}manager{% else %}admin{% endif %}"
+                        data-default-placeholder="-- Ch&#7885;n user --"
+                    >
+                        <button type="button" id="edit-bot-user-picker-button" class="bot-user-picker-button" data-bot-user-picker-toggle aria-expanded="false">
+                            <span class="bot-user-picker-summary is-placeholder" data-bot-user-picker-summary>-- Ch&#7885;n user --</span>
+                            <i data-lucide="chevron-down" class="h-4 w-4 text-slate-400"></i>
+                        </button>
+                        <div class="bot-user-picker-menu" data-bot-user-picker-menu hidden>
+                            <div class="admin-select-search-shell">
+                                <i data-lucide="search" class="h-4 w-4 text-slate-400"></i>
+                                <input type="text" class="admin-select-search-input" autocomplete="off" placeholder="G&#245; &#273;&#7875; t&#236;m user..." data-bot-user-picker-search>
+                            </div>
+                            <div class="bot-user-picker-list" data-bot-user-picker-list>
+                                {% for user in dashboard.bot_user_options %}
+                                {% set user_label = user.username %}
+                                {% if user.role in ['manager', 'admin'] %}
+                                {% set user_label = user.username ~ ' (' ~ user.role ~ ')' %}
+                                {% endif %}
+                                <label
+                                    class="bot-user-picker-option"
+                                    data-bot-user-option
+                                    data-user-id="{{ user.id }}"
+                                    data-user-label="{{ user_label }}"
+                                    data-user-manager-id="{{ user.manager_id or '' }}"
+                                    data-user-role="{{ user.role }}"
+                                    data-user-scope-locked="{% if user.scope_locked %}1{% else %}0{% endif %}"
+                                    data-user-self-assignable="{% if user.self_assignable %}1{% else %}0{% endif %}"
+                                    data-user-search-text="{{ user_label }} {{ user.display_name or '' }} {{ user.role_label or '' }} {{ user.manager_name or '' }} {{ user.assigned_worker_names_text or '' }}"
+                                >
+                                    <input type="checkbox" class="sr-only" name="UserIds" value="{{ user.id }}" data-bot-user-input form="edit-bot-form">
+                                    <span class="bot-user-picker-checkbox">
+                                        <i data-lucide="check" class="h-3.5 w-3.5"></i>
+                                    </span>
+                                    <span class="bot-user-picker-label">{{ user_label }}</span>
+                                </label>
+                                {% endfor %}
+                            </div>
+                            <div class="bot-user-picker-empty" data-bot-user-picker-empty hidden>Kh&#244;ng t&#236;m th&#7845;y user ph&#249; h&#7907;p.</div>
+                        </div>
+                    </div>
+                    <p class="mt-1 text-[11px] text-slate-500" data-bot-user-picker-help>Ch&#7885;n user cho BOT; n&#7871;u BOT &#273;ang &#273;&#432;&#7907;c admin ho&#7863;c manager d&#249;ng th&#236; t&#224;i kho&#7843;n &#273;&#243; c&#361;ng s&#7869; hi&#7879;n t&#7841;i &#273;&#226;y.</p>
+                </div>
             </div>
             <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
                 <button type="button" class="action-btn action-btn-slate" data-dialog-close>&#272;&#243;ng</button>
@@ -389,10 +556,21 @@
 {% block page_scripts %}
 <script>
   document.addEventListener('DOMContentLoaded', function () {
+    const EMPTY_MANAGER_OPTION_VALUE = '__bot_empty__';
     const table = document.querySelector('table[data-admin-list-table="worker-index"]');
     const tbody = table ? table.querySelector('[data-worker-live-body]') : null;
     const editManagerSelect = document.getElementById('edit-bot-manager-id');
-    const editUserSelect = document.getElementById('edit-bot-user-id');
+    const editBotDialog = document.getElementById('edit-bot-dialog');
+    const editBotForm = document.querySelector('#edit-bot-dialog form');
+    const editBotManagerTransferCleanupInput = document.getElementById('edit-bot-manager-transfer-cleanup');
+    const editBotUserPicker = document.querySelector('[data-bot-user-picker]');
+    const editBotUserPickerToggle = editBotUserPicker ? editBotUserPicker.querySelector('[data-bot-user-picker-toggle]') : null;
+    const editBotUserPickerSummary = editBotUserPicker ? editBotUserPicker.querySelector('[data-bot-user-picker-summary]') : null;
+    const editBotUserPickerMenu = editBotUserPicker ? editBotUserPicker.querySelector('[data-bot-user-picker-menu]') : null;
+    const editBotUserPickerSearch = editBotUserPicker ? editBotUserPicker.querySelector('[data-bot-user-picker-search]') : null;
+    const editBotUserPickerEmpty = editBotUserPicker ? editBotUserPicker.querySelector('[data-bot-user-picker-empty]') : null;
+    const editBotUserPickerOptions = editBotUserPicker ? Array.from(editBotUserPicker.querySelectorAll('[data-bot-user-option]')) : [];
+    const editBotUserPickerHelp = document.querySelector('[data-bot-user-picker-help]');
     const createBotDialog = document.getElementById('create-bot-dialog');
     const createBotForm = document.querySelector('[data-create-bot-form]');
     const createBotSubmit = document.querySelector('[data-create-bot-submit]');
@@ -404,6 +582,7 @@
     const deleteBotSshUserInput = document.getElementById('delete-bot-ssh-user');
     const deleteBotPasswordInput = document.getElementById('delete-bot-password');
     const pollMs = 3000;
+    let initialEditBotManagerId = '';
     let pollingController = null;
     let pollingTimer = null;
     let lastPayloadSignature = '';
@@ -438,6 +617,13 @@
     function closeDialog(dialog) {
       if (dialog && typeof dialog.close === 'function' && dialog.open) {
         dialog.close();
+      }
+    }
+
+    function resetEditBotDialogState() {
+      initialEditBotManagerId = '';
+      if (editBotManagerTransferCleanupInput) {
+        editBotManagerTransferCleanupInput.value = '0';
       }
     }
 
@@ -598,16 +784,13 @@
       }
       const workerIdParam = encodeURIComponent(String(worker.id || ''));
       const workerNameParam = encodeURIComponent(String(worker.raw_name || worker.name || ''));
+      const assignedUserIds = escapeHtml(Array.isArray(worker.assigned_user_ids) ? worker.assigned_user_ids.join(',') : '');
       return [
         '<a href="/admin/channel/bot?botId=', workerIdParam, '&botName=', workerNameParam, '" class="action-btn action-btn-sky whitespace-nowrap">',
         '  <i data-lucide="link-2" class="h-3.5 w-3.5"></i>',
         '  DS k&#234;nh',
         '</a>',
-        '<a href="/admin/bot/userofbot?botId=', workerIdParam, '&botName=', workerNameParam, '" class="action-btn action-btn-primary whitespace-nowrap">',
-        '  <i data-lucide="users" class="h-3.5 w-3.5"></i>',
-        '  DS user',
-        '</a>',
-        '<button type="button" class="action-btn action-btn-emerald whitespace-nowrap" data-dialog-open="edit-bot-dialog" data-worker-id="', workerId, '" data-worker-name="', rawWorkerName, '" data-worker-group="', workerGroup, '" data-manager-id="', managerId, '" data-user-id="', assignedUserId, '">',
+        '<button type="button" class="action-btn action-btn-emerald whitespace-nowrap" data-dialog-open="edit-bot-dialog" data-worker-id="', workerId, '" data-worker-name="', rawWorkerName, '" data-worker-group="', workerGroup, '" data-manager-id="', managerId, '" data-user-id="', assignedUserId, '" data-user-ids="', assignedUserIds, '">',
         '  <i data-lucide="pencil" class="h-3.5 w-3.5"></i>',
         '  S&#7917;a',
         '</button>',
@@ -688,6 +871,178 @@
       ].join('');
     }
 
+    function parseAssignedUserIds(rawValue) {
+      return String(rawValue || '')
+        .split(',')
+        .map(function (value) {
+          return String(value || '').trim();
+        })
+        .filter(Boolean);
+    }
+
+    function currentBotUserManagerId() {
+      if (editManagerSelect && editManagerSelect.tagName === 'SELECT') {
+        const managerValue = String(editManagerSelect.value || '').trim();
+        return managerValue === EMPTY_MANAGER_OPTION_VALUE ? '' : managerValue;
+      }
+      if (!editBotForm) {
+        return '';
+      }
+      const hiddenManagerInput = editBotForm.querySelector('input[name="UserIdManager"]');
+      return hiddenManagerInput ? String(hiddenManagerInput.value || '').trim() : '';
+    }
+
+    function setBotUserOptionChecked(option, checked) {
+      const input = option ? option.querySelector('[data-bot-user-input]') : null;
+      if (!input) {
+        return;
+      }
+      input.checked = !!checked;
+      option.classList.toggle('is-checked', !!checked);
+    }
+
+    function syncBotUserPickerSummary() {
+      if (!editBotUserPicker || !editBotUserPickerSummary || !editBotUserPickerToggle) {
+        return;
+      }
+      const managerId = currentBotUserManagerId();
+      editBotUserPickerToggle.disabled = false;
+      const checkedOptions = editBotUserPickerOptions.filter(function (option) {
+        const input = option.querySelector('[data-bot-user-input]');
+        return !!input && input.checked;
+      });
+      const labels = checkedOptions.map(function (option) {
+        return String(option.dataset.userLabel || '').trim();
+      }).filter(Boolean);
+      if (!labels.length) {
+        editBotUserPickerSummary.textContent = editBotUserPicker.dataset.defaultPlaceholder || '-- Chọn user --';
+        editBotUserPickerSummary.classList.add('is-placeholder');
+      } else if (labels.length === 1) {
+        editBotUserPickerSummary.textContent = labels[0];
+        editBotUserPickerSummary.classList.remove('is-placeholder');
+      } else {
+        const preview = labels.slice(0, 2).join(', ');
+        const suffix = labels.length > 2 ? ' +' + String(labels.length - 2) : '';
+        editBotUserPickerSummary.textContent = String(labels.length) + ' user: ' + preview + suffix;
+        editBotUserPickerSummary.classList.remove('is-placeholder');
+      }
+      if (editBotUserPickerHelp) {
+        editBotUserPickerHelp.textContent = 'Chọn user cho BOT; nếu BOT đang được admin hoặc manager dùng thì tài khoản đó cũng sẽ hiện tại đây.';
+      }
+    }
+
+    function syncBotUserPickerOptions(options) {
+      if (!editBotUserPicker) {
+        return;
+      }
+      const config = options || {};
+      const pruneInvalid = !!config.pruneInvalid;
+      const resetSearch = !!config.resetSearch;
+      const managerId = currentBotUserManagerId();
+      const viewerRole = String(editBotUserPicker.dataset.viewerRole || '').trim();
+      const filterText = editBotUserPickerSearch ? String(editBotUserPickerSearch.value || '').trim().toLowerCase() : '';
+      let visibleCount = 0;
+
+      if (resetSearch && editBotUserPickerSearch) {
+        editBotUserPickerSearch.value = '';
+      }
+
+      editBotUserPickerOptions.forEach(function (option) {
+        const input = option.querySelector('[data-bot-user-input]');
+        const optionManagerId = String(option.dataset.userManagerId || '').trim();
+        const scopeLocked = String(option.dataset.userScopeLocked || '').trim() === '1';
+        const selfAssignable = String(option.dataset.userSelfAssignable || '').trim() === '1';
+        const searchText = String(option.dataset.userSearchText || option.dataset.userLabel || '').toLowerCase();
+        const inManagerScope = selfAssignable
+          ? true
+          : scopeLocked
+          ? !!(input && input.checked)
+          : (!managerId ? false : optionManagerId === managerId);
+        const matchesSearch = !filterText || searchText.indexOf(filterText) !== -1;
+        const visible = inManagerScope && matchesSearch;
+        option.hidden = !visible;
+        option.classList.toggle('is-locked', !selfAssignable && scopeLocked && viewerRole === 'manager' && !!(input && input.checked));
+        if (input) {
+          input.disabled = !inManagerScope;
+          if (pruneInvalid && !inManagerScope && input.checked) {
+            setBotUserOptionChecked(option, false);
+          }
+        }
+        if (visible) {
+          visibleCount += 1;
+        }
+      });
+
+      if (editBotUserPickerEmpty) {
+        editBotUserPickerEmpty.hidden = visibleCount > 0;
+      }
+      syncBotUserPickerSummary();
+    }
+
+    function closeBotUserPicker() {
+      if (!editBotUserPicker || !editBotUserPickerMenu || !editBotUserPickerToggle) {
+        return;
+      }
+      editBotUserPickerMenu.hidden = true;
+      editBotUserPickerToggle.setAttribute('aria-expanded', 'false');
+    }
+
+    function updateBotUserPickerMenuPosition() {
+      if (!editBotUserPickerMenu || !editBotUserPickerToggle || editBotUserPickerMenu.hidden) {
+        return;
+      }
+      const viewportPadding = 12;
+      const menuGap = 6;
+      const rect = editBotUserPickerToggle.getBoundingClientRect();
+      const menuWidth = Math.max(rect.width, 0);
+      const menuHeight = editBotUserPickerMenu.offsetHeight;
+      const maxLeft = Math.max(viewportPadding, window.innerWidth - viewportPadding - menuWidth);
+      let left = Math.min(Math.max(viewportPadding, rect.left), maxLeft);
+      let top = rect.bottom + menuGap;
+      if (top + menuHeight > window.innerHeight - viewportPadding) {
+        const topAbove = rect.top - menuGap - menuHeight;
+        if (topAbove >= viewportPadding) {
+          top = topAbove;
+        } else {
+          top = Math.max(viewportPadding, window.innerHeight - viewportPadding - menuHeight);
+        }
+      }
+      editBotUserPickerMenu.style.width = menuWidth + 'px';
+      editBotUserPickerMenu.style.left = left + 'px';
+      editBotUserPickerMenu.style.top = top + 'px';
+    }
+
+    function openBotUserPicker() {
+      if (!editBotUserPicker || !editBotUserPickerMenu || !editBotUserPickerToggle || editBotUserPickerToggle.disabled) {
+        return;
+      }
+      const floatingHost = editBotDialog || document.body;
+      if (editBotUserPickerMenu.parentNode !== floatingHost) {
+        floatingHost.appendChild(editBotUserPickerMenu);
+      }
+      editBotUserPickerMenu.hidden = false;
+      editBotUserPickerToggle.setAttribute('aria-expanded', 'true');
+      updateBotUserPickerMenuPosition();
+      if (editBotUserPickerSearch) {
+        window.setTimeout(function () {
+          editBotUserPickerSearch.focus();
+          editBotUserPickerSearch.select();
+        }, 20);
+      }
+    }
+
+    function setBotUserSelections(userIds) {
+      const selectedIds = new Set(userIds || []);
+      editBotUserPickerOptions.forEach(function (option) {
+        const input = option.querySelector('[data-bot-user-input]');
+        if (!input) {
+          return;
+        }
+        setBotUserOptionChecked(option, selectedIds.has(String(input.value || '').trim()));
+      });
+      syncBotUserPickerSummary();
+    }
+
     function fillDialogFields(button) {
       if (!button) {
         return;
@@ -697,13 +1052,18 @@
         document.getElementById('edit-bot-id').value = button.dataset.workerId || '';
         document.getElementById('edit-bot-name').value = button.dataset.workerName || '';
         document.getElementById('edit-bot-group').value = button.dataset.workerGroup || '';
+        initialEditBotManagerId = String(button.dataset.managerId || '').trim();
+        if (editBotManagerTransferCleanupInput) {
+          editBotManagerTransferCleanupInput.value = '0';
+        }
         if (editManagerSelect && editManagerSelect.tagName === 'SELECT') {
-          editManagerSelect.value = button.dataset.managerId || '';
+          editManagerSelect.value = initialEditBotManagerId || EMPTY_MANAGER_OPTION_VALUE;
           editManagerSelect.dispatchEvent(new Event('change', { bubbles: true }));
         }
-        if (editUserSelect) {
-          editUserSelect.value = button.dataset.userId || '';
-          editUserSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        if (editBotUserPicker) {
+          setBotUserSelections(parseAssignedUserIds(button.dataset.userIds || button.dataset.userId || ''));
+          syncBotUserPickerOptions({ pruneInvalid: false, resetSearch: true });
+          closeBotUserPicker();
         }
         return;
       }
@@ -730,7 +1090,113 @@
       if (dialogButton) {
         fillDialogFields(dialogButton);
       }
+
+      if (
+        (editBotUserPicker && editBotUserPicker.contains(event.target))
+        || (editBotUserPickerMenu && editBotUserPickerMenu.contains(event.target))
+      ) {
+        return;
+      }
+      closeBotUserPicker();
     });
+
+    if (editBotUserPickerToggle) {
+      editBotUserPickerToggle.addEventListener('click', function () {
+        if (editBotUserPickerMenu && !editBotUserPickerMenu.hidden) {
+          closeBotUserPicker();
+        } else {
+          openBotUserPicker();
+        }
+      });
+    }
+
+    if (editBotUserPickerSearch) {
+      editBotUserPickerSearch.addEventListener('input', function () {
+        syncBotUserPickerOptions({ pruneInvalid: false, resetSearch: false });
+      });
+    }
+
+    editBotUserPickerOptions.forEach(function (option) {
+      const input = option.querySelector('[data-bot-user-input]');
+      if (!input) {
+        return;
+      }
+      option.addEventListener('click', function (event) {
+        if (input.disabled || option.classList.contains('is-locked')) {
+          event.preventDefault();
+          return;
+        }
+        if (event.target !== input) {
+          event.preventDefault();
+          setBotUserOptionChecked(option, !input.checked);
+          syncBotUserPickerSummary();
+        }
+      });
+      input.addEventListener('change', function () {
+        if (option.classList.contains('is-locked')) {
+          input.checked = true;
+          return;
+        }
+        setBotUserOptionChecked(option, input.checked);
+        syncBotUserPickerSummary();
+      });
+    });
+
+    if (editManagerSelect) {
+      editManagerSelect.addEventListener('change', function () {
+        if (editBotManagerTransferCleanupInput) {
+          editBotManagerTransferCleanupInput.value = '0';
+        }
+        syncBotUserPickerOptions({ pruneInvalid: true, resetSearch: true });
+      });
+    }
+
+    if (editBotForm) {
+      editBotForm.addEventListener('submit', function (event) {
+        if (!editManagerSelect || !editBotManagerTransferCleanupInput) {
+          return;
+        }
+        const selectedManagerValue = String(editManagerSelect.value || '').trim();
+        const nextManagerId = selectedManagerValue === EMPTY_MANAGER_OPTION_VALUE ? '' : selectedManagerValue;
+        const managerChanged = initialEditBotManagerId !== nextManagerId;
+        if (!managerChanged) {
+          editBotManagerTransferCleanupInput.value = '0';
+          return;
+        }
+        const confirmMessage = nextManagerId
+          ? 'Chuyển BOT sang manager khác sẽ xóa sạch user, kênh, profile Chrome và job đang gắn với manager hiện tại trên VPS này.\n\nBạn có chắc muốn tiếp tục không?'
+          : 'Chọn BOT trống sẽ gỡ manager khỏi BOT này và xóa sạch user, kênh, profile Chrome và job đang gắn với manager hiện tại trên VPS này.\n\nBạn có chắc muốn tiếp tục không?';
+        const confirmed = window.confirm(confirmMessage);
+        if (!confirmed) {
+          event.preventDefault();
+          editBotManagerTransferCleanupInput.value = '0';
+          return;
+        }
+        editBotManagerTransferCleanupInput.value = '1';
+      });
+    }
+
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') {
+        closeBotUserPicker();
+      }
+    });
+
+    if (editBotDialog) {
+      editBotDialog.addEventListener('close', function () {
+        closeBotUserPicker();
+        resetEditBotDialogState();
+      });
+      editBotDialog.addEventListener('cancel', function () {
+        closeBotUserPicker();
+        resetEditBotDialogState();
+      });
+    }
+
+    window.addEventListener('resize', updateBotUserPickerMenuPosition);
+    window.addEventListener('scroll', updateBotUserPickerMenuPosition, true);
+
+    syncBotUserPickerOptions({ pruneInvalid: false, resetSearch: true });
 
     if (!table || !tbody) {
       return;

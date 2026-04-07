@@ -1,0 +1,218 @@
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const dialog = document.getElementById('telegram-link-dialog');
+    const statusBox = document.getElementById('telegram-link-status');
+    const linkValue = document.getElementById('telegram-link-url');
+    const botLabel = document.getElementById('telegram-link-bot-label');
+    const copyButton = document.getElementById('telegram-link-copy');
+    const openBotButton = document.getElementById('telegram-link-open-bot');
+    if (!dialog || !statusBox || !linkValue || !botLabel || !copyButton || !openBotButton) {
+      return;
+    }
+
+    let pollTimer = null;
+    let activeLinkRequest = null;
+
+    function stopPolling() {
+      if (pollTimer) {
+        window.clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    }
+
+    function setStatus(kind, message) {
+      statusBox.textContent = message;
+      statusBox.className = 'rounded-xl px-4 py-3 text-[12px] font-medium';
+      if (kind === 'success') {
+        statusBox.classList.add('border', 'border-emerald-200', 'bg-emerald-50', 'text-emerald-800');
+        return;
+      }
+      if (kind === 'error') {
+        statusBox.classList.add('border', 'border-rose-200', 'bg-rose-50', 'text-rose-800');
+        return;
+      }
+      if (kind === 'loading') {
+        statusBox.classList.add('border', 'border-sky-200', 'bg-sky-50', 'text-sky-800');
+        return;
+      }
+      statusBox.classList.add('border', 'border-amber-200', 'bg-amber-50', 'text-amber-800');
+    }
+
+    function setActionDisabled(element, disabled) {
+      if (!element) {
+        return;
+      }
+      if (disabled) {
+        element.setAttribute('aria-disabled', 'true');
+        element.classList.add('pointer-events-none', 'opacity-60');
+      } else {
+        element.removeAttribute('aria-disabled');
+        element.classList.remove('pointer-events-none', 'opacity-60');
+      }
+    }
+
+    function setLinkValue(url) {
+      const safeUrl = String(url || '').trim();
+      linkValue.textContent = safeUrl || '-';
+      linkValue.href = safeUrl || '#';
+      setActionDisabled(copyButton, !safeUrl);
+      setActionDisabled(openBotButton, !safeUrl);
+    }
+
+    async function copyText(text) {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        await navigator.clipboard.writeText(text);
+        return;
+      }
+      const helper = document.createElement('textarea');
+      helper.value = text;
+      helper.setAttribute('readonly', 'readonly');
+      helper.style.position = 'fixed';
+      helper.style.left = '-9999px';
+      document.body.appendChild(helper);
+      helper.select();
+      document.execCommand('copy');
+      helper.remove();
+    }
+
+    function resetDialogState() {
+      stopPolling();
+      activeLinkRequest = null;
+      setLinkValue('');
+      botLabel.textContent = '-';
+      setStatus('pending', 'Đang chờ tạo link lấy Telegram ID...');
+    }
+
+    async function readJson(response) {
+      const payload = await response.json().catch(function () {
+        return { ok: false, error: 'Phản hồi Telegram không hợp lệ.' };
+      });
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload.error || 'Không thể xử lý yêu cầu Telegram.');
+      }
+      return payload;
+    }
+
+    async function pollTelegramStatus() {
+      if (!activeLinkRequest) {
+        stopPolling();
+        return;
+      }
+
+      const params = new URLSearchParams({
+        userId: activeLinkRequest.userId,
+        code: activeLinkRequest.code,
+      });
+
+      try {
+        const payload = await readJson(await fetch('/admin/user/telegram-link/status?' + params.toString(), {
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        }));
+
+        if (payload.status === 'linked') {
+          const targetInput = document.getElementById(activeLinkRequest.targetInputId);
+          if (targetInput) {
+            targetInput.value = payload.chat_id || '';
+            targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+            targetInput.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+          const identityParts = [];
+          if (payload.telegram_name) identityParts.push(payload.telegram_name);
+          if (payload.telegram_username) identityParts.push('@' + payload.telegram_username);
+          const identityLabel = identityParts.length ? ' từ ' + identityParts.join(' • ') : '';
+          setStatus('success', 'Đã lấy Telegram ID ' + payload.chat_id + identityLabel + '. Đóng popup này kiểm tra Telegram ID rồi bấm Lưu thay đổi.');
+          stopPolling();
+          return;
+        }
+
+        const secondsLeft = Number(payload.expires_in_seconds || 0);
+        const countdownLabel = secondsLeft > 0 ? ' Link còn hiệu lực khoảng ' + secondsLeft + ' giây.' : '';
+        setStatus('pending', 'Đã tạo link lấy Telegram ID. Admin có thể bấm Mở bot Telegram hoặc copy link gửi cho người cần lấy ID.' + countdownLabel);
+      } catch (error) {
+        stopPolling();
+        setStatus('error', error instanceof Error ? error.message : 'Không thể đọc trạng thái Telegram.');
+      }
+    }
+
+    async function startTelegramLink(trigger) {
+      const userIdSource = document.getElementById(trigger.dataset.userIdSource || '');
+      const targetInputId = trigger.dataset.targetInput || '';
+      const targetInput = document.getElementById(targetInputId);
+      const userId = userIdSource ? String(userIdSource.value || '').trim() : '';
+
+      if (!userId) {
+        setStatus('error', 'Không tìm thấy user để lấy Telegram ID.');
+        dialog.showModal();
+        return;
+      }
+      if (!targetInput) {
+        setStatus('error', 'Không tìm thấy ô Telegram ID để điền dữ liệu.');
+        dialog.showModal();
+        return;
+      }
+
+      resetDialogState();
+      dialog.showModal();
+      setStatus('loading', 'Đang tạo link lấy Telegram ID...');
+
+      const originalDisabled = trigger.disabled;
+      trigger.disabled = true;
+
+      try {
+        const formData = new FormData();
+        formData.append('userId', userId);
+        const payload = await readJson(await fetch('/admin/user/telegram-link/request', {
+          method: 'POST',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+          body: formData,
+        }));
+
+        activeLinkRequest = {
+          userId: userId,
+          code: payload.code,
+          targetInputId: targetInputId,
+        };
+        setLinkValue(payload.deep_link_url || '');
+        botLabel.textContent = payload.bot_username ? 'Bot Telegram: @' + payload.bot_username : (payload.bot_display_name || '-');
+        setStatus('pending', 'Đã tạo link lấy Telegram ID. Admin có thể mở bot trực tiếp hoặc copy link này để gửi cho người cần lấy ID.');
+        pollTimer = window.setInterval(pollTelegramStatus, 2000);
+        void pollTelegramStatus();
+      } catch (error) {
+        setStatus('error', error instanceof Error ? error.message : 'Không thể tạo link lấy Telegram ID.');
+      } finally {
+        trigger.disabled = originalDisabled;
+      }
+    }
+
+    copyButton.addEventListener('click', async function () {
+      const url = String(linkValue.href || '').trim();
+      if (!url || url === '#') {
+        return;
+      }
+      try {
+        await copyText(url);
+        setStatus('success', 'Đã copy link lấy Telegram ID. Hãy gửi link này cho người cần lấy ID và bảo họ bấm Start.');
+      } catch (error) {
+        setStatus('error', error instanceof Error ? error.message : 'Không thể copy link lấy Telegram ID.');
+      }
+    });
+
+    dialog.addEventListener('close', function () {
+      stopPolling();
+    });
+
+    document.querySelectorAll('[data-telegram-link-trigger]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        void startTelegramLink(button);
+      });
+    });
+
+    document.querySelectorAll('[data-telegram-link-close]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        dialog.close();
+      });
+    });
+
+    resetDialogState();
+  });
+</script>
