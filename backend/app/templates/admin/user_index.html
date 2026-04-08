@@ -249,7 +249,7 @@
           : 'Username của tài khoản này chỉ admin mới được phép đổi.';
         editManagerWrap.style.display = role === 'user' ? 'block' : 'none';
         if (managerSelect && managerSelect.tagName === 'SELECT') {
-          managerSelect.disabled = managerLocked || role !== 'user';
+          managerSelect.disabled = managerLocked;
         }
       });
     });
