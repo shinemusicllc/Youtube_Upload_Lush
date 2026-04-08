@@ -707,10 +707,14 @@ class AppStore:
             if not normalized_worker_id or not isinstance(raw_profile, dict):
                 continue
             profile = dict(raw_profile)
+            normalized_ssh_private_key = str(profile.get("ssh_private_key") or "").strip() or None
             restored[normalized_worker_id] = {
                 "worker_id": normalized_worker_id,
                 "vps_ip": str(profile.get("vps_ip") or "").strip(),
                 "ssh_user": str(profile.get("ssh_user") or "").strip() or "root",
+                "auth_mode": str(profile.get("auth_mode") or "").strip().lower() or ("ssh_key" if normalized_ssh_private_key else "password"),
+                "password": str(profile.get("password") or "").strip() or None,
+                "ssh_private_key": normalized_ssh_private_key,
                 "updated_at": self._parse_datetime(profile.get("updated_at")),
             }
         return restored

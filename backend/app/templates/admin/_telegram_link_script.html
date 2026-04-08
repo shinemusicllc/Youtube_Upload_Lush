@@ -55,6 +55,7 @@
       const safeUrl = String(url || '').trim();
       linkValue.textContent = safeUrl || '-';
       linkValue.href = safeUrl || '#';
+      openBotButton.href = safeUrl || '#';
       setActionDisabled(copyButton, !safeUrl);
       setActionDisabled(openBotButton, !safeUrl);
     }
@@ -194,6 +195,13 @@
         setStatus('success', 'Đã copy link lấy Telegram ID. Hãy gửi link này cho người cần lấy ID và bảo họ bấm Start.');
       } catch (error) {
         setStatus('error', error instanceof Error ? error.message : 'Không thể copy link lấy Telegram ID.');
+      }
+    });
+
+    openBotButton.addEventListener('click', function (event) {
+      const url = String(openBotButton.href || '').trim();
+      if (!url || url === '#') {
+        event.preventDefault();
       }
     });
 
