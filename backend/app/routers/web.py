@@ -114,8 +114,6 @@ def _resolve_login_redirect(role: str, requested_next: str | None) -> str:
         if candidate.startswith("/app") or candidate.startswith("/auth/google"):
             return candidate
         return "/app"
-    if candidate.startswith("/admin"):
-        return candidate
     return "/admin/user/index"
 
 
@@ -1093,10 +1091,10 @@ async def admin_bot_create(request: Request):
     form = await request.form()
     vps_ip = str(form.get("vps_ip") or "").strip()
     ssh_user = str(form.get("ssh_user") or "").strip() or "root"
+    return_user_id = str(form.get("return_user_id") or "").strip() or None
     auth_mode = str(form.get("auth_mode") or "password").strip().lower() or "password"
     password = str(form.get("password") or "").strip()
     ssh_private_key = str(form.get("ssh_private_key") or "").replace("\r\n", "\n").strip()
-    return_user_id = str(form.get("return_user_id") or "").strip() or None
     return_manager_ids = [str(value).strip() for value in form.getlist("return_manager_ids") if str(value).strip()]
     manager_name = current_admin.username if current_admin.role == "manager" else "system"
     manager_id = current_admin.id if current_admin.role == "manager" else None
@@ -1117,8 +1115,13 @@ async def admin_bot_create(request: Request):
             store=store,
             request=bootstrap_request,
             ssh_user=ssh_user,
+            auth_mode=auth_mode,
+            password=password if auth_mode != "ssh_key" else None,
+            ssh_private_key=ssh_private_key if auth_mode == "ssh_key" else None,
             manager_id=manager_id,
             manager_name=manager_name,
+            requested_by=current_admin.username,
+            requested_role=current_admin.role,
         )
         return _redirect_bot_page_with_scope(
             (
@@ -1144,37 +1147,56 @@ async def admin_bot_delete(request: Request):
     form = await request.form()
     worker_id = str(form.get("Id") or form.get("worker_id") or "").strip()
     _enforce_worker_scope(current_admin, worker_id)
-    ssh_user = str(form.get("ssh_user") or "").strip() or "root"
-    auth_mode = str(form.get("auth_mode") or "password").strip().lower() or "password"
-    password = str(form.get("password") or "").strip()
-    ssh_private_key = str(form.get("ssh_private_key") or "").replace("\r\n", "\n").strip()
     return_user_id = str(form.get("return_user_id") or "").strip() or None
     return_manager_ids = [str(value).strip() for value in form.getlist("return_manager_ids") if str(value).strip()]
     try:
-        connection_profile = store.get_worker_connection_profile(worker_id)
-        decommission_request = build_worker_decommission_request(
-            vps_ip=connection_profile["vps_ip"],
-            ssh_user=ssh_user or connection_profile["ssh_user"],
-            password=password if auth_mode != "ssh_key" else None,
-            ssh_private_key=ssh_private_key if auth_mode == "ssh_key" else None,
+        worker = next((item for item in store.workers if item.id == worker_id), None)
+        if worker is None:
+            raise KeyError(worker_id)
+        connection_profile: dict[str, object] | None = None
+        try:
+            connection_profile = store.get_worker_connection_profile(worker_id)
+        except (KeyError, ValueError):
+            connection_profile = None
+        has_saved_credential = bool(
+            connection_profile
+            and (
+                str(connection_profile.get("password") or "").strip()
+                or str(connection_profile.get("ssh_private_key") or "").strip()
+            )
         )
-        task = start_worker_decommission_operation(
-            store=store,
-            worker_id=worker_id,
-            request=decommission_request,
-            ssh_user=ssh_user or connection_profile["ssh_user"],
-        )
-        return _redirect_bot_page_with_scope(
-            (
-                f"Da bat dau go BOT {worker_id} khoi VPS {task['vps_ip']}. "
+        if connection_profile and has_saved_credential:
+            resolved_auth_mode = str(connection_profile.get("auth_mode") or "password").strip().lower() or "password"
+            decommission_request = build_worker_decommission_request(
+                vps_ip=str(connection_profile.get("vps_ip") or "").strip(),
+                ssh_user=str(connection_profile.get("ssh_user") or "").strip() or "root",
+                password=(str(connection_profile.get("password") or "").strip() or None) if resolved_auth_mode != "ssh_key" else None,
+                ssh_private_key=(str(connection_profile.get("ssh_private_key") or "").strip() or None) if resolved_auth_mode == "ssh_key" else None,
+            )
+            task = start_worker_decommission_operation(
+                store=store,
+                worker_id=worker_id,
+                request=decommission_request,
+                ssh_user=str(connection_profile.get("ssh_user") or "").strip() or "root",
+                requested_by=current_admin.username,
+                requested_role=current_admin.role,
+            )
+            notice = (
+                f"Da bat dau go BOT {worker_id} khoi VPS {task['vps_ip']} bang credential da luu. "
                 "BOT se bien mat khoi danh sach sau khi service va du lieu tren may duoc don xong."
-            ),
-            "success",
-            manager_ids=return_manager_ids,
-            user_id=return_user_id,
-        )
+            )
+        elif str(worker.status or "").strip() == "offline":
+            store.delete_bot_without_ssh(worker_id, deleted_by=current_admin.username)
+            notice = (
+                f"Da xoa BOT {worker_id} khoi he thong. "
+                "BOT nay dang offline va khong co credential da luu, nen du lieu con lai tren VPS can don thu cong neu may van con chay."
+            )
+        else:
+            raise WorkerBootstrapError(
+                "BOT nay chua co credential da luu de go tu dong. Hay go thu cong tren VPS hoac them lai BOT roi xoa lai."
+            )
         return _redirect_bot_page_with_scope(
-            "Đã xóa BOT.",
+            notice,
             "success",
             manager_ids=return_manager_ids,
             user_id=return_user_id,

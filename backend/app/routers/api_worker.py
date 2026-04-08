@@ -5,6 +5,7 @@ from fastapi.responses import FileResponse
 
 from ..schemas import (
     WorkerBrowserProfileCleanupAckPayload,
+    WorkerDecommissionCompletePayload,
     WorkerBrowserSessionSyncPayload,
     WorkerAuthPayload,
     WorkerHeartbeatPayload,
@@ -74,6 +75,34 @@ async def ack_worker_browser_profile_cleanup(payload: WorkerBrowserProfileCleanu
         return {"ok": True, "cleared": cleared}
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Worker chÆ°a Ä‘Æ°á»£c Ä‘Äƒng kÃ½.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.post("/workers/decommission/poll")
+async def poll_worker_decommission(payload: WorkerAuthPayload):
+    try:
+        task = store.get_worker_decommission_task(payload.worker_id, payload.shared_secret)
+        return {"ok": True, "task": task}
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Worker chưa được đăng ký.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.post("/workers/decommission/{operation_id}/complete")
+async def complete_worker_decommission(operation_id: str, payload: WorkerDecommissionCompletePayload):
+    try:
+        store.complete_worker_decommission_task(
+            operation_id=operation_id,
+            worker_id=payload.worker_id,
+            shared_secret=payload.shared_secret,
+            status=payload.status,
+            message=payload.message,
+        )
+        return {"ok": True}
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Task gỡ BOT không tồn tại.") from exc
     except ValueError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
 

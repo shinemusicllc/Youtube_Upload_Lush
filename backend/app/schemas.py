@@ -350,6 +350,13 @@ class WorkerAuthPayload(BaseModel):
     shared_secret: str
 
 
+class WorkerDecommissionCompletePayload(BaseModel):
+    worker_id: str
+    shared_secret: str
+    status: str = "completed"
+    message: str | None = None
+
+
 class WorkerBrowserProfileCleanupAckPayload(BaseModel):
     worker_id: str
     shared_secret: str

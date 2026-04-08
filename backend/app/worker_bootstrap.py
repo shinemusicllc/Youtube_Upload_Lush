@@ -469,18 +469,28 @@ def start_worker_install_operation(
     store,
     request: WorkerBootstrapRequest,
     ssh_user: str,
+    auth_mode: str = "password",
+    password: str | None = None,
+    ssh_private_key: str | None = None,
     manager_id: str | None,
     manager_name: str,
     group: str = "",
+    requested_by: str = "system",
+    requested_role: str = "system",
 ) -> dict:
     task = store.enqueue_worker_install_operation(
         worker_id=request.worker_id,
         worker_name=request.worker_name,
         vps_ip=request.vps_ip,
         ssh_user=ssh_user,
+        auth_mode=auth_mode,
+        password=password,
+        ssh_private_key=ssh_private_key,
         manager_id=manager_id,
         manager_name=manager_name,
         group=group,
+        requested_by=requested_by,
+        requested_role=requested_role,
     )
     Thread(
         target=_run_worker_install_operation,
@@ -514,11 +524,18 @@ def start_worker_decommission_operation(
     worker_id: str,
     request: WorkerDecommissionRequest,
     ssh_user: str,
+    requested_by: str = "system",
+    requested_role: str = "system",
 ) -> dict:
     task = store.enqueue_worker_decommission_operation(
         worker_id=worker_id,
         vps_ip=request.vps_ip,
         ssh_user=ssh_user,
+        transport="ssh",
+        app_dir=request.app_dir,
+        runtime_dir=request.runtime_dir,
+        requested_by=requested_by,
+        requested_role=requested_role,
     )
     Thread(
         target=_run_worker_decommission_operation,

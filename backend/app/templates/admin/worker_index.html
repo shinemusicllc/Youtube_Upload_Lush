@@ -299,16 +299,13 @@
                                 <button
                                     type="button"
                                     class="action-btn action-btn-rose whitespace-nowrap"
-                                    data-dialog-open="delete-bot-dialog"
+                                    data-delete-bot-button="1"
                                     data-worker-id="{{ worker.id }}"
                                     data-worker-name="{{ worker.name }}"
                                 >
                                     <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
                                     X&#243;a
                                 </button>
-                                <form method="post" action="/admin/managerbot/delete" data-bulk-delete-form class="hidden">
-                                    <input type="hidden" name="Id" value="{{ worker.id }}">
-                                </form>
                                 {% endif %}
                             </div>
                         </td>
@@ -501,56 +498,6 @@
     </div>
 </dialog>
 
-<dialog id="delete-bot-dialog" class="admin-dialog">
-    <div class="panel">
-        <form method="post" action="/admin/managerbot/delete" data-delete-bot-form>
-            {% for manager_id in dashboard.selected_manager_ids %}
-            <input type="hidden" name="return_manager_ids" value="{{ manager_id }}">
-            {% endfor %}
-            {% if dashboard.focus_user %}
-            <input type="hidden" name="return_user_id" value="{{ dashboard.focus_user.id }}">
-            {% endif %}
-
-            <div class="border-b border-slate-200 px-5 py-4">
-                <h3 class="section-title">X&#243;a BOT</h3>
-                <p class="section-note">Thao t&#225;c n&#224;y s&#7869; stop service, uninstall app worker, x&#243;a runtime/data tr&#234;n VPS v&#224; sau &#273;&#243; m&#7899;i g&#7905; BOT kh&#7887;i control-panel.</p>
-            </div>
-            <div class="space-y-4 px-5 py-5">
-                <input type="hidden" name="Id" id="delete-bot-id">
-                <p class="text-[13px] text-slate-700">B&#7841;n c&#243; ch&#7855;c mu&#7889;n g&#7905; s&#7841;ch <strong id="delete-bot-name"></strong> kh&#7887;i VPS v&#224; control-panel?</p>
-                <div>
-                    <label class="field-label" for="delete-bot-ssh-user">Root user</label>
-                    <input
-                        class="toolbar-input"
-                        id="delete-bot-ssh-user"
-                        name="ssh_user"
-                        value="root"
-                        required
-                        autocapitalize="off"
-                        spellcheck="false"
-                    >
-                </div>
-                <div>
-                    <label class="field-label" for="delete-bot-password">Password root</label>
-                    <input
-                        class="toolbar-input"
-                        id="delete-bot-password"
-                        name="password"
-                        type="password"
-                        required
-                        autocomplete="new-password"
-                        autocapitalize="off"
-                        spellcheck="false"
-                    >
-                </div>
-            </div>
-            <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
-                <button type="button" class="action-btn action-btn-slate" data-dialog-close>&#272;&#243;ng</button>
-                <button type="submit" class="action-btn action-btn-rose" data-delete-bot-submit">X&#243;a BOT</button>
-            </div>
-        </form>
-    </div>
-</dialog>
 {% endblock %}
 
 {% block page_scripts %}
@@ -576,12 +523,8 @@
     const createBotSubmit = document.querySelector('[data-create-bot-submit]');
     const createBotIpInput = document.getElementById('create-bot-vps-ip');
     const createBotPasswordInput = document.getElementById('create-bot-password');
-    const deleteBotDialog = document.getElementById('delete-bot-dialog');
-    const deleteBotForm = document.querySelector('[data-delete-bot-form]');
-    const deleteBotSubmit = document.querySelector('[data-delete-bot-submit]');
-    const deleteBotSshUserInput = document.getElementById('delete-bot-ssh-user');
-    const deleteBotPasswordInput = document.getElementById('delete-bot-password');
     const pollMs = 3000;
+    const recentNotices = new Map();
     let initialEditBotManagerId = '';
     let pollingController = null;
     let pollingTimer = null;
@@ -593,6 +536,18 @@
       const text = String(message || '').trim();
       if (!text) {
         return;
+      }
+      const noticeKey = String(type || 'info') + '::' + text;
+      const now = Date.now();
+      const lastShownAt = Number(recentNotices.get(noticeKey) || 0);
+      if (lastShownAt && now - lastShownAt < 12000) {
+        return;
+      }
+      recentNotices.set(noticeKey, now);
+      if (recentNotices.size > 60) {
+        Array.from(recentNotices.keys()).slice(0, recentNotices.size - 40).forEach(function (key) {
+          recentNotices.delete(key);
+        });
       }
       if (typeof window.showAdminToast === 'function') {
         window.showAdminToast(text, type || 'info');
@@ -639,23 +594,6 @@
         createBotPasswordInput.value = '';
       }
       setSubmitLoading(createBotSubmit, false, 'Đang cài đặt...');
-    }
-
-    function resetDeleteBotDialog() {
-      if (!deleteBotDialog) {
-        return;
-      }
-      const form = deleteBotDialog.querySelector('form');
-      if (form) {
-        form.reset();
-      }
-      if (deleteBotSshUserInput) {
-        deleteBotSshUserInput.value = 'root';
-      }
-      if (deleteBotPasswordInput) {
-        deleteBotPasswordInput.value = '';
-      }
-      setSubmitLoading(deleteBotSubmit, false, 'Đang gỡ BOT...');
     }
 
     function escapeHtml(value) {
@@ -794,13 +732,10 @@
         '  <i data-lucide="pencil" class="h-3.5 w-3.5"></i>',
         '  S&#7917;a',
         '</button>',
-        '<button type="button" class="action-btn action-btn-rose whitespace-nowrap" data-dialog-open="delete-bot-dialog" data-worker-id="', workerId, '" data-worker-name="', workerName, '">',
+        '<button type="button" class="action-btn action-btn-rose whitespace-nowrap" data-delete-bot-button="1" data-worker-id="', workerId, '" data-worker-name="', workerName, '">',
         '  <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>',
         '  X&#243;a',
-        '</button>',
-        '<form method="post" action="/admin/managerbot/delete" data-bulk-delete-form class="hidden">',
-        '  <input type="hidden" name="Id" value="', workerId, '">',
-        '</form>'
+        '</button>'
       ].join('');
     }
 
@@ -1078,17 +1013,21 @@
         return;
       }
 
-      if (button.matches('[data-dialog-open="delete-bot-dialog"]')) {
-        resetDeleteBotDialog();
-        document.getElementById('delete-bot-id').value = button.dataset.workerId || '';
-        document.getElementById('delete-bot-name').textContent = button.dataset.workerName || '';
-      }
     }
 
     document.addEventListener('click', function (event) {
       const dialogButton = event.target.closest('[data-dialog-open]');
       if (dialogButton) {
         fillDialogFields(dialogButton);
+      }
+      const deleteButton = event.target.closest('[data-delete-bot-button]');
+      if (deleteButton) {
+        event.preventDefault();
+        requestDeleteBot(
+          String(deleteButton.dataset.workerId || '').trim(),
+          String(deleteButton.dataset.workerName || '').trim()
+        );
+        return;
       }
 
       if (
@@ -1254,50 +1193,42 @@
       }
     }
 
-    async function submitDeleteBotForm(event) {
-      event.preventDefault();
-      if (!deleteBotForm) {
+    async function requestDeleteBot(workerId, workerName) {
+      const normalizedWorkerId = String(workerId || '').trim();
+      if (!normalizedWorkerId) {
         return;
       }
-      setSubmitLoading(deleteBotSubmit, true, 'Đang gỡ BOT...');
-      const formData = new FormData(deleteBotForm);
-      const workerId = String(formData.get('Id') || '').trim();
-      const payload = {
-        ssh_user: String(formData.get('ssh_user') || '').trim() || 'root',
-        auth_mode: 'password',
-        password: String(formData.get('password') || '')
-      };
+      if (!window.confirm('Bạn có chắc chắn muốn xoá BOT này không?')) {
+        return;
+      }
       try {
-        const response = await fetch('/api/admin/bots/' + encodeURIComponent(workerId), {
+        const response = await fetch('/api/admin/bots/' + encodeURIComponent(normalizedWorkerId), {
           method: 'DELETE',
           credentials: 'same-origin',
           headers: {
             'Content-Type': 'application/json',
             'X-Requested-With': 'XMLHttpRequest'
           },
-          body: JSON.stringify(payload)
+          body: JSON.stringify({})
         });
         if (!response.ok) {
           throw new Error(await parseResponseError(response));
         }
-        closeDialog(deleteBotDialog);
-        resetDeleteBotDialog();
+        showSystemNotice(
+          (workerName ? ('Đã bắt đầu xóa BOT ' + workerName + '.') : 'Đã bắt đầu xóa BOT.') + ' Hệ thống sẽ tự dọn VPS và cập nhật danh sách.',
+          'success'
+        );
         await fetchLiveWorkers();
       } catch (error) {
         showSystemNotice(
-          error && error.message ? error.message : 'Không thể gỡ BOT lúc này.',
+          error && error.message ? error.message : 'Không thể xóa BOT lúc này.',
           'error'
         );
-      } finally {
-        setSubmitLoading(deleteBotSubmit, false, 'Đang gỡ BOT...');
       }
     }
 
     if (createBotForm) {
       createBotForm.addEventListener('submit', submitCreateBotForm);
-    }
-    if (deleteBotForm) {
-      deleteBotForm.addEventListener('submit', submitDeleteBotForm);
     }
 
     async function fetchLiveWorkers() {

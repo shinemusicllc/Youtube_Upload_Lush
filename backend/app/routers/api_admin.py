@@ -392,8 +392,13 @@ async def install_admin_bot(request: Request, payload: AdminBotInstallPayload):
             store=store,
             request=bootstrap_request,
             ssh_user=payload.ssh_user,
+            auth_mode=auth_mode,
+            password=payload.password if auth_mode != "ssh_key" else None,
+            ssh_private_key=payload.ssh_private_key if auth_mode == "ssh_key" else None,
             manager_id=manager_id,
             manager_name=manager_name,
+            requested_by=current_user.username,
+            requested_role=current_user.role,
         )
         return {
             "ok": True,
@@ -466,22 +471,59 @@ async def update_admin_bot_threads(request: Request, bot_id: str, payload: Admin
 @router.delete("/admin/bots/{bot_id}")
 async def delete_admin_bot(request: Request, bot_id: str, payload: AdminBotDecommissionPayload):
     _enforce_worker_scope(request, bot_id)
-    auth_mode = str(payload.auth_mode or "password").strip().lower() or "password"
     try:
-        connection_profile = store.get_worker_connection_profile(bot_id)
-        decommission_request = build_worker_decommission_request(
-            vps_ip=connection_profile["vps_ip"],
-            ssh_user=payload.ssh_user or connection_profile["ssh_user"],
-            password=payload.password if auth_mode != "ssh_key" else None,
-            ssh_private_key=payload.ssh_private_key if auth_mode == "ssh_key" else None,
+        current_user = require_admin_access(request)
+        worker = next((item for item in store.workers if item.id == bot_id), None)
+        if worker is None:
+            raise KeyError(bot_id)
+        connection_profile: dict[str, object] | None = None
+        try:
+            connection_profile = store.get_worker_connection_profile(bot_id)
+        except (KeyError, ValueError):
+            connection_profile = None
+        has_saved_credential = bool(
+            connection_profile
+            and (
+                str(connection_profile.get("password") or "").strip()
+                or str(connection_profile.get("ssh_private_key") or "").strip()
+            )
         )
-        task = start_worker_decommission_operation(
-            store=store,
-            worker_id=bot_id,
-            request=decommission_request,
-            ssh_user=payload.ssh_user or connection_profile["ssh_user"],
+        if connection_profile and has_saved_credential:
+            resolved_auth_mode = str(connection_profile.get("auth_mode") or payload.auth_mode or "password").strip().lower() or "password"
+            decommission_request = build_worker_decommission_request(
+                vps_ip=str(connection_profile.get("vps_ip") or "").strip(),
+                ssh_user=str(connection_profile.get("ssh_user") or payload.ssh_user or "root").strip() or "root",
+                password=(str(connection_profile.get("password") or "").strip() or None) if resolved_auth_mode != "ssh_key" else None,
+                ssh_private_key=(str(connection_profile.get("ssh_private_key") or "").strip() or None) if resolved_auth_mode == "ssh_key" else None,
+            )
+            task = start_worker_decommission_operation(
+                store=store,
+                worker_id=bot_id,
+                request=decommission_request,
+                ssh_user=str(connection_profile.get("ssh_user") or payload.ssh_user or "root").strip() or "root",
+                requested_by=current_user.username,
+                requested_role=current_user.role,
+            )
+            return {
+                "ok": True,
+                "worker_id": bot_id,
+                "deleted": False,
+                "operation_id": task["id"],
+                "mode": "ssh",
+                "message": "Da bat dau go BOT bang credential da luu.",
+            }
+        if str(worker.status or "").strip() == "offline":
+            store.delete_bot_without_ssh(bot_id, deleted_by=current_user.username)
+            return {
+                "ok": True,
+                "worker_id": bot_id,
+                "deleted": True,
+                "mode": "local",
+                "message": "BOT dang offline va khong co credential da luu, nen he thong chi xoa BOT khoi control-plane.",
+            }
+        raise WorkerBootstrapError(
+            "BOT nay chua co credential da luu de go tu dong. Hay go thu cong tren VPS hoac them lai BOT roi xoa lai."
         )
-        return {"ok": True, "operation_id": task["id"], "worker_id": bot_id, "vps_ip": task["vps_ip"]}
     except (KeyError, ValueError, WorkerBootstrapError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

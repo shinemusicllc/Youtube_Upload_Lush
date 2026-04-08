@@ -1,4 +1,8 @@
+import json
+import subprocess
+import textwrap
 import time
+from pathlib import Path
 from threading import Event, Lock, Thread
 
 import httpx
@@ -10,7 +14,9 @@ from .control_plane import (
     claim_job,
     fail_job,
     heartbeat_worker,
+    is_worker_deleted_error,
     is_worker_missing_error,
+    poll_decommission_task,
     register_worker,
 )
 from .job_runner import run_job
@@ -44,6 +50,113 @@ def simulate_job(client: httpx.Client, config, job: dict) -> None:
             time.sleep(config.simulate_step_seconds)
     output_url = f"https://youtube.example/{job_id}"
     complete_job(client, config, job_id, output_url=output_url)
+
+
+def _start_self_decommission(config, operation_id: str, app_dir: str, runtime_dir: str) -> None:
+    script_path = Path(f"/tmp/youtube-upload-self-decommission-{config.worker_id}.sh")
+    script_body = textwrap.dedent(
+        f"""\
+        #!/usr/bin/env bash
+        set -euo pipefail
+
+        CONTROL_PLANE_URL={json.dumps(config.control_plane_url.rstrip("/"))}
+        OPERATION_ID={json.dumps(operation_id)}
+        WORKER_ID={json.dumps(config.worker_id)}
+        WORKER_SECRET={json.dumps(config.shared_secret)}
+        APP_DIR={json.dumps(app_dir)}
+        RUNTIME_DIR={json.dumps(runtime_dir)}
+        DECOMMISSION_SCRIPT="$APP_DIR/scripts/decommission_worker.sh"
+
+        notify() {{
+          local task_status="$1"
+          local task_message="$2"
+          if command -v python3 >/dev/null 2>&1; then
+            python3 - "$CONTROL_PLANE_URL" "$OPERATION_ID" "$WORKER_ID" "$WORKER_SECRET" "$task_status" "$task_message" <<'PY' || true
+import json
+import sys
+import urllib.request
+
+control_plane_url, operation_id, worker_id, worker_secret, status, message = sys.argv[1:7]
+url = f"{{control_plane_url}}/api/workers/decommission/{{operation_id}}/complete"
+payload = json.dumps({{
+    "worker_id": worker_id,
+    "shared_secret": worker_secret,
+    "status": status,
+    "message": message,
+}}).encode("utf-8")
+request = urllib.request.Request(
+    url,
+    data=payload,
+    headers={{"Content-Type": "application/json"}},
+    method="POST",
+)
+with urllib.request.urlopen(request, timeout=20) as response:
+    response.read()
+PY
+          fi
+          return 0
+        }}
+
+        trap 'notify failed "Tự gỡ BOT trên VPS thất bại."' ERR
+
+        if [[ -x "$DECOMMISSION_SCRIPT" || -f "$DECOMMISSION_SCRIPT" ]]; then
+          env APP_DIR="$APP_DIR" RUNTIME_DIR="$RUNTIME_DIR" bash "$DECOMMISSION_SCRIPT"
+        else
+          systemctl stop youtube-upload-worker.service || true
+          systemctl disable youtube-upload-worker.service || true
+          rm -f /etc/systemd/system/youtube-upload-worker.service
+          rm -f /etc/youtube-upload-worker.env
+          systemctl daemon-reload || true
+          systemctl reset-failed youtube-upload-worker.service || true
+          rm -rf "$APP_DIR" "$RUNTIME_DIR"
+        fi
+
+        notify completed "BOT đã tự gỡ sạch khỏi VPS."
+        rm -f -- "$0"
+        """
+    )
+    script_path.write_text(script_body, encoding="utf-8")
+    script_path.chmod(0o700)
+    transient_unit = f"youtube-upload-self-decommission-{config.worker_id}"
+    try:
+        subprocess.run(
+            [
+                "systemd-run",
+                "--unit",
+                transient_unit,
+                "--property=Type=oneshot",
+                "--collect",
+                "/bin/bash",
+                str(script_path),
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return
+    except Exception:
+        with open("/tmp/youtube-upload-self-decommission.log", "ab") as log_handle:
+            subprocess.Popen(
+                ["/bin/bash", str(script_path)],
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+
+
+def _maybe_process_decommission(client: httpx.Client, config, heartbeat_loop: "HeartbeatLoop") -> bool:
+    assignment = poll_decommission_task(client, config)
+    if assignment is None:
+        return False
+    print(f"[worker] nhận lệnh tự gỡ BOT {config.worker_id} khỏi VPS.", flush=True)
+    heartbeat_loop.stop()
+    _start_self_decommission(
+        config,
+        assignment.operation_id,
+        assignment.app_dir,
+        assignment.runtime_dir,
+    )
+    raise SystemExit("[worker] đã khởi chạy self-decommission, dừng tiến trình worker.")
 
 
 class HeartbeatLoop:
@@ -80,6 +193,8 @@ class HeartbeatLoop:
                 active_job_ids=active_job_ids,
             )
         except Exception as exc:
+            if is_worker_deleted_error(exc):
+                raise SystemExit("[worker] BOT này đã bị xoá khỏi control-plane, dừng worker.")
             if is_worker_missing_error(exc):
                 print("[worker] heartbeat got 404 worker-missing, re-registering.", flush=True)
                 register_worker(self.client, self.config)
@@ -100,6 +215,9 @@ class HeartbeatLoop:
             try:
                 self.pulse_once()
             except Exception as exc:
+                if isinstance(exc, SystemExit):
+                    print(str(exc), flush=True)
+                    break
                 print(f"[worker] heartbeat loop failed: {exc}", flush=True)
                 time.sleep(self.config.poll_seconds)
 
@@ -121,6 +239,7 @@ def main() -> None:
         try:
             while True:
                 try:
+                    _maybe_process_decommission(client, config, heartbeat_loop)
                     now = time.monotonic()
                     if now - last_janitor_at >= janitor_interval_seconds:
                         janitor_result = cleanup_stale_worker_artifacts(config)
@@ -140,6 +259,9 @@ def main() -> None:
                     try:
                         job = claim_job(client, config)
                     except Exception as exc:
+                        if is_worker_deleted_error(exc):
+                            print("[worker] BOT này đã bị xoá khỏi control-plane, dừng worker.", flush=True)
+                            break
                         if is_worker_missing_error(exc):
                             print("[worker] claim got 404 worker-missing, re-registering.", flush=True)
                             register_worker(client, config)
@@ -174,6 +296,9 @@ def main() -> None:
                             print(f"[worker] post-job heartbeat failed: {exc}", flush=True)
                     time.sleep(config.poll_seconds)
                 except Exception as exc:
+                    if is_worker_deleted_error(exc):
+                        print("[worker] BOT này đã bị xoá khỏi control-plane, dừng worker.", flush=True)
+                        break
                     print(f"[worker] main loop recovered from error: {exc}", flush=True)
                     time.sleep(config.poll_seconds)
         finally:

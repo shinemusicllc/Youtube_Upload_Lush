@@ -163,6 +163,23 @@ def is_worker_missing_error(exc: Exception) -> bool:
     return response.status_code == 404 and "/api/workers/" in str(request.url)
 
 
+def is_worker_deleted_error(exc: Exception) -> bool:
+    if not isinstance(exc, httpx.HTTPStatusError):
+        return False
+    response = exc.response
+    request = exc.request
+    if response is None or request is None:
+        return False
+    if response.status_code != 403 or "/api/workers/" not in str(request.url):
+        return False
+    try:
+        payload = response.json()
+    except ValueError:
+        return False
+    detail = str(payload.get("detail") or "").strip().lower()
+    return "đã bị xoá khỏi hệ thống" in detail or "da bi xoa khoi he thong" in detail
+
+
 def _retry_delay_seconds(config: WorkerConfig, attempt: int) -> float:
     capped_attempt = max(0, min(attempt - 1, 6))
     delay = config.network_retry_base_seconds * (2 ** capped_attempt)
@@ -233,6 +250,13 @@ class BrowserSessionAssignment:
 @dataclass
 class BrowserProfileCleanupAssignment:
     profile_key: str
+
+
+@dataclass
+class DecommissionAssignment:
+    operation_id: str
+    app_dir: str
+    runtime_dir: str
 
 
 def register_worker(client: httpx.Client, config: WorkerConfig) -> None:
@@ -359,6 +383,58 @@ def ack_browser_profile_cleanup(
             "worker_id": config.worker_id,
             "shared_secret": config.shared_secret,
             "profile_keys": profile_keys,
+        },
+    )
+
+
+def poll_decommission_task(
+    client: httpx.Client,
+    config: WorkerConfig,
+) -> DecommissionAssignment | None:
+    response = _request_with_retry(
+        client,
+        config,
+        "POST",
+        "/api/workers/decommission/poll",
+        operation="poll_decommission_task",
+        json={
+            "worker_id": config.worker_id,
+            "shared_secret": config.shared_secret,
+        },
+    )
+    payload = response.json()
+    task = payload.get("task") or {}
+    operation_id = str(task.get("id") or "").strip()
+    if not operation_id:
+        return None
+    return DecommissionAssignment(
+        operation_id=operation_id,
+        app_dir=str(task.get("app_dir") or "/opt/youtube-upload-lush").strip() or "/opt/youtube-upload-lush",
+        runtime_dir=str(task.get("runtime_dir") or "/opt/youtube-upload-lush-runtime").strip() or "/opt/youtube-upload-lush-runtime",
+    )
+
+
+def complete_decommission_task(
+    client: httpx.Client,
+    config: WorkerConfig,
+    operation_id: str,
+    *,
+    status: str,
+    message: str | None = None,
+) -> None:
+    _request_with_retry(
+        client,
+        config,
+        "POST",
+        f"/api/workers/decommission/{operation_id}/complete",
+        operation=f"complete_decommission_task:{operation_id}",
+        retry_forever=False,
+        max_attempts=max(1, config.progress_retry_attempts),
+        json={
+            "worker_id": config.worker_id,
+            "shared_secret": config.shared_secret,
+            "status": status,
+            "message": message,
         },
     )
 

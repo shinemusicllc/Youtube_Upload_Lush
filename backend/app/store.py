@@ -171,6 +171,7 @@ class AppStore:
         self.worker_round_robin_cursor: dict[str, str] = {}
         self.worker_connection_profiles: dict[str, dict[str, Any]] = {}
         self.worker_operation_tasks: list[dict[str, Any]] = []
+        self.deleted_workers: dict[str, dict[str, Any]] = {}
         self.telegram_link_requests: dict[str, dict[str, Any]] = {}
         self.admin_notifications: list[dict[str, Any]] = []
         self._worker_state_lock = RLock()
@@ -734,14 +735,37 @@ class AppStore:
                     "manager_name": str(task.get("manager_name") or "").strip(),
                     "group": str(task.get("group") or "").strip(),
                     "kind": str(task.get("kind") or "install").strip(),
+                    "transport": str(task.get("transport") or "").strip() or ("ssh" if str(task.get("kind") or "").strip() == "decommission" else ""),
                     "status": str(task.get("status") or "queued").strip(),
                     "message": str(task.get("message") or "").strip(),
+                    "ssh_user": str(task.get("ssh_user") or "").strip() or "root",
+                    "app_dir": str(task.get("app_dir") or "").strip() or "/opt/youtube-upload-lush",
+                    "runtime_dir": str(task.get("runtime_dir") or "").strip() or "/opt/youtube-upload-lush-runtime",
+                    "requested_by": str(task.get("requested_by") or "").strip() or "system",
+                    "requested_role": str(task.get("requested_role") or "").strip() or "system",
+                    "dispatched_at": self._parse_datetime(task.get("dispatched_at")),
                     "created_at": self._parse_datetime(task.get("created_at")) or self._now(trim=False),
                     "updated_at": self._parse_datetime(task.get("updated_at")) or self._now(trim=False),
                     "completed_at": self._parse_datetime(task.get("completed_at")),
                 }
             )
         return tasks
+
+    def _restore_deleted_workers(self, payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        restored: dict[str, dict[str, Any]] = {}
+        for worker_id, raw_meta in payload.items():
+            normalized_worker_id = str(worker_id or "").strip()
+            if not normalized_worker_id or not isinstance(raw_meta, dict):
+                continue
+            restored[normalized_worker_id] = {
+                "worker_id": normalized_worker_id,
+                "worker_name": str(raw_meta.get("worker_name") or "").strip() or normalized_worker_id,
+                "vps_ip": str(raw_meta.get("vps_ip") or "").strip() or None,
+                "deleted_by": str(raw_meta.get("deleted_by") or "").strip() or "system",
+                "reason": str(raw_meta.get("reason") or "").strip() or "manual_delete",
+                "deleted_at": self._parse_datetime(raw_meta.get("deleted_at")) or self._now(trim=False),
+            }
+        return restored
 
     def _serialize_state(self) -> dict[str, Any]:
         return {
@@ -758,6 +782,7 @@ class AppStore:
             "worker_round_robin_cursor": deepcopy(self.worker_round_robin_cursor),
             "worker_connection_profiles": self._serialize_value(self.worker_connection_profiles),
             "worker_operation_tasks": self._serialize_value(self.worker_operation_tasks),
+            "deleted_workers": self._serialize_value(self.deleted_workers),
             "render_delete_meta": self._serialize_value(self.render_delete_meta),
         }
 
@@ -789,6 +814,7 @@ class AppStore:
         self.worker_operation_tasks = self._restore_worker_operation_tasks(
             payload.get("worker_operation_tasks") or []
         )
+        self.deleted_workers = self._restore_deleted_workers(payload.get("deleted_workers") or {})
 
         render_meta = payload.get("render_delete_meta") or {}
         self.render_delete_meta = {
@@ -838,17 +864,70 @@ class AppStore:
         )
         return suggest_next_worker_id(reserved_ids)
 
-    def _remember_worker_connection_profile(self, worker_id: str, *, vps_ip: str, ssh_user: str) -> None:
+    def _remember_worker_connection_profile(
+        self,
+        worker_id: str,
+        *,
+        vps_ip: str,
+        ssh_user: str,
+        auth_mode: str | None = None,
+        password: str | None = None,
+        ssh_private_key: str | None = None,
+    ) -> None:
         normalized_worker_id = str(worker_id or "").strip()
         normalized_ip = str(vps_ip or "").strip()
         if not normalized_worker_id or not normalized_ip:
             return
+        existing = dict(self.worker_connection_profiles.get(normalized_worker_id) or {})
+        normalized_auth_mode = str(auth_mode or existing.get("auth_mode") or "").strip().lower()
+        normalized_password = password if password is not None else existing.get("password")
+        normalized_ssh_private_key = ssh_private_key if ssh_private_key is not None else existing.get("ssh_private_key")
         self.worker_connection_profiles[normalized_worker_id] = {
             "worker_id": normalized_worker_id,
             "vps_ip": normalized_ip,
             "ssh_user": str(ssh_user or "").strip() or "root",
+            "auth_mode": normalized_auth_mode or ("ssh_key" if str(normalized_ssh_private_key or "").strip() else "password"),
+            "password": str(normalized_password or "").strip() or None,
+            "ssh_private_key": str(normalized_ssh_private_key or "").strip() or None,
             "updated_at": self._now(trim=False),
         }
+
+    def _remember_deleted_worker(
+        self,
+        worker_id: str,
+        *,
+        worker_name: str | None = None,
+        vps_ip: str | None = None,
+        deleted_by: str | None = None,
+        reason: str = "manual_delete",
+    ) -> None:
+        normalized_worker_id = str(worker_id or "").strip()
+        if not normalized_worker_id:
+            return
+        normalized_vps_ip = str(vps_ip or "").strip() or None
+        self.deleted_workers[normalized_worker_id] = {
+            "worker_id": normalized_worker_id,
+            "worker_name": str(worker_name or "").strip() or normalized_worker_id,
+            "vps_ip": normalized_vps_ip,
+            "deleted_by": str(deleted_by or "").strip() or "system",
+            "reason": str(reason or "").strip() or "manual_delete",
+            "deleted_at": self._now(trim=False),
+        }
+
+    def _clear_deleted_worker(self, worker_id: str) -> None:
+        normalized_worker_id = str(worker_id or "").strip()
+        if not normalized_worker_id:
+            return
+        self.deleted_workers.pop(normalized_worker_id, None)
+
+    def _ensure_worker_not_deleted(self, worker_id: str) -> None:
+        normalized_worker_id = str(worker_id or "").strip()
+        if not normalized_worker_id:
+            return
+        deleted_meta = self.deleted_workers.get(normalized_worker_id)
+        if not deleted_meta:
+            return
+        raise ValueError("BOT này đã bị xoá khỏi hệ thống. Hãy thêm BOT lại nếu muốn kết nối lại VPS này.")
 
     def get_worker_connection_profile(self, worker_id: str) -> dict[str, Any]:
         normalized_worker_id = str(worker_id or "").strip()
@@ -872,6 +951,9 @@ class AppStore:
             "worker_id": normalized_worker_id,
             "vps_ip": normalized_ip,
             "ssh_user": str(profile.get("ssh_user") or "").strip() or "root",
+            "auth_mode": str(profile.get("auth_mode") or "").strip().lower() or ("ssh_key" if str(profile.get("ssh_private_key") or "").strip() else "password"),
+            "password": str(profile.get("password") or "").strip() or None,
+            "ssh_private_key": str(profile.get("ssh_private_key") or "").strip() or None,
             "updated_at": self._parse_datetime(profile.get("updated_at")),
         }
 
@@ -1016,11 +1098,23 @@ class AppStore:
             worker_name = str(task.get("worker_name") or task.get("vps_ip") or task.get("worker_id") or "").strip()
             manager_id = str(task.get("manager_id") or "").strip() or None
             notice_prefix = "Cài đặt BOT" if kind == "install" else "Gỡ BOT"
-            self._push_admin_notification(
-                message=f"{notice_prefix} {worker_name} thất bại: {task_message}",
-                level=level,
-                manager_id=manager_id,
+            notice_message = f"{notice_prefix} {worker_name} thất bại: {task_message}"
+            duplicated_notice = next(
+                (
+                    item
+                    for item in reversed(self.admin_notifications)
+                    if str(item.get("message") or "").strip() == notice_message
+                    and str(item.get("level") or "").strip() == level
+                    and str(item.get("manager_id") or "").strip() == str(manager_id or "").strip()
+                ),
+                None,
             )
+            if duplicated_notice is None:
+                self._push_admin_notification(
+                    message=notice_message,
+                    level=level,
+                    manager_id=manager_id,
+                )
             self.worker_operation_tasks = [
                 existing
                 for existing in self.worker_operation_tasks
@@ -1035,15 +1129,21 @@ class AppStore:
         worker_name: str,
         vps_ip: str,
         ssh_user: str,
+        auth_mode: str = "password",
+        password: str | None = None,
+        ssh_private_key: str | None = None,
         manager_id: str | None,
         manager_name: str,
         group: str = "",
+        requested_by: str = "system",
+        requested_role: str = "system",
     ) -> dict[str, Any]:
         with self._worker_state_lock:
             normalized_worker_id = str(worker_id or "").strip()
             normalized_ip = str(vps_ip or "").strip()
             if not normalized_worker_id or not normalized_ip:
                 raise ValueError("Worker bootstrap task thiếu worker_id hoặc VPS IP.")
+            self._clear_deleted_worker(normalized_worker_id)
             if any(str(worker.id or "").strip() == normalized_worker_id for worker in self.workers):
                 raise ValueError("Worker ID này đã tồn tại trong control-plane.")
             if any(str(self._resolve_worker_display_name(worker.id) or "").strip() == normalized_ip for worker in self.workers):
@@ -1089,12 +1189,21 @@ class AppStore:
                 "kind": "install",
                 "status": "queued",
                 "message": "Đang chờ control-plane kết nối SSH vào VPS...",
+                "requested_by": str(requested_by or "").strip() or "system",
+                "requested_role": str(requested_role or "").strip() or "system",
                 "created_at": now,
                 "updated_at": now,
                 "completed_at": None,
             }
             self.worker_operation_tasks.append(task)
-            self._remember_worker_connection_profile(normalized_worker_id, vps_ip=normalized_ip, ssh_user=ssh_user)
+            self._remember_worker_connection_profile(
+                normalized_worker_id,
+                vps_ip=normalized_ip,
+                ssh_user=ssh_user,
+                auth_mode=auth_mode,
+                password=password,
+                ssh_private_key=ssh_private_key,
+            )
             self._save_state()
             return deepcopy(task)
 
@@ -1104,6 +1213,11 @@ class AppStore:
         worker_id: str,
         vps_ip: str,
         ssh_user: str,
+        transport: str = "ssh",
+        app_dir: str = "/opt/youtube-upload-lush",
+        runtime_dir: str = "/opt/youtube-upload-lush-runtime",
+        requested_by: str = "system",
+        requested_role: str = "system",
     ) -> dict[str, Any]:
         with self._worker_state_lock:
             worker = self._find_worker(worker_id)
@@ -1126,8 +1240,19 @@ class AppStore:
                 "manager_name": worker.manager_name,
                 "group": str(worker.group or "").strip(),
                 "kind": "decommission",
+                "transport": str(transport or "ssh").strip() or "ssh",
                 "status": "queued",
-                "message": "Đang chờ control-plane kết nối SSH để gỡ worker khỏi VPS...",
+                "message": (
+                    "Đang chờ control-plane kết nối SSH để gỡ worker khỏi VPS..."
+                    if str(transport or "ssh").strip() != "self"
+                    else "Đang chờ BOT tự gỡ khỏi VPS..."
+                ),
+                "ssh_user": str(ssh_user or "").strip() or "root",
+                "app_dir": str(app_dir or "").strip() or "/opt/youtube-upload-lush",
+                "runtime_dir": str(runtime_dir or "").strip() or "/opt/youtube-upload-lush-runtime",
+                "requested_by": str(requested_by or "").strip() or "system",
+                "requested_role": str(requested_role or "").strip() or "system",
+                "dispatched_at": None,
                 "created_at": now,
                 "updated_at": now,
                 "completed_at": None,
@@ -1136,6 +1261,68 @@ class AppStore:
             self._remember_worker_connection_profile(normalized_worker_id, vps_ip=normalized_ip, ssh_user=ssh_user)
             self._save_state()
             return deepcopy(task)
+
+    def get_worker_decommission_task(self, worker_id: str, shared_secret: str) -> dict[str, Any] | None:
+        with self._worker_state_lock:
+            worker = self._authenticate_worker(worker_id, shared_secret)
+            now = self._now(trim=False)
+            task = next(
+                (
+                    item
+                    for item in self.worker_operation_tasks
+                    if str(item.get("kind") or "").strip() == "decommission"
+                    and str(item.get("transport") or "").strip() == "self"
+                    and str(item.get("worker_id") or "").strip() == worker.id
+                    and str(item.get("status") or "").strip() in {"queued", "running"}
+                ),
+                None,
+            )
+            if task is None:
+                return None
+            dispatched_at = self._parse_datetime(task.get("dispatched_at"))
+            if dispatched_at and now - dispatched_at < timedelta(seconds=20):
+                return None
+            task["status"] = "running"
+            task["message"] = "BOT đang tự gỡ service và dữ liệu khỏi VPS..."
+            task["updated_at"] = now
+            task["dispatched_at"] = now
+            self._save_state()
+            return deepcopy(task)
+
+    def complete_worker_decommission_task(
+        self,
+        *,
+        operation_id: str,
+        worker_id: str,
+        shared_secret: str,
+        status: str,
+        message: str | None = None,
+    ) -> None:
+        cleaned_status = str(status or "").strip().lower() or "completed"
+        with self._worker_state_lock:
+            worker = self._authenticate_worker(worker_id, shared_secret)
+            task = self._find_worker_operation(operation_id)
+            if str(task.get("kind") or "").strip() != "decommission":
+                raise ValueError("Task gỡ BOT không hợp lệ.")
+            if str(task.get("worker_id") or "").strip() != worker.id:
+                raise ValueError("Task gỡ BOT không thuộc worker hiện tại.")
+            task_message = str(message or "").strip()
+            if cleaned_status == "completed":
+                worker_name = self._resolve_worker_display_name(worker.id)
+                self._remember_deleted_worker(
+                    worker.id,
+                    worker_name=worker_name,
+                    vps_ip=str(task.get("vps_ip") or "").strip() or None,
+                    deleted_by=str(task.get("requested_by") or "").strip() or "system",
+                    reason="self_decommission",
+                )
+                if task_message:
+                    task["message"] = task_message
+                self.finalize_decommissioned_bot(worker.id, operation_id)
+                return
+        if cleaned_status == "completed":
+            return
+        self.fail_worker_operation(operation_id, message=task_message or "BOT tự gỡ khỏi VPS thất bại.")
 
     def update_worker_operation(
         self,
@@ -1158,8 +1345,18 @@ class AppStore:
             return deepcopy(task)
 
     def clear_install_operation_after_register(self, worker_id: str) -> bool:
+        completed_task: dict[str, Any] | None = None
         with self._worker_state_lock:
             normalized_worker_id = str(worker_id or "").strip()
+            completed_task = next(
+                (
+                    deepcopy(task)
+                    for task in self.worker_operation_tasks
+                    if str(task.get("kind") or "").strip() == "install"
+                    and str(task.get("worker_id") or "").strip() == normalized_worker_id
+                ),
+                None,
+            )
             before = len(self.worker_operation_tasks)
             self.worker_operation_tasks = [
                 task
@@ -1172,10 +1369,45 @@ class AppStore:
             changed = len(self.worker_operation_tasks) != before
             if changed:
                 self._save_state()
-            return changed
+        if changed and completed_task is not None:
+            worker = self._find_worker(normalized_worker_id)
+            worker_name = self._resolve_worker_display_name(worker.id)
+            vps_ip = str(completed_task.get("vps_ip") or "").strip() or worker_name
+            self._notify_bot_operation_actor(
+                completed_task,
+                self._bot_install_completed_message(
+                    completed_task,
+                    worker_name=worker_name,
+                    worker_id=worker.id,
+                    vps_ip=vps_ip,
+                ),
+            )
+        return changed
 
     def finalize_decommissioned_bot(self, worker_id: str, operation_id: str) -> None:
+        completed_task: dict[str, Any] | None = None
+        worker_name = ""
+        vps_ip = ""
         with self._worker_state_lock:
+            worker = self._find_worker(worker_id)
+            task = next(
+                (
+                    item
+                    for item in self.worker_operation_tasks
+                    if str(item.get("id") or "").strip() == str(operation_id or "").strip()
+                ),
+                {},
+            )
+            completed_task = deepcopy(task) if task else None
+            worker_name = self._resolve_worker_display_name(worker.id)
+            vps_ip = str(task.get("vps_ip") or "").strip() or worker_name
+            self._remember_deleted_worker(
+                worker.id,
+                worker_name=worker_name,
+                vps_ip=str(task.get("vps_ip") or "").strip() or None,
+                deleted_by=str(task.get("requested_by") or "").strip() or "system",
+                reason=str(task.get("transport") or "").strip() or "decommission",
+            )
             self._delete_bot_state(worker_id)
             self.worker_operation_tasks = [
                 task
@@ -1184,6 +1416,16 @@ class AppStore:
             ]
             self.worker_connection_profiles.pop(str(worker_id or "").strip(), None)
             self._save_state()
+        if completed_task is not None:
+            self._notify_bot_operation_actor(
+                completed_task,
+                self._bot_decommission_completed_message(
+                    completed_task,
+                    worker_name=worker_name,
+                    worker_id=str(worker_id or "").strip(),
+                    vps_ip=vps_ip,
+                ),
+            )
 
     def start_background_services(self) -> None:
         with self._worker_state_lock:
@@ -1402,6 +1644,52 @@ class AppStore:
             "Tài khoản Telegram này đã được ngắt khỏi hệ thống thông báo của app YouTube Upload.\n"
             f"Tài khoản app: {user.username}\n"
             "Từ bây giờ tài khoản này sẽ không nhận thông báo mới từ app nữa."
+        )
+
+    @staticmethod
+    def _bot_operation_actor_label(role: str | None, username: str | None) -> str:
+        normalized_role = str(role or "").strip().lower()
+        normalized_username = str(username or "").strip() or "system"
+        if normalized_role == "admin":
+            return f"Admin {normalized_username}"
+        if normalized_role == "manager":
+            return f"Manager {normalized_username}"
+        return normalized_username
+
+    def _notify_bot_operation_actor(self, task: dict[str, Any], message: str) -> bool:
+        requested_by = str(task.get("requested_by") or "").strip()
+        if not requested_by or requested_by == "system":
+            return False
+        actor = self._find_user_by_username(requested_by)
+        if actor is None:
+            return False
+        chat_id = self._user_telegram_chat_id(actor.id)
+        if not chat_id:
+            return False
+        return self._send_telegram_alert(message, chat_id=chat_id)
+
+    def _bot_install_completed_message(self, task: dict[str, Any], *, worker_name: str, worker_id: str, vps_ip: str) -> str:
+        actor_label = self._bot_operation_actor_label(task.get("requested_role"), task.get("requested_by"))
+        manager_name = str(task.get("manager_name") or "").strip() or "system"
+        return (
+            "[BOT] Them BOT thanh cong\n"
+            f"Nguoi thao tac: {actor_label}\n"
+            f"BOT: {worker_name}\n"
+            f"BOT ID: {worker_id}\n"
+            f"VPS: {vps_ip}\n"
+            f"Manager so huu: {manager_name}"
+        )
+
+    def _bot_decommission_completed_message(self, task: dict[str, Any], *, worker_name: str, worker_id: str, vps_ip: str) -> str:
+        actor_label = self._bot_operation_actor_label(task.get("requested_role"), task.get("requested_by"))
+        manager_name = str(task.get("manager_name") or "").strip() or "system"
+        return (
+            "[BOT] Xoa BOT thanh cong\n"
+            f"Nguoi thao tac: {actor_label}\n"
+            f"BOT: {worker_name}\n"
+            f"BOT ID: {worker_id}\n"
+            f"VPS: {vps_ip}\n"
+            f"Manager truoc khi xoa: {manager_name}"
         )
 
     def _user_telegram_chat_id(self, user_id: str) -> str:
@@ -2130,6 +2418,7 @@ class AppStore:
     def _authenticate_worker(self, worker_id: str, shared_secret: str) -> WorkerRecord:
         if shared_secret != self.get_worker_shared_secret():
             raise ValueError("Worker shared secret khÃ´ng há»£p lá»‡.")
+        self._ensure_worker_not_deleted(worker_id)
         return self._find_worker(worker_id)
 
     def _refresh_queue_positions(self) -> None:
@@ -2253,23 +2542,54 @@ class AppStore:
                 job.lease_expires_at = lease_base + lease_duration
 
     def register_worker(self, payload: WorkerRegisterPayload) -> WorkerControlResponse:
+        completed_task: dict[str, Any] | None = None
+        worker_snapshot: WorkerRecord | None = None
+        vps_ip = ""
         with self._worker_state_lock:
             if payload.shared_secret != self.get_worker_shared_secret():
                 raise ValueError("Worker shared secret khÃ´ng há»£p lá»‡.")
+            self._ensure_worker_not_deleted(payload.worker_id)
 
             now = self._now(trim=False)
             worker_display_name = self._default_worker_display_name(payload.worker_id, payload.name)
             public_base_url = str(payload.public_base_url or "").strip() or None
             existing = next((worker for worker in self.workers if worker.id == payload.worker_id), None)
-            manager = next((user for user in self.users if user.username == payload.manager_name and user.role == "manager"), None)
+            install_task = next(
+                (
+                    task
+                    for task in self.worker_operation_tasks
+                    if str(task.get("kind") or "").strip() == "install"
+                    and str(task.get("worker_id") or "").strip() == payload.worker_id
+                ),
+                None,
+            )
+            install_task_manager_id = str(install_task.get("manager_id") or "").strip() if install_task else ""
+            install_task_manager_name = str(install_task.get("manager_name") or "").strip() if install_task else ""
+            install_task_group = str(install_task.get("group") or "").strip() if install_task else ""
+            manager = None
+            if install_task_manager_id:
+                manager = next(
+                    (
+                        user
+                        for user in self.users
+                        if user.id == install_task_manager_id and user.role == "manager"
+                    ),
+                    None,
+                )
+            if manager is None:
+                manager = next((user for user in self.users if user.username == payload.manager_name and user.role == "manager"), None)
+            resolved_manager_name = (
+                manager.username if manager else (install_task_manager_name or str(payload.manager_name or "").strip() or "system")
+            )
+            resolved_group = install_task_group or str(payload.group or "").strip() or resolved_manager_name
             normalized_threads = self._normalize_requested_worker_threads(payload.threads)
             if existing is None:
                 worker = WorkerRecord(
                     id=payload.worker_id,
                     name=worker_display_name,
                     manager_id=manager.id if manager else None,
-                    manager_name=payload.manager_name,
-                    group=(str(payload.group or "").strip() or payload.manager_name),
+                    manager_name=resolved_manager_name,
+                    group=resolved_group,
                     created_at=now,
                     status="online",
                     capacity=payload.capacity,
@@ -2295,17 +2615,17 @@ class AppStore:
             else:
                 existing.name = worker_display_name
                 existing.manager_id = manager.id if manager else existing.manager_id
-                existing.manager_name = payload.manager_name
-                payload_group = str(payload.group or "").strip()
+                existing.manager_name = resolved_manager_name
+                payload_group = resolved_group
                 current_group = str(existing.group or "").strip()
                 if payload_group:
                     if not current_group or current_group in {
                         str(existing.manager_name or "").strip(),
-                        str(payload.manager_name or "").strip(),
+                        resolved_manager_name,
                     }:
                         existing.group = payload_group
                 elif not current_group:
-                    existing.group = payload.manager_name
+                    existing.group = resolved_manager_name
                 existing.created_at = existing.created_at or now
                 existing.capacity = max(int(existing.capacity or 1), int(payload.capacity or 1))
                 existing.threads = self._normalize_requested_worker_threads(
@@ -2331,6 +2651,8 @@ class AppStore:
                     vps_ip=worker_display_name,
                     ssh_user=str(existing_profile.get("ssh_user") or "root"),
                 )
+            completed_task = deepcopy(install_task) if install_task is not None else None
+            vps_ip = str(payload.name or "").strip() or worker_display_name
             self.worker_operation_tasks = [
                 task
                 for task in self.worker_operation_tasks
@@ -2341,7 +2663,18 @@ class AppStore:
             ]
 
             self._save_state()
-            return WorkerControlResponse(ok=True, worker=deepcopy(worker))
+            worker_snapshot = deepcopy(worker)
+        if completed_task is not None and worker_snapshot is not None:
+            self._notify_bot_operation_actor(
+                completed_task,
+                self._bot_install_completed_message(
+                    completed_task,
+                    worker_name=self._resolve_worker_display_name(worker_snapshot.id),
+                    worker_id=worker_snapshot.id,
+                    vps_ip=vps_ip or self._resolve_worker_display_name(worker_snapshot.id),
+                ),
+            )
+        return WorkerControlResponse(ok=True, worker=worker_snapshot)
 
     def heartbeat_worker(self, payload: WorkerHeartbeatPayload) -> WorkerControlResponse:
         with self._worker_state_lock:
@@ -5914,6 +6247,52 @@ class AppStore:
             if str(task.get("worker_id") or "").strip() != str(worker_id or "").strip()
         ]
         self._save_state()
+
+    def delete_bot_without_ssh(self, worker_id: str, *, deleted_by: str = "system") -> None:
+        completed_task: dict[str, Any] | None = None
+        worker_name = ""
+        vps_ip = ""
+        with self._worker_state_lock:
+            worker = self._find_worker(worker_id)
+            profile = dict(self.worker_connection_profiles.get(worker.id) or {})
+            worker_name = self._resolve_worker_display_name(worker.id)
+            vps_ip = str(profile.get("vps_ip") or "").strip()
+            if not vps_ip and self._looks_like_ipv4(worker_name):
+                vps_ip = worker_name
+            actor = self._find_user_by_username(deleted_by)
+            completed_task = {
+                "worker_id": worker.id,
+                "worker_name": worker_name,
+                "vps_ip": vps_ip,
+                "manager_name": str(worker.manager_name or "").strip() or "system",
+                "requested_by": str(deleted_by or "").strip() or "system",
+                "requested_role": actor.role if actor else "system",
+            }
+            self._remember_deleted_worker(
+                worker.id,
+                worker_name=worker_name,
+                vps_ip=vps_ip or None,
+                deleted_by=deleted_by,
+                reason="delete_without_ssh",
+            )
+            self._delete_bot_state(worker.id)
+            self.worker_connection_profiles.pop(str(worker.id or "").strip(), None)
+            self.worker_operation_tasks = [
+                task
+                for task in self.worker_operation_tasks
+                if str(task.get("worker_id") or "").strip() != str(worker.id or "").strip()
+            ]
+            self._save_state()
+        if completed_task is not None:
+            self._notify_bot_operation_actor(
+                completed_task,
+                self._bot_decommission_completed_message(
+                    completed_task,
+                    worker_name=worker_name,
+                    worker_id=str(worker_id or "").strip(),
+                    vps_ip=vps_ip or worker_name,
+                ),
+            )
 
     def update_bot_thread(self, worker_id: str, thread: int) -> None:
         worker = self._find_worker(worker_id)
