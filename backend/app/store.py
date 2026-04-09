@@ -1377,8 +1377,8 @@ class AppStore:
             worker = self._find_worker(normalized_worker_id)
             worker_name = self._resolve_worker_display_name(worker.id)
             vps_ip = str(completed_task.get("vps_ip") or "").strip() or worker_name
-            self._notify_bot_operation_actor(
-                completed_task,
+            self._notify_telegram_chat_ids(
+                self._bot_operation_recipient_chat_ids(completed_task),
                 self._bot_install_completed_message(
                     completed_task,
                     worker_name=worker_name,
@@ -1421,8 +1421,8 @@ class AppStore:
             self.worker_connection_profiles.pop(str(worker_id or "").strip(), None)
             self._save_state()
         if completed_task is not None:
-            self._notify_bot_operation_actor(
-                completed_task,
+            self._notify_telegram_chat_ids(
+                self._bot_operation_recipient_chat_ids(completed_task),
                 self._bot_decommission_completed_message(
                     completed_task,
                     worker_name=worker_name,
@@ -1652,48 +1652,31 @@ class AppStore:
 
     @staticmethod
     def _bot_operation_actor_label(role: str | None, username: str | None) -> str:
-        normalized_role = str(role or "").strip().lower()
         normalized_username = str(username or "").strip() or "system"
-        if normalized_role == "admin":
-            return f"Admin {normalized_username}"
-        if normalized_role == "manager":
-            return f"Manager {normalized_username}"
         return normalized_username
-
-    def _notify_bot_operation_actor(self, task: dict[str, Any], message: str) -> bool:
-        requested_by = str(task.get("requested_by") or "").strip()
-        if not requested_by or requested_by == "system":
-            return False
-        actor = self._find_user_by_username(requested_by)
-        if actor is None:
-            return False
-        chat_id = self._user_telegram_chat_id(actor.id)
-        if not chat_id:
-            return False
-        return self._send_telegram_alert(message, chat_id=chat_id)
 
     def _bot_install_completed_message(self, task: dict[str, Any], *, worker_name: str, worker_id: str, vps_ip: str) -> str:
         actor_label = self._bot_operation_actor_label(task.get("requested_role"), task.get("requested_by"))
         manager_name = str(task.get("manager_name") or "").strip() or "system"
         return (
-            "[BOT] Them BOT thanh cong\n"
-            f"Nguoi thao tac: {actor_label}\n"
+            "[BOT] Thêm BOT thành công\n"
+            f"Người thao tác: {actor_label}\n"
             f"BOT: {worker_name}\n"
             f"BOT ID: {worker_id}\n"
             f"VPS: {vps_ip}\n"
-            f"Manager so huu: {manager_name}"
+            f"Manager sở hữu: {manager_name}"
         )
 
     def _bot_decommission_completed_message(self, task: dict[str, Any], *, worker_name: str, worker_id: str, vps_ip: str) -> str:
         actor_label = self._bot_operation_actor_label(task.get("requested_role"), task.get("requested_by"))
         manager_name = str(task.get("manager_name") or "").strip() or "system"
         return (
-            "[BOT] Xoa BOT thanh cong\n"
-            f"Nguoi thao tac: {actor_label}\n"
+            "[BOT] Xóa BOT thành công\n"
+            f"Người thao tác: {actor_label}\n"
             f"BOT: {worker_name}\n"
             f"BOT ID: {worker_id}\n"
             f"VPS: {vps_ip}\n"
-            f"Manager truoc khi xoa: {manager_name}"
+            f"Manager trước khi xóa: {manager_name}"
         )
 
     def _user_telegram_chat_id(self, user_id: str) -> str:
@@ -1703,22 +1686,80 @@ class AppStore:
         except ValueError:
             return ""
 
-    def _worker_telegram_recipient_chat_ids(self, worker_id: str) -> list[str]:
+    def _telegram_recipient_chat_ids_for_users(self, users: list[UserSummary]) -> list[str]:
         chat_ids: list[str] = []
         seen_ids: set[str] = set()
-        for user in self._assigned_users_for_worker(worker_id):
+        for user in users:
             chat_id = self._user_telegram_chat_id(user.id)
             if not chat_id or chat_id in seen_ids:
                 continue
             chat_ids.append(chat_id)
             seen_ids.add(chat_id)
+        return chat_ids
+
+    def _all_admin_telegram_recipient_chat_ids(self) -> list[str]:
+        admin_users = [user for user in self.users if user.role == "admin"]
+        chat_ids = self._telegram_recipient_chat_ids_for_users(admin_users)
+        if chat_ids:
+            return chat_ids
         try:
             fallback_chat_id = self._normalize_telegram_chat_id(self._telegram_alert_chat_id())
         except ValueError:
             fallback_chat_id = ""
-        if fallback_chat_id and fallback_chat_id not in seen_ids:
-            chat_ids.append(fallback_chat_id)
-        return chat_ids
+        return [fallback_chat_id] if fallback_chat_id else []
+
+    def _manager_telegram_recipient_chat_ids(self, manager_usernames: set[str]) -> list[str]:
+        if not manager_usernames:
+            return []
+        manager_users = [
+            user
+            for user in self.users
+            if user.role == "manager" and user.username in manager_usernames
+        ]
+        return self._telegram_recipient_chat_ids_for_users(manager_users)
+
+    def _bot_operation_recipient_chat_ids(self, task: dict[str, Any]) -> list[str]:
+        recipient_chat_ids = self._all_admin_telegram_recipient_chat_ids()
+        seen_ids = set(recipient_chat_ids)
+        manager_usernames: set[str] = set()
+
+        manager_name = str(task.get("manager_name") or "").strip()
+        if manager_name and manager_name != "system":
+            manager_usernames.add(manager_name)
+
+        requested_by = str(task.get("requested_by") or "").strip()
+        requested_role = str(task.get("requested_role") or "").strip().lower()
+        if requested_by and requested_role == "manager":
+            manager_usernames.add(requested_by)
+
+        for chat_id in self._manager_telegram_recipient_chat_ids(manager_usernames):
+            if chat_id in seen_ids:
+                continue
+            recipient_chat_ids.append(chat_id)
+            seen_ids.add(chat_id)
+        return recipient_chat_ids
+
+    def _worker_alert_recipient_chat_ids(self, worker: WorkerRecord) -> list[str]:
+        recipient_chat_ids = self._all_admin_telegram_recipient_chat_ids()
+        seen_ids = set(recipient_chat_ids)
+        manager_name = str(worker.manager_name or "").strip()
+        if manager_name and manager_name != "system":
+            for chat_id in self._manager_telegram_recipient_chat_ids({manager_name}):
+                if chat_id in seen_ids:
+                    continue
+                recipient_chat_ids.append(chat_id)
+                seen_ids.add(chat_id)
+        return recipient_chat_ids
+
+    def _notify_telegram_chat_ids(self, chat_ids: list[str], message: str) -> bool:
+        recipient_chat_ids = [chat_id for chat_id in chat_ids if str(chat_id or "").strip()]
+        if not recipient_chat_ids:
+            return False
+        delivered = False
+        for chat_id in recipient_chat_ids:
+            if self._send_telegram_alert(message, chat_id=chat_id):
+                delivered = True
+        return delivered
 
     def _worker_offline_message(self, worker: WorkerRecord, *, now: datetime) -> str:
         worker_name = worker.name or worker.id
@@ -1762,8 +1803,7 @@ class AppStore:
             if worker.offline_alert_sent_at is not None:
                 continue
             message = self._worker_offline_message(worker, now=now)
-            recipient_chat_ids = self._worker_telegram_recipient_chat_ids(worker.id)
-            if any(self._send_telegram_alert(message, chat_id=chat_id) for chat_id in recipient_chat_ids):
+            if self._notify_telegram_chat_ids(self._worker_alert_recipient_chat_ids(worker), message):
                 worker.offline_alert_sent_at = now
                 changed = True
         if changed:
@@ -2669,8 +2709,8 @@ class AppStore:
             self._save_state()
             worker_snapshot = deepcopy(worker)
         if completed_task is not None and worker_snapshot is not None:
-            self._notify_bot_operation_actor(
-                completed_task,
+            self._notify_telegram_chat_ids(
+                self._bot_operation_recipient_chat_ids(completed_task),
                 self._bot_install_completed_message(
                     completed_task,
                     worker_name=self._resolve_worker_display_name(worker_snapshot.id),
@@ -6288,8 +6328,8 @@ class AppStore:
             ]
             self._save_state()
         if completed_task is not None:
-            self._notify_bot_operation_actor(
-                completed_task,
+            self._notify_telegram_chat_ids(
+                self._bot_operation_recipient_chat_ids(completed_task),
                 self._bot_decommission_completed_message(
                     completed_task,
                     worker_name=worker_name,

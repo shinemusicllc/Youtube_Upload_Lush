@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from ..auth import normalize_manager_filter_ids, require_admin_access, require_admin_only
@@ -210,7 +210,7 @@ async def get_admin_dashboard(request: Request):
 
 
 @router.get("/admin/users")
-async def get_admin_users(request: Request, manager_ids: list[str] | None = None):
+async def get_admin_users(request: Request, manager_ids: list[str] | None = Query(default=None)):
     selected_manager_ids = _manager_ids_from_request(request, manager_ids)
     current_user = require_admin_access(request)
     return {"items": store._build_user_rows(selected_manager_ids, viewer_role=current_user.role, viewer_id=current_user.id)}
@@ -337,7 +337,7 @@ async def toggle_admin_role(request: Request, user_id: str):
 @router.get("/admin/bots")
 async def get_admin_bots(
     request: Request,
-    manager_ids: list[str] | None = None,
+    manager_ids: list[str] | None = Query(default=None),
     userId: str | None = None,
     after_event_id: str | None = None,
 ):
@@ -411,7 +411,7 @@ async def install_admin_bot(request: Request, payload: AdminBotInstallPayload):
 
 
 @router.get("/admin/workers")
-async def get_admin_workers_legacy(request: Request, manager_ids: list[str] | None = None):
+async def get_admin_workers_legacy(request: Request, manager_ids: list[str] | None = Query(default=None)):
     return await get_admin_bots(request, manager_ids)
 
 
@@ -553,7 +553,7 @@ async def get_admin_users_of_bot(request: Request, bot_id: str):
 @router.get("/admin/channels")
 async def get_admin_channels(
     request: Request,
-    manager_ids: list[str] | None = None,
+    manager_ids: list[str] | None = Query(default=None),
     user_id: str | None = None,
     bot_id: str | None = None,
 ):
@@ -632,7 +632,7 @@ async def delete_admin_channel(request: Request, channel_id: str):
 
 
 @router.get("/admin/renders")
-async def get_admin_renders(request: Request, manager_ids: list[str] | None = None):
+async def get_admin_renders(request: Request, manager_ids: list[str] | None = Query(default=None)):
     selected_manager_ids = _manager_ids_from_request(request, manager_ids)
     current_user = require_admin_access(request)
     return store.get_admin_render_index_context(
@@ -643,12 +643,16 @@ async def get_admin_renders(request: Request, manager_ids: list[str] | None = No
 
 
 @router.get("/admin/jobs")
-async def get_admin_jobs_legacy(request: Request, manager_ids: list[str] | None = None):
+async def get_admin_jobs_legacy(request: Request, manager_ids: list[str] | None = Query(default=None)):
     return await get_admin_renders(request, manager_ids)
 
 
 @router.get("/admin/renders/of-channel/{channel_id}")
-async def get_admin_renders_of_channel(request: Request, channel_id: str, manager_ids: list[str] | None = None):
+async def get_admin_renders_of_channel(
+    request: Request,
+    channel_id: str,
+    manager_ids: list[str] | None = Query(default=None),
+):
     selected_manager_ids = _manager_ids_from_request(request, manager_ids)
     current_user = require_admin_access(request)
     _enforce_channel_scope(request, channel_id)
