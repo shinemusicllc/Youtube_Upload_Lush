@@ -50,9 +50,11 @@ class AdminBotUpdatePayload(BaseModel):
     name: str
     group: str | None = None
     manager_id: str | None = None
+    live_role: str | None = None
     assigned_user_id: str | None = None
     assigned_user_ids: list[str] | None = None
     confirm_manager_transfer_cleanup: bool = False
+    workspace: str | None = None
 
 
 class AdminBotThreadPayload(BaseModel):
@@ -65,6 +67,7 @@ class AdminBotInstallPayload(BaseModel):
     auth_mode: str = "password"
     password: str | None = None
     ssh_private_key: str | None = None
+    workspace: str | None = None
 
 
 class AdminBotDecommissionPayload(BaseModel):
@@ -72,6 +75,7 @@ class AdminBotDecommissionPayload(BaseModel):
     auth_mode: str = "password"
     password: str | None = None
     ssh_private_key: str | None = None
+    workspace: str | None = None
 
 
 class ManagerFilterPayload(BaseModel):
@@ -82,6 +86,11 @@ def _manager_ids_from_request(request: Request, manager_ids: list[str] | None = 
     current_user = require_admin_access(request)
     available_ids = [user.id for user in store.users if user.role == "manager"]
     return normalize_manager_filter_ids(request, manager_ids or [], available_ids, current_user)
+
+
+def _resolve_workspace_mode(value: str | None) -> str:
+    normalized = str(value or "").strip().lower()
+    return "live" if normalized == "live" else "upload"
 
 
 def _current_user_payload(request: Request) -> dict[str, Any]:
@@ -109,11 +118,11 @@ def _enforce_user_scope(request: Request, user_id: str) -> None:
         raise HTTPException(status_code=403, detail="Khong du quyen thao tac user khac manager.")
 
 
-def _enforce_worker_scope(request: Request, worker_id: str) -> None:
+def _enforce_worker_scope(request: Request, worker_id: str, *, workspace_mode: str = "upload") -> None:
     current_user = require_admin_access(request)
     if current_user.role != "manager":
         return
-    worker = store._find_worker(worker_id)
+    worker = store._find_live_worker(worker_id) if workspace_mode == "live" else store._find_worker(worker_id)
     if worker.manager_id != current_user.id:
         raise HTTPException(status_code=403, detail="Khong du quyen thao tac BOT ngoai scope manager.")
 
@@ -340,9 +349,11 @@ async def get_admin_bots(
     manager_ids: list[str] | None = Query(default=None),
     userId: str | None = None,
     after_event_id: str | None = None,
+    workspace: str = "upload",
 ):
     if userId:
         _enforce_user_scope(request, userId)
+    workspace_mode = _resolve_workspace_mode(workspace)
     selected_manager_ids = _manager_ids_from_request(request, manager_ids)
     if not selected_manager_ids and userId:
         focus_user = store._find_user(userId)
@@ -355,15 +366,20 @@ async def get_admin_bots(
     current_user = require_admin_access(request)
     if current_user.role == "manager" and not selected_manager_ids:
         selected_manager_ids = [current_user.id]
-    notifications = store.get_admin_notifications(
-        manager_ids=selected_manager_ids,
-        after_id=after_event_id,
+    notifications = (
+        store.get_admin_notifications(
+            manager_ids=selected_manager_ids,
+            after_id=after_event_id,
+        )
+        if workspace_mode != "live"
+        else {"items": [], "cursor": after_event_id or ""}
     )
     return {
         "items": store.get_admin_bot_index_context(
             manager_ids=selected_manager_ids,
             viewer_role=current_user.role,
             viewer_id=current_user.id,
+            workspace_mode=workspace_mode,
         ).get("workers", []),
         "events": notifications.get("items", []),
         "event_cursor": notifications.get("cursor", ""),
@@ -373,11 +389,30 @@ async def get_admin_bots(
 @router.post("/admin/bots/install")
 async def install_admin_bot(request: Request, payload: AdminBotInstallPayload):
     current_user = require_admin_access(request)
+    workspace_mode = _resolve_workspace_mode(payload.workspace)
     manager_name = current_user.username if current_user.role == "manager" else "system"
     manager_id = current_user.id if current_user.role == "manager" else None
-    worker_id = store.suggest_next_worker_bootstrap_id()
+    worker_id = (
+        store.suggest_next_live_worker_bootstrap_id()
+        if workspace_mode == "live"
+        else store.suggest_next_worker_bootstrap_id()
+    )
     auth_mode = str(payload.auth_mode or "password").strip().lower() or "password"
     try:
+        if workspace_mode == "live":
+            worker = store.create_live_bot(
+                name=payload.vps_ip,
+                manager_id=manager_id,
+                viewer_role=current_user.role,
+                viewer_id=current_user.id,
+            )
+            return {
+                "ok": True,
+                "operation_id": None,
+                "worker_id": worker.id,
+                "vps_ip": worker.name,
+                "message": f"Đã thêm BOT live {worker.id} với địa chỉ {worker.name}.",
+            }
         bootstrap_request = build_worker_bootstrap_request(
             vps_ip=payload.vps_ip,
             ssh_user=payload.ssh_user,
@@ -418,14 +453,22 @@ async def get_admin_workers_legacy(request: Request, manager_ids: list[str] | No
 @router.put("/admin/bots/{bot_id}")
 async def update_admin_bot(request: Request, bot_id: str, payload: AdminBotUpdatePayload):
     current_user = require_admin_access(request)
-    _enforce_worker_scope(request, bot_id)
+    workspace_mode = _resolve_workspace_mode(payload.workspace)
+    _enforce_worker_scope(request, bot_id, workspace_mode=workspace_mode)
     manager_id = current_user.id if current_user.role == "manager" else payload.manager_id
     assigned_user_id = payload.assigned_user_id
     assigned_user_ids = [str(value).strip() for value in (payload.assigned_user_ids or []) if str(value).strip()]
     existing_assigned_user_ids = set()
     if payload.assigned_user_ids is not None:
         try:
-            existing_assigned_user_ids = {user.id for user in store._assigned_users_for_worker(bot_id)}
+            existing_assigned_user_ids = {
+                user.id
+                for user in (
+                    store._assigned_live_users_for_worker(bot_id)
+                    if workspace_mode == "live"
+                    else store._assigned_users_for_worker(bot_id)
+                )
+            }
         except KeyError:
             existing_assigned_user_ids = set()
     if current_user.role == "admin" and manager_id:
@@ -446,6 +489,8 @@ async def update_admin_bot(request: Request, bot_id: str, payload: AdminBotUpdat
         payload.name,
         payload.group,
         manager_id,
+        workspace_mode=workspace_mode,
+        live_role=payload.live_role,
         assigned_user_id=assigned_user_id,
         assigned_user_ids=assigned_user_ids if payload.assigned_user_ids is not None else None,
         confirm_manager_transfer_cleanup=bool(payload.confirm_manager_transfer_cleanup),
@@ -470,9 +515,19 @@ async def update_admin_bot_threads(request: Request, bot_id: str, payload: Admin
 
 @router.delete("/admin/bots/{bot_id}")
 async def delete_admin_bot(request: Request, bot_id: str, payload: AdminBotDecommissionPayload):
-    _enforce_worker_scope(request, bot_id)
+    workspace_mode = _resolve_workspace_mode(payload.workspace)
+    _enforce_worker_scope(request, bot_id, workspace_mode=workspace_mode)
     try:
         current_user = require_admin_access(request)
+        if workspace_mode == "live":
+            store.delete_live_bot_without_ssh(bot_id, deleted_by=current_user.username)
+            return {
+                "ok": True,
+                "worker_id": bot_id,
+                "deleted": True,
+                "mode": "local",
+                "message": "Đã xóa BOT live khỏi control-plane.",
+            }
         worker = next((item for item in store.workers if item.id == bot_id), None)
         if worker is None:
             raise KeyError(bot_id)
@@ -529,24 +584,28 @@ async def delete_admin_bot(request: Request, bot_id: str, payload: AdminBotDecom
 
 
 @router.get("/admin/bots/of-user/{user_id}")
-async def get_admin_bots_of_user(request: Request, user_id: str):
+async def get_admin_bots_of_user(request: Request, user_id: str, workspace: str = "upload"):
     _enforce_user_scope(request, user_id)
     current_user = require_admin_access(request)
+    workspace_mode = _resolve_workspace_mode(workspace)
     return store.get_admin_bots_of_user_context(
         user_id=user_id,
         viewer_role=current_user.role,
         viewer_id=current_user.id,
+        workspace_mode=workspace_mode,
     )
 
 
 @router.get("/admin/bots/{bot_id}/users")
-async def get_admin_users_of_bot(request: Request, bot_id: str):
-    _enforce_worker_scope(request, bot_id)
+async def get_admin_users_of_bot(request: Request, bot_id: str, workspace: str = "upload"):
+    workspace_mode = _resolve_workspace_mode(workspace)
+    _enforce_worker_scope(request, bot_id, workspace_mode=workspace_mode)
     current_user = require_admin_access(request)
     return store.get_admin_users_of_bot_context(
         worker_id=bot_id,
         viewer_role=current_user.role,
         viewer_id=current_user.id,
+        workspace_mode=workspace_mode,
     )
 
 
@@ -556,19 +615,22 @@ async def get_admin_channels(
     manager_ids: list[str] | None = Query(default=None),
     user_id: str | None = None,
     bot_id: str | None = None,
+    workspace: str = "upload",
 ):
     selected_manager_ids = _manager_ids_from_request(request, manager_ids)
     current_user = require_admin_access(request)
+    workspace_mode = _resolve_workspace_mode(workspace)
     if user_id:
         _enforce_user_scope(request, user_id)
     if bot_id:
-        _enforce_worker_scope(request, bot_id)
+        _enforce_worker_scope(request, bot_id, workspace_mode=workspace_mode)
     return store.get_admin_channel_index_context(
         manager_ids=selected_manager_ids,
         user_id=user_id,
         bot_id=bot_id,
         viewer_role=current_user.role,
         viewer_id=current_user.id,
+        workspace_mode=workspace_mode,
     )
 
 
@@ -632,19 +694,29 @@ async def delete_admin_channel(request: Request, channel_id: str):
 
 
 @router.get("/admin/renders")
-async def get_admin_renders(request: Request, manager_ids: list[str] | None = Query(default=None)):
+async def get_admin_renders(
+    request: Request,
+    manager_ids: list[str] | None = Query(default=None),
+    workspace: str = "upload",
+):
     selected_manager_ids = _manager_ids_from_request(request, manager_ids)
     current_user = require_admin_access(request)
+    workspace_mode = _resolve_workspace_mode(workspace)
     return store.get_admin_render_index_context(
         manager_ids=selected_manager_ids,
+        workspace_mode=workspace_mode,
         viewer_role=current_user.role,
         viewer_id=current_user.id,
     )
 
 
 @router.get("/admin/jobs")
-async def get_admin_jobs_legacy(request: Request, manager_ids: list[str] | None = Query(default=None)):
-    return await get_admin_renders(request, manager_ids)
+async def get_admin_jobs_legacy(
+    request: Request,
+    manager_ids: list[str] | None = Query(default=None),
+    workspace: str = "upload",
+):
+    return await get_admin_renders(request, manager_ids, workspace)
 
 
 @router.get("/admin/renders/of-channel/{channel_id}")

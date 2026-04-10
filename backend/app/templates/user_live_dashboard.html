@@ -282,9 +282,22 @@
       .live-config-flat { grid-template-columns: 1fr; }
       .live-config-column + .live-config-column { border-left: 0; border-top: 1px solid rgba(226, 232, 240, 0.9); }
     }
+    .render-table { width: 100%; table-layout: fixed; }
     .render-table thead th { position: relative; }
-    .render-table tbody td { vertical-align: middle; }
+    .render-table tbody td { vertical-align: top; overflow-wrap: anywhere; word-break: break-word; }
     .render-table thead th:not(:last-child)::after { content: ''; position: absolute; right: 0; top: 50%; width: 1px; height: 20px; background: rgb(226 232 240); transform: translateY(-50%); }
+    /* Live list column widths: edit px values here */
+    .live-col-stt { width: 64px; }
+    .live-col-actions { width: 174px; }
+    .live-col-bot { width: 130px; }
+    .live-col-group { width: 108px; }
+    .live-col-title { width: 130px; }
+    .live-col-key { width: 130px; }
+    .live-col-backup { width: 130px; }
+    .live-col-type { width: 112px; }
+    .live-col-timeline { width: 216px; }
+    .live-col-log { width: 100px; }
+    .live-col-status { width: 112px; }
     .sortable-button { width: 100%; display: inline-flex; align-items: center; gap: 4px; color: rgb(71 85 105); font-size: 11px; font-weight: 600; letter-spacing: 0.02em; background: transparent; border: 0; padding: 0; }
     .sortable-button.center { justify-content: center; }
     .sortable-button.end { justify-content: flex-end; }
@@ -307,9 +320,9 @@
       min-width: 0;
     }
     .live-table-line {
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
     .live-table-line-wrap {
       overflow-wrap: anywhere;
@@ -337,7 +350,14 @@
     }
     .live-table-action-btn {
       min-width: 0;
+      min-height: 34px;
+      height: 34px;
+      align-items: center;
       justify-content: center;
+      white-space: nowrap;
+    }
+    .live-table-action-form {
+      display: contents;
     }
   </style>
 </head>
@@ -407,6 +427,8 @@
 
     <div class="min-w-0 flex-1 overflow-y-auto w-full pb-16">
       <div class="min-w-0 w-full px-8 py-6 space-y-6">
+        {% set live_index_href = '/admin/live' if dashboard.admin_shell else '/app/live' %}
+        {% set live_delete_action = '/admin/live/delete' if dashboard.admin_shell else '/app/live/delete' %}
         {% if dashboard.notice %}
         <div class="elevated-card px-5 py-4 border transition-all duration-200 {% if dashboard.notice_level == 'error' %}border-rose-200 bg-rose-50/80{% else %}border-emerald-200 bg-emerald-50/80{% endif %}">
           <div class="flex items-start gap-3">
@@ -433,7 +455,66 @@
           </div>
           {% endfor %}
         </div>
-        <form class="elevated-card-panel live-config-shell overflow-visible" onsubmit="return false;">
+        {% if dashboard.detail_stream %}
+        <div class="elevated-card border border-slate-200/80 px-6 py-5">
+          <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p class="text-[11px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Chi tiết luồng live</p>
+              <h3 class="mt-1 font-display text-[18px] font-bold text-slate-900">{{ dashboard.detail_stream.title | e }}</h3>
+              <p class="mt-1 text-[12px] text-slate-500">BOT chính {{ dashboard.detail_stream.primary_worker_name | e }}{% if dashboard.detail_stream.manager_name and dashboard.detail_stream.manager_name != '-' %} • Manager {{ dashboard.detail_stream.manager_name | e }}{% endif %}</p>
+            </div>
+            <a href="{{ live_index_href }}{% for manager_id in dashboard.live_form_manager_ids | default([], true) %}{% if loop.first %}?{% else %}&{% endif %}manager_ids={{ manager_id | e }}{% endfor %}" class="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-[13px] font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900">
+              Đóng chi tiết
+            </a>
+          </div>
+          <div class="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div class="rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3">
+              <p class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Chủ sở hữu</p>
+              <p class="mt-2 text-[13px] font-semibold text-slate-900">{{ dashboard.detail_stream.owner_username | e }}</p>
+            </div>
+            <div class="rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3">
+              <p class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">BOT backup</p>
+              <p class="mt-2 text-[13px] font-semibold text-slate-900">{{ dashboard.detail_stream.backup_worker_name | e }}</p>
+            </div>
+            <div class="rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3">
+              <p class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Trạng thái</p>
+              <div class="mt-2 flex items-center gap-2">
+                <span class="live-table-chip {{ dashboard.detail_stream.status_class | e }}">{{ dashboard.detail_stream.status_label | e }}</span>
+                <span class="text-[12px] text-slate-500">{{ dashboard.detail_stream.log_label | e }}</span>
+              </div>
+            </div>
+            <div class="rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3">
+              <p class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Backup delay</p>
+              <p class="mt-2 text-[13px] font-semibold text-slate-900">{{ dashboard.detail_stream.backup_delay_minutes }} phút</p>
+            </div>
+          </div>
+          <div class="mt-4 grid gap-4 xl:grid-cols-2">
+            <div class="rounded-xl border border-slate-200 bg-white px-4 py-3">
+              <p class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Timeline</p>
+              <div class="mt-2 space-y-1.5 font-mono text-[12px] text-slate-700">
+                <p><span class="font-semibold text-slate-500">Bắt đầu:</span> {{ dashboard.detail_stream.start_at | e }}</p>
+                <p><span class="font-semibold text-slate-500">Kết thúc:</span> {{ dashboard.detail_stream.end_at | e }}</p>
+                <p><span class="font-semibold text-slate-500">Cấu hình:</span> {{ dashboard.detail_stream.live_label | e }}</p>
+              </div>
+            </div>
+            <div class="rounded-xl border border-slate-200 bg-white px-4 py-3">
+              <p class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Nguồn phát</p>
+              <div class="mt-2 space-y-2 text-[12px] text-slate-700">
+                <p class="break-all"><span class="font-semibold text-slate-500">Stream key:</span> {{ dashboard.detail_stream.stream_key | e }}</p>
+                <p class="break-all"><span class="font-semibold text-slate-500">Video:</span> {{ dashboard.detail_stream.video_url | e }}</p>
+                <p class="break-all"><span class="font-semibold text-slate-500">Audio:</span> {{ dashboard.detail_stream.audio_url | e }}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        {% endif %}
+        <form method="post" action="{{ dashboard.live_form_action | e }}" class="elevated-card-panel live-config-shell overflow-visible">
+          {% for manager_id in dashboard.live_form_manager_ids | default([], true) %}
+          <input type="hidden" name="manager_ids" value="{{ manager_id | e }}">
+          {% endfor %}
+          {% if dashboard.editing_stream_id %}
+          <input type="hidden" name="stream_id" value="{{ dashboard.editing_stream_id | e }}">
+          {% endif %}
           <div class="p-6 flex flex-col relative bg-white rounded-2xl">
             <div class="absolute top-0 left-6 h-1 w-16 bg-brand-500 rounded-b-full"></div>
             <div class="flex items-start gap-3 pb-4 border-b border-slate-100/80 mb-6">
@@ -452,15 +533,15 @@
                 <div class="live-config-stack">
                   <div>
                     <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">T&ecirc;n lu&#7891;ng live</label>
-                    <input type="text" value="{{ dashboard.live_form.stream_name | e }}" placeholder="Nh&#7853;p t&ecirc;n lu&#7891;ng..." class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-4 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 placeholder:text-slate-400 text-[13px] transition-all shadow-sm shadow-slate-100/50">
+                    <input type="text" name="stream_name" value="{{ dashboard.live_form.stream_name | e }}" placeholder="Nh&#7853;p t&ecirc;n lu&#7891;ng..." class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-4 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 placeholder:text-slate-400 text-[13px] transition-all shadow-sm shadow-slate-100/50">
                   </div>
                   <div>
                     <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">Link video ngu&#7891;n</label>
-                    <input type="text" value="{{ dashboard.live_form.video_url | e }}" placeholder="D&aacute;n link video live..." class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-4 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 placeholder:text-slate-400 text-[13px] transition-all shadow-sm shadow-slate-100/50">
+                    <input type="text" name="video_url" value="{{ dashboard.live_form.video_url | e }}" placeholder="D&aacute;n link video live..." class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-4 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 placeholder:text-slate-400 text-[13px] transition-all shadow-sm shadow-slate-100/50">
                   </div>
                   <div>
                     <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">Link audio</label>
-                    <input type="text" value="{{ dashboard.live_form.audio_url | e }}" placeholder="T&ugrave;y ch&#7885;n: nh&#7841;c n&#7873;n ho&#7863;c audio ri&ecirc;ng..." class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-4 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 placeholder:text-slate-400 text-[13px] transition-all shadow-sm shadow-slate-100/50">
+                    <input type="text" name="audio_url" value="{{ dashboard.live_form.audio_url | e }}" placeholder="T&ugrave;y ch&#7885;n: nh&#7841;c n&#7873;n ho&#7863;c audio ri&ecirc;ng..." class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-4 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 placeholder:text-slate-400 text-[13px] transition-all shadow-sm shadow-slate-100/50">
                   </div>
                 </div>
               </div>
@@ -472,10 +553,10 @@
                     <div>
                       <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">BOT ch&iacute;nh</label>
                       <div class="live-select" data-live-select data-placeholder="-- Ch&#7885;n BOT live --">
-                        <select class="hidden" name="manager_bot_id">
+                        <select class="hidden" name="primary_worker_id">
                           <option value="">-- Ch&#7885;n BOT live --</option>
-                          {% for worker in dashboard.live_workers %}
-                          <option value="{{ worker.id | e }}">{{ worker.name | e }}</option>
+                          {% for worker in dashboard.primary_live_workers %}
+                          <option value="{{ worker.id | e }}"{% if dashboard.live_form.primary_worker_id == worker.id %} selected{% endif %}>{{ worker.name | e }}</option>
                           {% endfor %}
                         </select>
                         <button type="button" class="live-select-trigger" aria-haspopup="listbox" aria-expanded="false">
@@ -500,7 +581,7 @@
                               </span>
                               <i data-lucide="check" class="live-select-check w-4 h-4"></i>
                             </button>
-                            {% for worker in dashboard.live_workers %}
+                            {% for worker in dashboard.primary_live_workers %}
                             <button type="button" class="live-select-option" data-value="{{ worker.id | e }}" data-label="{{ worker.name | e }}" data-meta="{{ worker.manager_name | e }}" data-avatar="{{ worker.name[:2] | upper | e }}">
                               <span class="inline-flex items-center gap-3 min-w-0">
                                 <span class="live-select-avatar">{{ worker.name[:2] | upper | e }}</span>
@@ -520,10 +601,10 @@
                     <div>
                       <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">BOT backup <span class="text-rose-500 font-medium">* &#272;&#7875; tr&#7889;ng n&#7871;u kh&#244;ng Backup</span></label>
                       <div class="live-select" data-live-select data-placeholder="-- T&ugrave;y ch&#7885;n --">
-                        <select class="hidden" name="manager_bot_backup_id">
+                        <select class="hidden" name="backup_worker_id">
                           <option value="">-- T&ugrave;y ch&#7885;n --</option>
-                          {% for worker in dashboard.live_workers %}
-                          <option value="{{ worker.id | e }}">{{ worker.name | e }}</option>
+                          {% for worker in dashboard.backup_live_workers %}
+                          <option value="{{ worker.id | e }}"{% if dashboard.live_form.backup_worker_id == worker.id %} selected{% endif %}>{{ worker.name | e }}</option>
                           {% endfor %}
                         </select>
                         <button type="button" class="live-select-trigger" aria-haspopup="listbox" aria-expanded="false">
@@ -548,7 +629,7 @@
                               </span>
                               <i data-lucide="check" class="live-select-check w-4 h-4"></i>
                             </button>
-                            {% for worker in dashboard.live_workers %}
+                            {% for worker in dashboard.backup_live_workers %}
                             <button type="button" class="live-select-option" data-value="{{ worker.id | e }}" data-label="{{ worker.name | e }}" data-meta="{{ worker.manager_name | e }}" data-avatar="{{ worker.name[:2] | upper | e }}">
                               <span class="inline-flex items-center gap-3 min-w-0">
                                 <span class="live-select-avatar">{{ worker.name[:2] | upper | e }}</span>
@@ -570,11 +651,11 @@
                   <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
                     <div>
                       <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">Delay backup (ph&uacute;t)</label>
-                      <input type="number" min="0" value="{{ dashboard.live_form.backup_delay_minutes }}" class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-4 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 text-[13px] transition-all shadow-sm shadow-slate-100/50">
+                      <input type="number" name="backup_delay_minutes" min="0" value="{{ dashboard.live_form.backup_delay_minutes }}" class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-4 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 text-[13px] transition-all shadow-sm shadow-slate-100/50">
                     </div>
                     <div>
                       <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">Stream key</label>
-                      <input type="text" value="{{ dashboard.live_form.stream_key | e }}" placeholder="Nh&#7853;p stream key YouTube..." class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-4 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 placeholder:text-slate-400 text-[13px] transition-all shadow-sm shadow-slate-100/50">
+                      <input type="text" name="stream_key" value="{{ dashboard.live_form.stream_key | e }}" placeholder="Nh&#7853;p stream key YouTube..." class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-4 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 placeholder:text-slate-400 text-[13px] transition-all shadow-sm shadow-slate-100/50">
                     </div>
                   </div>
 
@@ -582,14 +663,14 @@
                     <div>
                       <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">Th&#7901;i gian b&#7855;t &#273;&#7847;u <span class="text-rose-500">*</span> <span class="text-rose-500 font-medium">B&#7855;t bu&#7897;c</span></label>
                       <div class="datetime-field">
-                        <input type="text" value="" data-live-datetime placeholder="dd/mm/yyyy --:--" class="datetime-field-input panel-input w-full bg-white border border-slate-200 text-slate-700 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 shadow-sm shadow-slate-100/50 text-[12px] transition-all text-center font-mono">
+                        <input type="text" name="start_time_live" value="{{ dashboard.live_form.start_at | e }}" data-live-datetime placeholder="dd/mm/yyyy --:--" class="datetime-field-input panel-input w-full bg-white border border-slate-200 text-slate-700 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 shadow-sm shadow-slate-100/50 text-[12px] transition-all text-center font-mono">
                         <span class="datetime-field-icon"><i data-lucide="calendar-days" class="w-[15px] h-[15px]"></i></span>
                       </div>
                     </div>
                     <div>
                       <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">K&#7871;t th&uacute;c live <span class="text-rose-500 font-medium">* Kh&#244;ng ch&#7885;n n&#7871;u live 24/7</span></label>
                       <div class="datetime-field">
-                        <input type="text" value="" data-live-datetime placeholder="dd/mm/yyyy --:--" class="datetime-field-input panel-input w-full bg-white border border-slate-200 text-slate-700 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 shadow-sm shadow-slate-100/50 text-[12px] transition-all text-center font-mono">
+                        <input type="text" name="end_time_live" value="{{ dashboard.live_form.end_at | e }}" data-live-datetime placeholder="dd/mm/yyyy --:--" class="datetime-field-input panel-input w-full bg-white border border-slate-200 text-slate-700 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 shadow-sm shadow-slate-100/50 text-[12px] transition-all text-center font-mono">
                         <span class="datetime-field-icon"><i data-lucide="calendar-days" class="w-[15px] h-[15px]"></i></span>
                       </div>
                     </div>
@@ -599,8 +680,12 @@
             </div>
             <div class="mt-auto border-t border-slate-100/80 pt-4">
               <div class="flex items-center justify-end gap-2">
-                <button type="reset" class="panel-action-button inline-flex min-w-[108px] px-4 bg-white hover:bg-slate-50 text-slate-600 font-semibold transition-all border border-slate-200 rounded-lg text-[13px] hover:shadow-sm">Đặt lại</button>
-                <button type="submit" class="panel-action-button inline-flex min-w-[132px] bg-gradient-to-tr from-brand-600 to-brand-500 hover:from-brand-700 hover:to-brand-600 text-white font-semibold px-6 rounded-lg transition-transform text-[13px] whitespace-nowrap shadow-[0_8px_16px_rgba(93,103,223,0.18)] hover:shadow-[0_10px_18px_rgba(93,103,223,0.24)]">Tạo luồng live</button>
+                {% if dashboard.live_form_mode == 'edit' %}
+                <a href="{{ dashboard.live_form_cancel_href | e }}{% for manager_id in dashboard.live_form_manager_ids | default([], true) %}{% if loop.first and '?' not in dashboard.live_form_cancel_href %}?{% else %}&{% endif %}manager_ids={{ manager_id | e }}{% endfor %}" class="panel-action-button inline-flex min-w-[128px] px-4 bg-white hover:bg-slate-50 text-slate-600 font-semibold transition-all border border-slate-200 rounded-lg text-[13px] hover:shadow-sm">{{ dashboard.live_form_reset_label | e }}</a>
+                {% else %}
+                <button type="reset" class="panel-action-button inline-flex min-w-[108px] px-4 bg-white hover:bg-slate-50 text-slate-600 font-semibold transition-all border border-slate-200 rounded-lg text-[13px] hover:shadow-sm">{{ dashboard.live_form_reset_label | e }}</button>
+                {% endif %}
+                <button type="submit" class="panel-action-button inline-flex min-w-[132px] bg-gradient-to-tr from-brand-600 to-brand-500 hover:from-brand-700 hover:to-brand-600 text-white font-semibold px-6 rounded-lg transition-transform text-[13px] whitespace-nowrap shadow-[0_8px_16px_rgba(93,103,223,0.18)] hover:shadow-[0_10px_18px_rgba(93,103,223,0.24)]">{{ dashboard.live_form_submit_label | e }}</button>
               </div>
             </div>
           </div>
@@ -623,19 +708,17 @@
             <table class="render-table w-full text-left text-sm">
               <thead class="text-slate-600 text-[11px] font-semibold tracking-wide bg-slate-50/70">
                 <tr>
-                  <th class="px-4 py-4 border-b border-slate-200 w-16 text-center"><button type="button" class="sortable-button center">STT <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
-                  <th class="px-4 py-4 border-b border-slate-200 w-[174px]"><button type="button" class="sortable-button">Tác vụ <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
-                  <th class="px-6 py-4 border-b border-slate-200 min-w-[160px]"><button type="button" class="sortable-button">BOT live <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
-                  <th class="px-5 py-4 border-b border-slate-200 min-w-[128px]"><button type="button" class="sortable-button">Group <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
-                  <th class="px-6 py-4 border-b border-slate-200 min-w-[280px]"><button type="button" class="sortable-button">Tên luồng <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
-                  <th class="px-5 py-4 border-b border-slate-200 min-w-[180px]"><button type="button" class="sortable-button">Khóa luồng <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
-                  <th class="px-5 py-4 border-b border-slate-200 min-w-[180px]"><button type="button" class="sortable-button">BOT backup <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
-                  <th class="px-5 py-4 border-b border-slate-200 min-w-[112px]"><button type="button" class="sortable-button">Kiểu live <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
-                  <th class="px-5 py-4 border-b border-slate-200 min-w-[146px]"><button type="button" class="sortable-button">Thời gian<br>bắt đầu <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
-                  <th class="px-5 py-4 border-b border-slate-200 min-w-[146px]"><button type="button" class="sortable-button">Thời gian<br>kết thúc <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
-                  <th class="px-5 py-4 border-b border-slate-200 min-w-[124px]"><button type="button" class="sortable-button">Thời gian<br>live <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
-                  <th class="px-5 py-4 border-b border-slate-200 min-w-[100px]"><button type="button" class="sortable-button">Log <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
-                  <th class="px-5 py-4 border-b border-slate-200 min-w-[112px]"><button type="button" class="sortable-button">Trạng thái <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
+                  <th class="live-col-stt px-4 py-4 border-b border-slate-200 text-center"><button type="button" class="sortable-button center">STT <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
+                  <th class="live-col-actions px-4 py-4 border-b border-slate-200"><button type="button" class="sortable-button">Tác vụ <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
+                  <th class="live-col-bot px-6 py-4 border-b border-slate-200"><button type="button" class="sortable-button">BOT live <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
+                  <th class="live-col-group px-5 py-4 border-b border-slate-200"><button type="button" class="sortable-button">Group <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
+                  <th class="live-col-title px-6 py-4 border-b border-slate-200"><button type="button" class="sortable-button">Tên luồng <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
+                  <th class="live-col-key px-5 py-4 border-b border-slate-200"><button type="button" class="sortable-button">Khóa luồng <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
+                  <th class="live-col-backup px-5 py-4 border-b border-slate-200"><button type="button" class="sortable-button">BOT backup <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
+                  <th class="live-col-type px-5 py-4 border-b border-slate-200"><button type="button" class="sortable-button">Kiểu live <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
+                  <th class="live-col-timeline px-5 py-4 border-b border-slate-200"><button type="button" class="sortable-button">Timeline <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
+                  <th class="live-col-log px-5 py-4 border-b border-slate-200"><button type="button" class="sortable-button">Log <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
+                  <th class="live-col-status px-5 py-4 border-b border-slate-200"><button type="button" class="sortable-button">Trạng thái <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
                 </tr>
               </thead>
               <tbody id="liveStreamTableBody" class="divide-y divide-slate-200/70 text-slate-700">
@@ -645,16 +728,21 @@
                   <td class="px-4 py-5 text-center font-mono text-[13px] text-slate-500">{{ stream.index }}</td>
                   <td class="px-4 py-5 align-top">
                     <div class="live-table-action-grid">
-                      <button type="button" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 rounded-lg hover:bg-emerald-100 hover:text-emerald-900 hover:shadow-sm transition-all"><i data-lucide="play" class="w-3 h-3"></i> Chạy</button>
-                      <button type="button" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-brand-700 bg-brand-50 border border-brand-200 rounded-lg hover:bg-brand-100 hover:text-brand-800 hover:shadow-sm transition-all"><i data-lucide="edit-2" class="w-3 h-3"></i> Sửa</button>
-                      <button type="button" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 hover:text-rose-800 hover:shadow-sm transition-all"><i data-lucide="trash" class="w-3 h-3"></i> Xóa</button>
-                      <button type="button" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 hover:text-slate-800 hover:shadow-sm transition-all"><i data-lucide="eye" class="w-3 h-3"></i> Chi tiết</button>
+                      <button type="button" disabled class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-slate-400 bg-slate-50 border border-slate-200 rounded-lg cursor-not-allowed"><i data-lucide="play" class="w-3 h-3"></i> Chạy</button>
+                      <a href="{{ live_index_href }}?edit={{ stream.id | e }}{% for manager_id in dashboard.live_form_manager_ids | default([], true) %}&manager_ids={{ manager_id | e }}{% endfor %}" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-brand-700 bg-brand-50 border border-brand-200 rounded-lg hover:bg-brand-100 hover:text-brand-800 hover:shadow-sm transition-all"><i data-lucide="edit-2" class="w-3 h-3"></i> Sửa</a>
+                      <form method="post" action="{{ live_delete_action }}" class="live-table-action-form" onsubmit="return window.confirm('Bạn có chắc chắn muốn xoá luồng live này không?');">
+                        <input type="hidden" name="stream_id" value="{{ stream.id | e }}">
+                        {% for manager_id in dashboard.live_form_manager_ids | default([], true) %}
+                        <input type="hidden" name="manager_ids" value="{{ manager_id | e }}">
+                        {% endfor %}
+                        <button type="submit" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 hover:text-rose-800 hover:shadow-sm transition-all"><i data-lucide="trash" class="w-3 h-3"></i> Xóa</button>
+                      </form>
+                      <a href="{{ live_index_href }}?detail={{ stream.id | e }}{% for manager_id in dashboard.live_form_manager_ids | default([], true) %}&manager_ids={{ manager_id | e }}{% endfor %}" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-brand-700 bg-brand-50 border border-brand-200 rounded-lg hover:bg-brand-100 hover:text-brand-800 hover:shadow-sm transition-all"><i data-lucide="eye" class="w-3 h-3"></i> Chi tiết</a>
                     </div>
                   </td>
                   <td class="px-6 py-5 align-top">
                     <div class="live-table-two-line max-w-[168px]">
                       <p class="live-table-line text-[12px] font-bold text-slate-900">{{ stream.bot_name | default('-', true) | e }}</p>
-                      <p class="live-table-line text-[10px] text-brand-600 font-mono">{{ stream.bot_meta | default(stream.bot_host | default('', true), true) | e }}</p>
                     </div>
                   </td>
                   <td class="px-5 py-5 align-top">
@@ -666,19 +754,16 @@
                   <td class="px-6 py-5 align-top">
                     <div class="live-table-two-line min-w-0 max-w-[360px]">
                       <p class="live-stream-title text-[13px] font-bold text-brand-700 leading-[1.4]" title="{{ stream.title | default(stream.stream_name, true) | e }}">{{ stream.title | default(stream.stream_name | default('-', true), true) | e }}</p>
-                      <p class="live-table-line text-[11px] text-slate-500">{{ stream.stream_name | default(stream.video_label | default('', true), true) | e }}</p>
                     </div>
                   </td>
                   <td class="px-5 py-5 align-top">
                     <div class="live-table-two-line max-w-[180px]">
                       <p class="live-table-line-wrap text-[12px] font-semibold text-slate-800 font-mono">{{ stream.stream_key_masked | default(stream.stream_key | default('-', true), true) | e }}</p>
-                      <p class="live-table-line text-[10px] text-slate-500">{{ stream.key_meta | default('RTMP key', true) | e }}</p>
                     </div>
                   </td>
                   <td class="px-5 py-5 align-top">
                     <div class="live-table-two-line max-w-[180px]">
                       <p class="live-table-line text-[12px] font-semibold text-slate-900">{{ stream.bot_backup_name | default('Không dùng backup', true) | e }}</p>
-                      <p class="live-table-line text-[10px] text-slate-500">{{ stream.bot_backup_meta | default('', true) | e }}</p>
                     </div>
                   </td>
                   <td class="px-5 py-5 align-top">
@@ -686,20 +771,9 @@
                   </td>
                   <td class="px-5 py-5 align-top">
                     <div class="live-table-two-line text-[11px] font-mono">
-                      <p class="live-table-line text-slate-800">{{ stream.start_date_text | default(stream.start_time_text | default('-', true), true) | e }}</p>
-                      <p class="live-table-line text-slate-500">{{ stream.start_clock_text | default('', true) | e }}</p>
-                    </div>
-                  </td>
-                  <td class="px-5 py-5 align-top">
-                    <div class="live-table-two-line text-[11px] font-mono">
-                      <p class="live-table-line text-slate-800">{{ stream.end_date_text | default(stream.end_time_text | default('-', true), true) | e }}</p>
-                      <p class="live-table-line text-slate-500">{{ stream.end_clock_text | default('', true) | e }}</p>
-                    </div>
-                  </td>
-                  <td class="px-5 py-5 align-top">
-                    <div class="live-table-two-line text-[11px] font-mono">
-                      <p class="live-table-line text-slate-800">{{ stream.duration_text | default('-', true) | e }}</p>
-                      <p class="live-table-line text-slate-500">{{ stream.duration_meta | default('', true) | e }}</p>
+                      <p class="live-table-line-wrap text-slate-800"><span class="font-semibold text-slate-600">Live:</span> {{ ((stream.duration_text | default('-', true)) ~ (' ' ~ (stream.duration_meta | default('', true)) if (stream.duration_meta | default('', true)) else '')) | trim | e }}</p>
+                      <p class="live-table-line-wrap text-slate-800"><span class="font-semibold text-slate-600">Bắt đầu:</span> {{ ((stream.start_date_text | default(stream.start_time_text | default('-', true), true)) ~ (' ' ~ (stream.start_clock_text | default('', true)) if (stream.start_clock_text | default('', true)) else '')) | trim | e }}</p>
+                      <p class="live-table-line-wrap text-slate-800"><span class="font-semibold text-slate-600">Kết thúc:</span> {{ ((stream.end_date_text | default(stream.end_time_text | default('-', true), true)) ~ (' ' ~ (stream.end_clock_text | default('', true)) if (stream.end_clock_text | default('', true)) else '')) | trim | e }}</p>
                     </div>
                   </td>
                   <td class="px-5 py-5 align-top">
@@ -712,7 +786,7 @@
                 {% endfor %}
                 {% else %}
                 <tr data-live-empty-row>
-                  <td colspan="13" class="px-6 py-10 text-center text-[13px] text-slate-500">Ch&#432;a c&oacute; lu&#7891;ng live n&agrave;o trong danh s&aacute;ch</td>
+                  <td colspan="11" class="px-6 py-10 text-center text-[13px] text-slate-500">Ch&#432;a c&oacute; lu&#7891;ng live n&agrave;o trong danh s&aacute;ch</td>
                 </tr>
                 {% endif %}
               </tbody>
