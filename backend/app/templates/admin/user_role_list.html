@@ -69,7 +69,7 @@
                         <td class="table-mono text-slate-500">{{ row.index }}</td>
                         <td class="text-[13px] font-semibold text-slate-900">{{ row.username }}</td>
                         <td class="table-mono text-slate-600">{{ row.credential_status }}</td>
-                        <td class="table-meta">{{ row.updated_meta }}</td>
+                        <td class="table-meta">{{ row.updated_meta | replace('Â•', '|') | replace('â€¢', '|') }}</td>
                         <td>
                             <div class="flex items-center justify-end gap-2">
                                 <form method="post" action="{{ dashboard.action_route }}" data-bulk-delete-form onsubmit="return confirm('Gỡ role {{ dashboard.role_label }} khỏi user này?');">

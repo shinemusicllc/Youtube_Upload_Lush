@@ -64,7 +64,7 @@
                         </td>
                         <td><span class="{{ user.role_class }}">{{ user.role_label }}</span></td>
                         <td class="text-[12px] font-medium text-slate-700">{{ user.manager_name }}</td>
-                        <td class="table-meta">{{ user.updated_meta }}</td>
+                        <td class="table-meta">{{ user.updated_meta | replace('Â•', '|') | replace('â€¢', '|') }}</td>
                         <td>
                             <span class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold text-emerald-700">
                                 {{ user.total_channels }} kênh

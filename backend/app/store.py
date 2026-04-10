@@ -3793,7 +3793,6 @@ class AppStore:
             {"key": "channels", "label": "Danh sách Kênh", "href": self._with_query("/admin/channel/index", **shared_workspace), "icon": "link"},
             {"key": "renders", "label": "Danh sách Render", "href": self._with_query("/admin/render/index", **shared_workspace), "icon": "video"},
             {"key": "render_workspace", "label": "Điều phối Render", "href": "/app", "icon": "clapperboard"},
-            {"key": "live_workspace", "label": "Điều phối live stream", "href": "/admin/live/index", "icon": "radio-tower"},
         ]
 
     def _user_section_tabs(
@@ -4438,12 +4437,6 @@ class AppStore:
                 "label": "\u0110i\u1ec1u ph\u1ed1i Render",
                 "href": "/app",
                 "icon": "layers",
-            },
-            {
-                "key": "live_workspace",
-                "label": "\u0110i\u1ec1u ph\u1ed1i Live",
-                "href": "/app/live",
-                "icon": "radio",
             },
         ]
 
@@ -5208,7 +5201,7 @@ class AppStore:
                     "manager_id": row_manager_id,
                     "telegram": meta.get("telegram") or "",
                     "telegram_manager": manager_meta.get("telegram") or "",
-                    "updated_meta": f"{meta.get('updated_by') or '-'}  {self._format_compact_datetime(meta.get('updated_at'))}",
+                    "updated_meta": f"{meta.get('updated_by') or '-'} | {self._format_compact_datetime(meta.get('updated_at'))}",
                     "total_channels": self._user_channel_count(user),
                     "total_workers": self._user_worker_count(user),
                     "live_threads_total": live_metrics["threads_live_total"],
@@ -5261,7 +5254,7 @@ class AppStore:
                     "username": user.username,
                     "display_name": user.display_name,
                     "credential_status": self._credential_status_label(meta),
-                    "updated_meta": f"{meta.get('updated_by') or '-'} • {self._format_compact_datetime(meta.get('updated_at'))}",
+                    "updated_meta": f"{meta.get('updated_by') or '-'} | {self._format_compact_datetime(meta.get('updated_at'))}",
                 }
             )
 

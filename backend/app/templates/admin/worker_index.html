@@ -2,6 +2,32 @@
 
 {% block content %}
 <style>
+    .admin-table-upload-workers {
+        width: 100%;
+        table-layout: fixed;
+    }
+
+    .admin-table-upload-workers thead th,
+    .admin-table-upload-workers tbody td {
+        white-space: normal;
+        vertical-align: middle;
+    }
+
+    .admin-table-upload-workers .worker-actions-cell {
+        width: 250px;
+    }
+
+    .worker-name-cell {
+        min-width: 0;
+    }
+
+    .worker-name-text {
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        white-space: normal;
+        line-height: 1.4;
+    }
+
     .bot-user-picker {
         position: relative;
     }
@@ -180,11 +206,11 @@
         </div>
 
         <div class="table-shell">
-            <table class="admin-table" data-admin-list-table="worker-index">
+            <table class="admin-table admin-table-upload-workers" data-admin-list-table="worker-index">
                 <thead>
                     <tr>
                         <th class="w-14">STT</th>
-                        <th>BOT</th>
+                        <th class="w-[200px]">BOT</th>
                         <th>Group</th>
                         <th>Ng&#224;y t&#7841;o</th>
                         <th>S&#7889; k&#234;nh</th>
@@ -194,7 +220,7 @@
                         <th class="w-[98px]">Disk</th>
                         <th class="w-[86px]">Bandwith</th>
                         <th>Lu&#7891;ng</th>
-                        <th class="w-[320px] text-right">T&#225;c v&#7909;</th>
+                        <th class="w-[250px] text-right">T&#225;c v&#7909;</th>
                     </tr>
                 </thead>
                 <tbody data-worker-live-body data-live-endpoint="/api/admin/bots" data-initial-event-cursor="{{ dashboard.worker_event_cursor or '' }}">
@@ -235,8 +261,8 @@
                         </td>
                         {% else %}
                         <td>
-                            <div>
-                                <p class="text-[13px] font-semibold text-slate-900">{{ worker.name }}</p>
+                            <div class="worker-name-cell">
+                                <p class="worker-name-text text-[13px] font-semibold text-slate-900">{{ worker.name }}</p>
                                 <p class="table-meta">{{ worker.meta_text or worker.manager_name }}</p>
                             </div>
                         </td>
@@ -270,7 +296,7 @@
                                 {{ worker.thread_text }}
                             </span>
                         </td>
-                        <td class="align-middle">
+                        <td class="align-middle worker-actions-cell">
                             <div class="flex flex-wrap items-center justify-end gap-2 xl:flex-nowrap">
                                 {% if worker.actions_disabled %}
                                 <span class="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-500">
@@ -777,8 +803,8 @@
         '<tr data-worker-row-id="', workerId, '" data-search-text="', searchText, '"', rowClass, '>',
         '  <td class="table-mono text-slate-500">', escapeHtml(worker.index), '</td>',
         '  <td>',
-        '    <div>',
-        '      <p class="text-[13px] font-semibold text-slate-900">', workerName, '</p>',
+        '    <div class="worker-name-cell">',
+        '      <p class="worker-name-text text-[13px] font-semibold text-slate-900">', workerName, '</p>',
         '      <p class="table-meta">', metaText, '</p>',
         '    </div>',
         '  </td>',
@@ -797,7 +823,7 @@
         '  <td class="table-mono whitespace-nowrap text-[11px] leading-tight tracking-[-0.01em] text-slate-700">', diskText, '</td>',
         '  <td class="table-mono whitespace-nowrap text-[11px] leading-tight tracking-[-0.01em] text-slate-700">', bandwidthText, '</td>',
         '  <td><span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-700">', threadText, '</span></td>',
-        '  <td class="align-middle">',
+        '  <td class="align-middle worker-actions-cell">',
         '    <div class="flex flex-wrap items-center justify-end gap-2 xl:flex-nowrap">',
                  actionsMarkup,
         '    </div>',
