@@ -33,6 +33,7 @@ from .schemas import (
     ChannelRecord,
     JobAsset,
     JobCreatePayload,
+    LiveStreamRecord,
     OAuthStartResponse,
     OAuthSummary,
     RenderJobRecord,
@@ -59,7 +60,103 @@ class AppStore:
     KNOWN_WORKER_DISPLAY_NAMES = {
         "worker-01": "109.123.233.131",
         "worker-02": "62.72.46.42",
+        "live-worker-01": "109.123.233.131",
+        "live-worker-02": "62.72.46.42",
     }
+
+    def _seed_live_workers(self, *, now: datetime) -> list[WorkerRecord]:
+        return [
+            WorkerRecord(
+                id="live-worker-01",
+                name=self.KNOWN_WORKER_DISPLAY_NAMES["live-worker-01"],
+                manager_id="manager-1",
+                manager_name="manager-alpha",
+                group="S - Việt 3",
+                created_at=now - timedelta(days=18),
+                status="offline",
+                capacity=1,
+                load_percent=0,
+                ram_percent=0,
+                ram_used_gb=0.0,
+                ram_total_gb=8.0,
+                bandwidth_kbps=0,
+                disk_used_gb=130.2,
+                disk_total_gb=512.0,
+                threads=1,
+                last_seen_at=now - timedelta(minutes=18),
+            ),
+            WorkerRecord(
+                id="live-worker-02",
+                name=self.KNOWN_WORKER_DISPLAY_NAMES["live-worker-02"],
+                manager_id="manager-1",
+                manager_name="manager-alpha",
+                group="S - Việt 3",
+                created_at=now - timedelta(days=16),
+                status="offline",
+                capacity=1,
+                load_percent=0,
+                ram_percent=0,
+                ram_used_gb=0.0,
+                ram_total_gb=8.0,
+                bandwidth_kbps=0,
+                disk_used_gb=90.1,
+                disk_total_gb=512.0,
+                threads=1,
+                last_seen_at=now - timedelta(minutes=12),
+            ),
+        ]
+
+    @staticmethod
+    def _seed_live_user_worker_links() -> list[dict[str, Any]]:
+        return [
+            {
+                "id": 1,
+                "user_id": "user-1",
+                "worker_id": "live-worker-01",
+                "threads": 1,
+                "live_role": "primary",
+                "note": "BOT live chính được cấp",
+            },
+            {
+                "id": 2,
+                "user_id": "user-1",
+                "worker_id": "live-worker-02",
+                "threads": 1,
+                "live_role": "backup",
+                "note": "BOT backup được cấp",
+            },
+        ]
+
+    def _seed_live_streams(self, *, now: datetime) -> list[LiveStreamRecord]:
+        return [
+            LiveStreamRecord(
+                id="live-stream-001",
+                owner_user_id="user-1",
+                owner_username="demo-user",
+                owner_display_name="demo-user",
+                manager_id="manager-1",
+                manager_name="manager-alpha",
+                primary_worker_id="live-worker-01",
+                primary_worker_name=self._resolve_live_worker_display_name("live-worker-01"),
+                primary_group="S - Việt 3",
+                backup_worker_id="live-worker-02",
+                backup_worker_name=f"{self._resolve_live_worker_display_name('live-worker-02')} - T",
+                backup_group="S - Việt 3",
+                stream_name="11hkodi luồng live test tiêu đề khá dài để kiểm tra việc tự xuống dòng trong bảng render livestream",
+                stream_key="bz2k-vegp-54v4-v2pc-25sr-demo-key-cuc-ky-dai-de-test-wrap",
+                video_url="https://drive.google.com/file/d/live-video-demo",
+                audio_url="https://drive.google.com/file/d/live-audio-demo",
+                live_label="Live 11h",
+                start_time_live=datetime(2025, 11, 26, 20, 0, 0),
+                end_time_live=datetime(2025, 11, 27, 13, 0, 0),
+                backup_delay_minutes=3,
+                status="stopped",
+                log_label="Kết thúc",
+                created_at=now - timedelta(days=2),
+                updated_at=now - timedelta(days=1, hours=3),
+            ),
+        ]
+
     @staticmethod
     def _path_has_content(path: Path | None) -> bool:
         if path is None:
@@ -254,6 +351,8 @@ class AppStore:
             {"id": 1, "user_id": "user-1", "worker_id": "worker-01", "threads": 2, "note": "BOT chÃ­nh"},
             {"id": 2, "user_id": "user-1", "worker_id": "worker-02", "threads": 1, "note": "BOT phá»¥"},
         ]
+        self.live_workers = self._seed_live_workers(now=now)
+        self.live_user_worker_links: list[dict[str, Any]] = self._seed_live_user_worker_links()
 
         self.channels = [
             ChannelRecord(
@@ -362,6 +461,7 @@ class AppStore:
                 ],
             ),
         ]
+        self.live_streams = self._seed_live_streams(now=now)
         self.render_delete_meta = {
             "user": "admin",
             "deleted_at": now - timedelta(minutes=5),
@@ -372,17 +472,27 @@ class AppStore:
         normalized_worker_names = self._normalize_known_worker_names()
         normalized_worker_created_at = self._normalize_worker_created_at()
         normalized_user_worker_assignments = self._normalize_user_worker_assignments()
+        normalized_live_worker_names = self._normalize_live_worker_names()
+        normalized_live_worker_created_at = self._normalize_live_worker_created_at()
+        normalized_live_user_worker_assignments = self._normalize_live_user_worker_assignments()
         migrated_credentials = self._migrate_legacy_user_meta_passwords()
         self._bootstrap_auth_tables_from_memory_if_empty()
         self._load_auth_state_from_tables()
         normalized_visible_relationships = self._normalize_visible_admin_relationships()
+        normalized_visible_live_relationships = self._normalize_visible_live_relationships()
+        normalized_live_stream_assignments = self._normalize_live_stream_assignments()
         normalized_job_runtime_progress = self._normalize_job_runtime_progress()
         if (
             migrated_credentials
             or normalized_worker_names
             or normalized_worker_created_at
             or normalized_user_worker_assignments
+            or normalized_live_worker_names
+            or normalized_live_worker_created_at
+            or normalized_live_user_worker_assignments
             or normalized_visible_relationships
+            or normalized_visible_live_relationships
+            or normalized_live_stream_assignments
             or normalized_job_runtime_progress
         ):
             self._save_state()
@@ -777,9 +887,12 @@ class AppStore:
             "user_meta": self._serialize_value(self.user_meta),
             "workers": [worker.model_dump(mode="json") for worker in self.workers],
             "user_worker_links": deepcopy(self.user_worker_links),
+            "live_workers": [worker.model_dump(mode="json") for worker in self.live_workers],
+            "live_user_worker_links": deepcopy(self.live_user_worker_links),
             "channels": [channel.model_dump(mode="json") for channel in self.channels],
             "channel_user_links": deepcopy(self.channel_user_links),
             "jobs": [job.model_dump(mode="json") for job in self.jobs],
+            "live_streams": [stream.model_dump(mode="json") for stream in self.live_streams],
             "upload_sessions": [session.model_dump(mode="json") for session in self.upload_sessions],
             "browser_sessions": [session.model_dump(mode="json") for session in self.browser_sessions],
             "browser_profile_cleanup_tasks": deepcopy(self.browser_profile_cleanup_tasks),
@@ -801,9 +914,12 @@ class AppStore:
 
         self.workers = [WorkerRecord.model_validate(item) for item in payload.get("workers", [])]
         self.user_worker_links = list(payload.get("user_worker_links") or [])
+        self.live_workers = [WorkerRecord.model_validate(item) for item in payload.get("live_workers", [])]
+        self.live_user_worker_links = list(payload.get("live_user_worker_links") or [])
         self.channels = [ChannelRecord.model_validate(item) for item in payload.get("channels", [])]
         self.channel_user_links = list(payload.get("channel_user_links") or [])
         self.jobs = [RenderJobRecord.model_validate(item) for item in payload.get("jobs", [])]
+        self.live_streams = [LiveStreamRecord.model_validate(item) for item in payload.get("live_streams", [])]
         self.upload_sessions = [UploadSessionRecord.model_validate(item) for item in payload.get("upload_sessions", [])]
         self.browser_sessions = [BrowserSessionRecord.model_validate(item) for item in payload.get("browser_sessions", [])]
         self.browser_profile_cleanup_tasks = list(payload.get("browser_profile_cleanup_tasks") or [])
@@ -847,7 +963,20 @@ class AppStore:
         with sqlite3.connect(self.state_db_path) as connection:
             row = connection.execute("SELECT payload FROM app_state WHERE state_key = 'main'").fetchone()
         if row and row[0]:
-            self._apply_state(json.loads(row[0]))
+            payload = json.loads(row[0])
+            self._apply_state(payload)
+            if "live_workers" not in payload:
+                self.live_workers = self._seed_live_workers(now=self._now(trim=False))
+            if "live_user_worker_links" not in payload:
+                self.live_user_worker_links = self._seed_live_user_worker_links()
+            if "live_streams" not in payload:
+                self.live_streams = self._seed_live_streams(now=self._now(trim=False))
+            if (
+                "live_workers" not in payload
+                or "live_user_worker_links" not in payload
+                or "live_streams" not in payload
+            ):
+                self._save_state()
             return
         self._save_state()
 
@@ -1855,10 +1984,90 @@ class AppStore:
 
         return changed
 
+    def _normalize_live_worker_names(self) -> bool:
+        changed = False
+        for worker in self.live_workers:
+            display_name = self._default_worker_display_name(worker.id, worker.name)
+            if worker.name != display_name:
+                worker.name = display_name
+                changed = True
+        return changed
+
+    @staticmethod
+    def _normalize_live_assignment_role(
+        value: str | None,
+        *,
+        fallback_note: str | None = None,
+    ) -> str:
+        normalized = str(value or "").strip().lower()
+        if normalized in {"primary", "backup"}:
+            return normalized
+        normalized_note = str(fallback_note or "").strip().lower()
+        if "backup" in normalized_note:
+            return "backup"
+        return "primary"
+
+    @staticmethod
+    def _live_assignment_role_label(role: str | None) -> str:
+        return "BOT backup" if str(role or "").strip().lower() == "backup" else "BOT live chính"
+
+    def _live_assignment_note(self, role: str | None) -> str:
+        return "BOT backup được cấp" if self._normalize_live_assignment_role(role) == "backup" else "BOT live chính được cấp"
+
+    def _normalize_live_user_worker_assignments(self) -> bool:
+        changed = False
+        normalized_links: list[dict[str, Any]] = []
+        seen_pairs: set[tuple[str, str]] = set()
+
+        def sort_key(mapping: dict[str, Any]) -> tuple[int, str, str]:
+            try:
+                mapping_id = int(mapping.get("id") or 0)
+            except (TypeError, ValueError):
+                mapping_id = 0
+            return (mapping_id, str(mapping.get("user_id") or ""), str(mapping.get("worker_id") or ""))
+
+        for raw_mapping in sorted(self.live_user_worker_links, key=sort_key):
+            user_id = str(raw_mapping.get("user_id") or "").strip()
+            worker_id = str(raw_mapping.get("worker_id") or "").strip()
+            if not user_id or not worker_id:
+                changed = True
+                continue
+            pair = (user_id, worker_id)
+            if pair in seen_pairs:
+                changed = True
+                continue
+
+            mapping = dict(raw_mapping)
+            mapping["threads"] = 1
+            mapping["live_role"] = self._normalize_live_assignment_role(
+                mapping.get("live_role"),
+                fallback_note=mapping.get("note"),
+            )
+            mapping["note"] = str(mapping.get("note") or "").strip() or self._live_assignment_note(mapping["live_role"])
+            normalized_links.append(mapping)
+            seen_pairs.add(pair)
+            if mapping != raw_mapping:
+                changed = True
+
+        if normalized_links != self.live_user_worker_links:
+            self.live_user_worker_links = normalized_links
+            changed = True
+        return changed
+
     def _normalize_worker_created_at(self) -> bool:
         changed = False
         fallback_now = self._now(trim=False)
         for worker in self.workers:
+            if worker.created_at is not None:
+                continue
+            worker.created_at = worker.last_seen_at or fallback_now
+            changed = True
+        return changed
+
+    def _normalize_live_worker_created_at(self) -> bool:
+        changed = False
+        fallback_now = self._now(trim=False)
+        for worker in self.live_workers:
             if worker.created_at is not None:
                 continue
             worker.created_at = worker.last_seen_at or fallback_now
@@ -1971,6 +2180,221 @@ class AppStore:
 
         return changed
 
+    def _normalize_visible_live_relationships(self) -> bool:
+        changed = False
+        valid_user_ids = {user.id for user in self.users if user.role in {"user", "manager", "admin"}}
+        valid_worker_ids = {worker.id for worker in self.live_workers}
+
+        normalized_worker_links: list[dict[str, Any]] = []
+        seen_worker_link_pairs: set[tuple[str, str]] = set()
+        for raw_link in self.live_user_worker_links:
+            user_id = str(raw_link.get("user_id") or "").strip()
+            worker_id = str(raw_link.get("worker_id") or "").strip()
+            if user_id not in valid_user_ids or worker_id not in valid_worker_ids:
+                changed = True
+                continue
+            pair = (user_id, worker_id)
+            if pair in seen_worker_link_pairs:
+                changed = True
+                continue
+            normalized_worker_links.append(raw_link)
+            seen_worker_link_pairs.add(pair)
+        if normalized_worker_links != self.live_user_worker_links:
+            self.live_user_worker_links = normalized_worker_links
+            changed = True
+
+        for worker in self.live_workers:
+            assigned_user = self._assigned_live_user_for_worker(worker.id, role="primary") or self._assigned_live_user_for_worker(worker.id)
+            if assigned_user is None:
+                continue
+            manager_id = self._resolved_user_manager_id(assigned_user)
+            manager_name = assigned_user.manager_name or ""
+            if manager_id and worker.manager_id != manager_id:
+                worker.manager_id = manager_id
+                changed = True
+            if manager_name and worker.manager_name != manager_name:
+                worker.manager_name = manager_name
+                changed = True
+            if not str(worker.group or "").strip():
+                worker.group = "S - Việt 3"
+                changed = True
+        return changed
+
+    def _normalize_live_stream_assignments(self) -> bool:
+        changed = False
+        normalized_streams: list[LiveStreamRecord] = []
+        seen_ids: set[str] = set()
+
+        for stream in self.live_streams:
+            stream_changed = False
+            if not str(stream.id or "").strip() or stream.id in seen_ids:
+                stream.id = f"live-{uuid4().hex[:10]}"
+                stream_changed = True
+            seen_ids.add(stream.id)
+
+            try:
+                owner = self._require_workspace_user(stream.owner_user_id)
+            except (KeyError, ValueError):
+                changed = True
+                continue
+
+            if stream.owner_username != owner.username:
+                stream.owner_username = owner.username
+                stream_changed = True
+            if stream.owner_display_name != owner.display_name:
+                stream.owner_display_name = owner.display_name
+                stream_changed = True
+
+            available_workers = self._workspace_live_workers_for_user(owner)
+            available_primary_workers = self._assigned_live_workers_for_user(owner, role="primary")
+            available_backup_workers = self._assigned_live_workers_for_user(owner, role="backup")
+            available_worker_map = {worker.id: worker for worker in available_workers}
+            primary_worker_map = {worker.id: worker for worker in available_primary_workers}
+            backup_worker_map = {worker.id: worker for worker in available_backup_workers}
+            primary_worker = primary_worker_map.get(stream.primary_worker_id)
+            if primary_worker is None:
+                desired_primary_name = str(stream.primary_worker_name or self._resolve_worker_display_name(stream.primary_worker_id)).strip()
+                primary_worker = next(
+                    (
+                        worker
+                        for worker in available_primary_workers
+                        if desired_primary_name
+                        and desired_primary_name in {
+                            str(worker.id or "").strip(),
+                            self._resolve_live_worker_display_name(worker.id),
+                            str(worker.name or "").strip(),
+                        }
+                    ),
+                    None,
+                )
+            if primary_worker is None and available_primary_workers:
+                primary_worker = available_primary_workers[0]
+                if stream.primary_worker_id != primary_worker.id:
+                    stream.primary_worker_id = primary_worker.id
+                    stream_changed = True
+            elif primary_worker is None:
+                primary_worker = self._find_live_worker_optional(stream.primary_worker_id)
+
+            if primary_worker is None:
+                changed = True
+                continue
+
+            primary_name = self._resolve_live_worker_display_name(primary_worker.id)
+            primary_group = primary_worker.group or primary_worker.manager_name
+            if stream.primary_worker_name != primary_name:
+                stream.primary_worker_name = primary_name
+                stream_changed = True
+            if stream.primary_group != primary_group:
+                stream.primary_group = primary_group
+                stream_changed = True
+
+            backup_worker: WorkerRecord | None = None
+            if stream.backup_worker_id:
+                candidate_backup = backup_worker_map.get(stream.backup_worker_id)
+                if candidate_backup is None:
+                    desired_backup_name = str(stream.backup_worker_name or self._resolve_worker_display_name(stream.backup_worker_id)).strip()
+                    candidate_backup = next(
+                        (
+                            worker
+                            for worker in available_backup_workers
+                            if desired_backup_name
+                            and desired_backup_name in {
+                                str(worker.id or "").strip(),
+                                self._resolve_live_worker_display_name(worker.id),
+                                f"{self._resolve_live_worker_display_name(worker.id)} - T",
+                                str(worker.name or "").strip(),
+                            }
+                        ),
+                        None,
+                    )
+                if candidate_backup and candidate_backup.id != primary_worker.id:
+                    backup_worker = candidate_backup
+                else:
+                    stream_changed = True
+
+            resolved_backup_id = backup_worker.id if backup_worker else None
+            resolved_backup_name = (
+                f"{self._resolve_live_worker_display_name(backup_worker.id)} - T"
+                if backup_worker
+                else None
+            )
+            resolved_backup_group = backup_worker.group if backup_worker else None
+            if stream.backup_worker_id != resolved_backup_id:
+                stream.backup_worker_id = resolved_backup_id
+                stream_changed = True
+            if stream.backup_worker_name != resolved_backup_name:
+                stream.backup_worker_name = resolved_backup_name
+                stream_changed = True
+            if stream.backup_group != resolved_backup_group:
+                stream.backup_group = resolved_backup_group
+                stream_changed = True
+
+            manager_id, manager_name = self._resolve_live_owner_manager_scope(owner, primary_worker=primary_worker)
+            if stream.manager_id != manager_id:
+                stream.manager_id = manager_id
+                stream_changed = True
+            if stream.manager_name != manager_name:
+                stream.manager_name = manager_name
+                stream_changed = True
+
+            normalized_platform = str(stream.platform or "youtube_rtmp").strip().lower() or "youtube_rtmp"
+            if normalized_platform != "youtube_rtmp":
+                normalized_platform = "youtube_rtmp"
+            if stream.platform != normalized_platform:
+                stream.platform = normalized_platform
+                stream_changed = True
+
+            try:
+                normalized_delay = self._normalize_backup_delay_minutes(stream.backup_delay_minutes)
+            except ValueError:
+                normalized_delay = 3
+            if stream.backup_delay_minutes != normalized_delay:
+                stream.backup_delay_minutes = normalized_delay
+                stream_changed = True
+
+            if stream.is_forever and stream.end_time_live is not None:
+                stream.end_time_live = None
+                stream_changed = True
+            elif (
+                stream.start_time_live is not None
+                and stream.end_time_live is not None
+                and stream.end_time_live < stream.start_time_live
+            ):
+                stream.end_time_live = None
+                stream_changed = True
+
+            derived_live_label = self._derive_live_label(
+                start_time_live=stream.start_time_live,
+                end_time_live=stream.end_time_live,
+                is_forever=stream.is_forever,
+            )
+            if stream.live_label != derived_live_label:
+                stream.live_label = derived_live_label
+                stream_changed = True
+
+            derived_status, derived_log_label = self._derive_live_status_defaults(
+                start_time_live=stream.start_time_live,
+                is_live_now=stream.is_live_now,
+                is_forever=stream.is_forever,
+                status_override=stream.status,
+                log_override=stream.log_label,
+            )
+            if stream.status != derived_status:
+                stream.status = derived_status
+                stream_changed = True
+            if stream.log_label != derived_log_label:
+                stream.log_label = derived_log_label
+                stream_changed = True
+
+            normalized_streams.append(stream)
+            if stream_changed:
+                changed = True
+
+        if normalized_streams != self.live_streams:
+            self.live_streams = normalized_streams
+            changed = True
+        return changed
+
     def _build_session_payload(self, user: UserSummary) -> dict[str, Any]:
         return {
             "id": user.id,
@@ -2067,6 +2491,24 @@ class AppStore:
         if not value:
             return "-"
         return value.strftime("%d/%m/%Y %H:%M:%S")
+
+    @staticmethod
+    def _format_date(value: datetime | None) -> str:
+        if not value:
+            return "-"
+        return value.strftime("%d/%m/%Y")
+
+    @staticmethod
+    def _format_clock(value: datetime | None) -> str:
+        if not value:
+            return ""
+        return value.strftime("%H:%M:%S")
+
+    @staticmethod
+    def _format_form_datetime(value: datetime | None) -> str:
+        if not value:
+            return ""
+        return value.strftime("%d/%m/%Y %H:%M")
 
     @staticmethod
     def _format_compact_datetime(value: datetime | None) -> str:
@@ -2417,6 +2859,12 @@ class AppStore:
                 return worker
         raise KeyError(worker_id)
 
+    def _find_live_worker(self, worker_id: str) -> WorkerRecord:
+        for worker in self.live_workers:
+            if worker.id == worker_id:
+                return worker
+        raise KeyError(worker_id)
+
     @classmethod
     def _default_worker_display_name(cls, worker_id: str | None, fallback: str | None = None) -> str:
         normalized_id = str(worker_id or "").strip()
@@ -2444,6 +2892,25 @@ class AppStore:
             (
                 item
                 for item in self.workers
+                if normalized in {str(item.id or "").strip(), str(item.name or "").strip()}
+            ),
+            None,
+        )
+        if worker is None:
+            return normalized
+        display_name = str(worker.name or "").strip()
+        return display_name or str(worker.id or normalized).strip() or normalized
+
+    def _resolve_live_worker_display_name(self, worker_ref: str | None) -> str:
+        if not worker_ref:
+            return "-"
+        normalized = worker_ref.strip()
+        if not normalized:
+            return "-"
+        worker = next(
+            (
+                item
+                for item in self.live_workers
                 if normalized in {str(item.id or "").strip(), str(item.name or "").strip()}
             ),
             None,
@@ -2963,6 +3430,20 @@ class AppStore:
     def _workspace_worker_ids_for_user(self, user: UserSummary | str) -> set[str]:
         return {worker.id for worker in self._workspace_workers_for_user(user)}
 
+    def _workspace_live_workers_for_user(self, user: UserSummary | str) -> list[WorkerRecord]:
+        current_user = self._require_workspace_user(user if isinstance(user, str) else user.id)
+        workers = self._assigned_live_workers_for_user(current_user.id)
+        return sorted(
+            workers,
+            key=lambda worker: (
+                str(self._resolve_live_worker_display_name(worker.id) or "").casefold(),
+                str(worker.id or "").casefold(),
+            ),
+        )
+
+    def _workspace_live_worker_ids_for_user(self, user: UserSummary | str) -> set[str]:
+        return {worker.id for worker in self._workspace_live_workers_for_user(user)}
+
     def _workspace_channels_for_user(self, user: UserSummary | str) -> list[ChannelRecord]:
         current_user = self._require_workspace_user(user if isinstance(user, str) else user.id)
         worker_ids = self._workspace_worker_ids_for_user(current_user)
@@ -3011,6 +3492,25 @@ class AppStore:
         links.sort(key=lambda item: int(item.get("id") or 0))
         return links
 
+    def _assigned_live_worker_links_for_user(
+        self,
+        user_id: str,
+        *,
+        role: str | None = None,
+    ) -> list[dict[str, Any]]:
+        normalized_role = self._normalize_live_assignment_role(role) if role is not None else None
+        links = [
+            link
+            for link in self.live_user_worker_links
+            if str(link.get("user_id") or "").strip() == str(user_id or "").strip()
+            and (
+                normalized_role is None
+                or self._normalize_live_assignment_role(link.get("live_role"), fallback_note=link.get("note")) == normalized_role
+            )
+        ]
+        links.sort(key=lambda item: int(item.get("id") or 0))
+        return links
+
     def _assigned_workers_for_user(self, user: UserSummary | str) -> list[WorkerRecord]:
         user_id = user.id if isinstance(user, UserSummary) else user
         workers: list[WorkerRecord] = []
@@ -3027,8 +3527,35 @@ class AppStore:
             seen_worker_ids.add(worker_id)
         return workers
 
+    def _assigned_live_workers_for_user(
+        self,
+        user: UserSummary | str,
+        *,
+        role: str | None = None,
+    ) -> list[WorkerRecord]:
+        user_id = user.id if isinstance(user, UserSummary) else user
+        workers: list[WorkerRecord] = []
+        seen_worker_ids: set[str] = set()
+        for link in self._assigned_live_worker_links_for_user(user_id, role=role):
+            worker_id = str(link.get("worker_id") or "").strip()
+            if not worker_id or worker_id in seen_worker_ids:
+                continue
+            try:
+                worker = self._find_live_worker(worker_id)
+            except KeyError:
+                continue
+            workers.append(worker)
+            seen_worker_ids.add(worker_id)
+        return workers
+
     def _assigned_worker_for_user(self, user: UserSummary | str) -> WorkerRecord | None:
         workers = self._assigned_workers_for_user(user)
+        if not workers:
+            return None
+        return workers[0]
+
+    def _assigned_live_worker_for_user(self, user: UserSummary | str, *, role: str | None = None) -> WorkerRecord | None:
+        workers = self._assigned_live_workers_for_user(user, role=role)
         if not workers:
             return None
         return workers[0]
@@ -3626,7 +4153,7 @@ class AppStore:
             if active_page == "workers":
                 return "/admin/ManagerBOT/index?workspace=live"
             if active_page == "channels":
-                return "/admin/channel/index?workspace=live"
+                return "/admin/live"
             if active_page == "renders":
                 return "/admin/render/index?workspace=live"
             return "/admin/live"
@@ -3680,14 +4207,24 @@ class AppStore:
         ]
 
     def _admin_nav_items(self, workspace_mode: str = "upload") -> list[dict[str, str]]:
-        return [
+        items = [
             {"key": "users", "label": "Người dùng", "href": self._admin_workspace_href("/admin/user/index", workspace_mode), "icon": "users"},
             {"key": "workers", "label": "Danh sách BOT", "href": self._admin_workspace_href("/admin/ManagerBOT/index", workspace_mode), "icon": "server"},
-            {"key": "channels", "label": "Danh sách Kênh", "href": self._admin_workspace_href("/admin/channel/index", workspace_mode), "icon": "link"},
             {"key": "renders", "label": "Danh sách Render", "href": self._admin_workspace_href("/admin/render/index", workspace_mode), "icon": "video"},
-            {"key": "render_workspace", "label": "Điều phối Render", "href": "/app", "icon": "clapperboard"},
-            {"key": "live_workspace", "label": "Điều phối live stream", "href": "/admin/live", "icon": "radio-tower"},
+            {"key": "render_workspace", "label": "Điều phối Upload", "href": "/app", "icon": "clapperboard"},
+            {"key": "live_workspace", "label": "Điều phối Live Stream", "href": "/admin/live", "icon": "radio-tower"},
         ]
+        if workspace_mode != "live":
+            items.insert(
+                2,
+                {
+                    "key": "channels",
+                    "label": "Danh sách Kênh",
+                    "href": self._admin_workspace_href("/admin/channel/index", workspace_mode),
+                    "icon": "link",
+                },
+            )
+        return items
 
     def _user_section_tabs(
         self,
@@ -3767,6 +4304,12 @@ class AppStore:
         if not selected_ids:
             return list(self.workers)
         return [worker for worker in self.workers if worker.manager_id in selected_ids]
+
+    def _filtered_live_workers(self, manager_ids: list[str] | None = None) -> list[WorkerRecord]:
+        selected_ids = set(self._selected_manager_ids(manager_ids))
+        if not selected_ids:
+            return list(self.live_workers)
+        return [worker for worker in self.live_workers if worker.manager_id in selected_ids]
 
     def _effective_manager_scope_ids(
         self,
@@ -3853,10 +4396,18 @@ class AppStore:
                 user_section=user_section,
             ),
             "nav_items": self._admin_nav_items(workspace_mode),
-            "summary_strip": self._summary_strip(
-                viewer_role=viewer_role,
-                viewer_id=viewer_id,
-                manager_ids=selected_manager_ids,
+            "summary_strip": (
+                self._live_summary_strip(
+                    viewer_role=viewer_role,
+                    viewer_id=viewer_id,
+                    manager_ids=selected_manager_ids,
+                )
+                if workspace_mode == "live"
+                else self._summary_strip(
+                    viewer_role=viewer_role,
+                    viewer_id=viewer_id,
+                    manager_ids=selected_manager_ids,
+                )
             ),
             "summary": scoped_summary,
             "current_user": {"name": "Admin", "avatar": "/admin-themes/assets/img/avatar/avatar-1.png"},
@@ -4015,6 +4566,9 @@ class AppStore:
     def _user_worker_count(self, user: UserSummary) -> int:
         return len(self._assigned_worker_links_for_user(user.id))
 
+    def _user_live_worker_count(self, user: UserSummary) -> int:
+        return len(self._assigned_live_worker_links_for_user(user.id))
+
     def _user_channel_count(self, user: UserSummary) -> int:
         return len(self._user_channel_ids(user.id))
 
@@ -4058,6 +4612,14 @@ class AppStore:
             return None
         try:
             return self._find_worker(worker_id)
+        except KeyError:
+            return None
+
+    def _find_live_worker_optional(self, worker_id: str | None) -> WorkerRecord | None:
+        if not worker_id:
+            return None
+        try:
+            return self._find_live_worker(worker_id)
         except KeyError:
             return None
 
@@ -4445,13 +5007,13 @@ class AppStore:
                 else [
                     {
                         "key": "render_workspace",
-                        "label": "Điều phối Render",
+                        "label": "Điều phối Upload",
                         "href": "/app",
                         "icon": "layers",
                     },
                     {
                         "key": "live_workspace",
-                        "label": "Điều phối Live",
+                        "label": "Điều phối Live Stream",
                         "href": "/app/live",
                         "icon": "radio-tower",
                     },
@@ -4514,26 +5076,81 @@ class AppStore:
             "render_summary": f"Hiển thị 1 đến {len(render_jobs)} trong số {len(render_jobs)} kết quả" if render_jobs else "Chưa có job nào trong hàng đợi",
         }
 
+    def _build_live_worker_picker_cards(self, workers: list[WorkerRecord]) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": worker.id,
+                "name": self._resolve_live_worker_display_name(worker.id),
+                "manager_name": worker.manager_name or "-",
+                "role_label": "",
+            }
+            for worker in workers
+        ]
+
+    def _build_live_form_values_from_stream(self, stream: LiveStreamRecord) -> dict[str, Any]:
+        return {
+            "stream_id": stream.id,
+            "stream_name": stream.stream_name,
+            "video_url": stream.video_url,
+            "audio_url": stream.audio_url or "",
+            "stream_key": stream.stream_key,
+            "backup_delay_minutes": str(stream.backup_delay_minutes),
+            "primary_worker_id": stream.primary_worker_id,
+            "backup_worker_id": stream.backup_worker_id or "",
+            "start_at": self._format_form_datetime(stream.start_time_live) if stream.start_time_live else "",
+            "end_at": self._format_form_datetime(stream.end_time_live) if stream.end_time_live else "",
+        }
+
+    def _live_stream_detail_payload(self, stream: LiveStreamRecord) -> dict[str, Any]:
+        return {
+            "id": stream.id,
+            "title": stream.stream_name,
+            "owner_username": stream.owner_username,
+            "manager_name": stream.manager_name or "-",
+            "primary_worker_name": stream.primary_worker_name or self._resolve_live_worker_display_name(stream.primary_worker_id),
+            "backup_worker_name": stream.backup_worker_name or "Không dùng backup",
+            "stream_key": stream.stream_key,
+            "video_url": stream.video_url,
+            "audio_url": stream.audio_url or "Không có",
+            "live_label": stream.live_label,
+            "status_label": self._live_status_presentation(stream.status)[0],
+            "status_class": self._live_status_presentation(stream.status)[1],
+            "log_label": stream.log_label,
+            "start_at": self._format_full_datetime(stream.start_time_live) if stream.start_time_live else "-",
+            "end_at": self._format_full_datetime(stream.end_time_live) if stream.end_time_live else ("Live 24/7" if stream.is_forever else "-"),
+            "backup_delay_minutes": stream.backup_delay_minutes,
+            "updated_at": self._format_full_datetime(stream.updated_at),
+        }
+
     def get_user_live_workspace_view(
         self,
         *,
         user_id: str,
         notice: str | None = None,
         notice_level: str = "success",
+        live_form_values: dict[str, Any] | None = None,
+        editing_stream_id: str | None = None,
+        detail_stream_id: str | None = None,
     ) -> dict[str, Any]:
         bootstrap = self.get_user_bootstrap(user_id)
         user = bootstrap.user
-        assigned_workers = self._workspace_workers_for_user(user)
+        assigned_workers = self._workspace_live_workers_for_user(user)
+        primary_workers = self._assigned_live_workers_for_user(user, role="primary")
+        backup_workers = self._assigned_live_workers_for_user(user, role="backup")
         live_ready = len([worker for worker in assigned_workers if worker.status in {"online", "busy"}])
         total_workers = len(assigned_workers)
-        live_workers = [
-            {
-                "id": worker.id,
-                "name": self._resolve_worker_display_name(worker.id),
-                "manager_name": worker.manager_name or "-",
-            }
-            for worker in assigned_workers
-        ]
+        live_records = self._live_streams_for_user(user)
+        active_live_count = len([record for record in live_records if record.status == "streaming"])
+        scheduled_live_count = len([record for record in live_records if record.status == "scheduled"])
+        backup_live_count = len([record for record in live_records if record.backup_worker_id])
+        editing_stream = None
+        if editing_stream_id:
+            editing_stream = self.get_live_stream(editing_stream_id, viewer_role=user.role, viewer_id=user.id)
+        detail_stream = None
+        if detail_stream_id:
+            detail_stream = self.get_live_stream(detail_stream_id, viewer_role=user.role, viewer_id=user.id)
+        effective_form_values = live_form_values or (self._build_live_form_values_from_stream(editing_stream) if editing_stream else None)
+        live_form_state = self._build_live_form_state(effective_form_values)
 
         return {
             "page_title": "Điều phối live",
@@ -4543,13 +5160,13 @@ class AppStore:
             "nav_items": [
                 {
                     "key": "render_workspace",
-                    "label": "Điều phối Render",
+                    "label": "Điều phối Upload",
                     "href": "/app",
                     "icon": "layers",
                 },
                 {
                     "key": "live_workspace",
-                    "label": "Điều phối Live",
+                    "label": "Điều phối Live Stream",
                     "href": "/app/live",
                     "icon": "radio-tower",
                 },
@@ -4563,29 +5180,640 @@ class AppStore:
             "kpis": [
                 {"label": "BOT được cấp", "icon": "server", "icon_class": "text-emerald-500", "value": total_workers, "accent": "Live + Backup", "accent_class": "text-emerald-600", "value_class": "text-emerald-600", "bar_class": "bg-emerald-400"},
                 {"label": "BOT live sẵn sàng", "icon": "server-cog", "icon_class": "text-brand-500", "value": live_ready, "accent": f"{live_ready}/{total_workers} BOT", "accent_class": "text-brand-600", "value_class": "text-brand-600", "bar_class": "bg-brand-500"},
-                {"label": "Đang live", "icon": "radio", "icon_class": "text-rose-500", "value": 0, "accent": "Live", "accent_class": "text-rose-500", "value_class": "text-slate-900", "bar_class": "bg-rose-400"},
-                {"label": "Chờ lên lịch", "icon": "clock-3", "icon_class": "text-amber-500", "value": 0, "accent": "Lịch", "accent_class": "text-amber-600", "value_class": "text-slate-900", "bar_class": "bg-amber-400"},
-                {"label": "BOT backup", "icon": "shield-check", "icon_class": "text-sky-500", "value": 0, "accent": "Fallback", "accent_class": "text-sky-500", "value_class": "text-slate-900", "bar_class": "bg-sky-400"},
+                {"label": "Đang live", "icon": "radio", "icon_class": "text-rose-500", "value": active_live_count, "accent": "Live", "accent_class": "text-rose-500", "value_class": "text-slate-900" if active_live_count == 0 else "text-rose-500", "bar_class": "bg-rose-400"},
+                {"label": "Chờ lên lịch", "icon": "clock-3", "icon_class": "text-amber-500", "value": scheduled_live_count, "accent": "Lịch", "accent_class": "text-amber-600", "value_class": "text-slate-900" if scheduled_live_count == 0 else "text-amber-600", "bar_class": "bg-amber-400"},
+                {"label": "BOT backup", "icon": "shield-check", "icon_class": "text-sky-500", "value": backup_live_count, "accent": "Fallback", "accent_class": "text-sky-500", "value_class": "text-slate-900" if backup_live_count == 0 else "text-sky-500", "bar_class": "bg-sky-400"},
             ],
             "live_config": {
                 "title": "Live Config",
                 "description": "Thiết lập BOT chính, BOT backup, media nguồn và lịch live.",
             },
-            "live_form": {
-                "stream_name": "",
-                "video_url": "",
-                "audio_url": "",
-                "stream_key": "",
-                "backup_delay_minutes": 3,
-            },
-            "live_workers": live_workers,
+            "live_form_action": "/app/live/update" if editing_stream else "/app/live/create",
+            "live_form_mode": "edit" if editing_stream else "create",
+            "live_form_submit_label": "Cập nhật luồng live" if editing_stream else "Tạo luồng live",
+            "live_form_reset_label": "Hủy chỉnh sửa" if editing_stream else "Đặt lại",
+            "live_form_cancel_href": "/app/live" if editing_stream else "",
+            "live_form": live_form_state,
+            "primary_live_workers": self._build_live_worker_picker_cards(primary_workers),
+            "backup_live_workers": self._build_live_worker_picker_cards(backup_workers),
+            "live_workers": self._build_live_worker_picker_cards(assigned_workers),
+            "editing_stream_id": editing_stream.id if editing_stream else "",
+            "detail_stream": self._live_stream_detail_payload(detail_stream) if detail_stream else None,
             "live_tabs": [
-                {"label": "Danh sách live", "count": 0, "active": True},
-                {"label": "Chờ lên lịch", "count": 0, "active": False},
+                {"label": "Danh sách live", "count": len(live_records), "active": True},
+                {"label": "Chờ lên lịch", "count": scheduled_live_count, "active": False},
             ],
-            "live_stream_rows": [],
-            "live_summary": "Chưa có luồng live nào trong danh sách",
+            "live_stream_rows": self._build_live_stream_rows(live_records),
+            "live_summary": (
+                f"Hiển thị 1 đến {len(live_records)} trong {len(live_records)} kết quả"
+                if live_records
+                else "Chưa có luồng live nào trong danh sách"
+            ),
         }
+
+    def _live_streams_for_user(self, user: UserSummary) -> list[LiveStreamRecord]:
+        return sorted(
+            [
+                stream
+                for stream in self.live_streams
+                if stream.owner_user_id == user.id
+            ],
+            key=lambda item: (item.created_at or datetime.min, item.id),
+            reverse=True,
+        )
+
+    def _build_live_form_state(self, values: dict[str, Any] | None = None) -> dict[str, Any]:
+        state: dict[str, Any] = {
+            "stream_name": "",
+            "video_url": "",
+            "audio_url": "",
+            "stream_key": "",
+            "backup_delay_minutes": 3,
+            "primary_worker_id": "",
+            "backup_worker_id": "",
+            "start_at": "",
+            "end_at": "",
+        }
+        if not values:
+            return state
+        state.update(
+            {
+                "stream_name": str(values.get("stream_name") or "").strip(),
+                "video_url": str(values.get("video_url") or "").strip(),
+                "audio_url": str(values.get("audio_url") or "").strip(),
+                "stream_key": str(values.get("stream_key") or "").strip(),
+                "backup_delay_minutes": str(values.get("backup_delay_minutes") or "3").strip() or "3",
+                "primary_worker_id": str(values.get("primary_worker_id") or "").strip(),
+                "backup_worker_id": str(values.get("backup_worker_id") or "").strip(),
+                "start_at": str(values.get("start_at") or "").strip(),
+                "end_at": str(values.get("end_at") or "").strip(),
+            }
+        )
+        return state
+
+    def resolve_live_owner_from_primary_worker(
+        self,
+        primary_worker_id: str,
+        *,
+        viewer_role: str = "admin",
+        viewer_id: str | None = None,
+    ) -> UserSummary:
+        normalized_worker_id = str(primary_worker_id or "").strip()
+        if not normalized_worker_id:
+            raise ValueError("BOT chính là bắt buộc.")
+        assigned_users = self._assigned_live_users_for_worker(normalized_worker_id, role="primary")
+        if not assigned_users:
+            raise ValueError("BOT chính chưa được cấp cho tài khoản nào để lưu dữ liệu live stream.")
+        scoped_users = []
+        for owner in assigned_users:
+            try:
+                self._assert_live_stream_owner_scope(owner, viewer_role=viewer_role, viewer_id=viewer_id)
+            except ValueError:
+                continue
+            scoped_users.append(owner)
+        if not scoped_users:
+            raise ValueError("Không có quyền thao tác luồng live của tài khoản này.")
+        if len(scoped_users) > 1:
+            raise ValueError("BOT chính đang được cấp cho nhiều user. Form hiện tại chưa xác định được tài khoản sở hữu luồng live.")
+        return scoped_users[0]
+
+    def list_live_streams(
+        self,
+        *,
+        viewer_role: str = "admin",
+        viewer_id: str | None = None,
+        manager_ids: list[str] | None = None,
+        owner_user_id: str | None = None,
+    ) -> list[LiveStreamRecord]:
+        normalized_owner_user_id = str(owner_user_id or "").strip()
+        if normalized_owner_user_id:
+            owner = self._require_workspace_user(normalized_owner_user_id)
+            self._assert_live_stream_owner_scope(owner, viewer_role=viewer_role, viewer_id=viewer_id)
+            return [
+                deepcopy(stream)
+                for stream in self._live_streams_for_user(owner)
+            ]
+        return [
+            deepcopy(stream)
+            for stream in self._scoped_live_streams(
+                viewer_role=viewer_role,
+                viewer_id=viewer_id,
+                manager_ids=manager_ids,
+            )
+        ]
+
+    def _find_live_stream(self, stream_id: str) -> LiveStreamRecord:
+        normalized_stream_id = str(stream_id or "").strip()
+        for stream in self.live_streams:
+            if stream.id == normalized_stream_id:
+                return stream
+        raise KeyError(stream_id)
+
+    def _assert_live_stream_owner_scope(
+        self,
+        owner: UserSummary,
+        *,
+        viewer_role: str = "admin",
+        viewer_id: str | None = None,
+    ) -> None:
+        normalized_viewer_id = str(viewer_id or "").strip()
+        if viewer_role == "admin":
+            return
+        if viewer_role == "manager":
+            if owner.role == "manager" and owner.id == normalized_viewer_id:
+                return
+            if owner.role == "user" and self._resolved_user_manager_id(owner) == normalized_viewer_id:
+                return
+            raise ValueError("Không có quyền thao tác luồng live của tài khoản này.")
+        if owner.id != normalized_viewer_id:
+            raise ValueError("Không có quyền thao tác luồng live của tài khoản này.")
+
+    def _normalize_live_text(self, value: str | None, *, field_label: str) -> str:
+        normalized = str(value or "").strip()
+        if not normalized:
+            raise ValueError(f"{field_label} là bắt buộc.")
+        return normalized
+
+    def _normalize_live_optional_text(self, value: str | None) -> str | None:
+        normalized = str(value or "").strip()
+        return normalized or None
+
+    def _normalize_backup_delay_minutes(self, value: int | str | None) -> int:
+        try:
+            delay_minutes = int(value if value is not None else 0)
+        except (TypeError, ValueError):
+            raise ValueError("Delay backup phải là số nguyên hợp lệ.")
+        if delay_minutes < 0:
+            raise ValueError("Delay backup không được âm.")
+        return delay_minutes
+
+    def _resolve_live_owner_manager_scope(
+        self,
+        owner: UserSummary,
+        *,
+        primary_worker: WorkerRecord,
+    ) -> tuple[str | None, str | None]:
+        if owner.role == "user":
+            return (
+                self._resolved_user_manager_id(owner) or primary_worker.manager_id,
+                owner.manager_name or primary_worker.manager_name or None,
+            )
+        if owner.role == "manager":
+            return owner.id, owner.username
+        return primary_worker.manager_id, primary_worker.manager_name or owner.username
+
+    def _validate_live_worker_for_owner(
+        self,
+        owner: UserSummary,
+        worker_id: str,
+        *,
+        field_label: str,
+        role: str | None = None,
+    ) -> WorkerRecord:
+        available_workers = self._assigned_live_workers_for_user(owner, role=role) if role else self._workspace_live_workers_for_user(owner)
+        normalized_worker_id = str(worker_id or "").strip()
+        selected_worker = next((worker for worker in available_workers if worker.id == normalized_worker_id), None)
+        if selected_worker is not None:
+            return selected_worker
+        raise ValueError(f"{field_label} không nằm trong danh sách BOT đã cấp cho tài khoản này.")
+
+    def _derive_live_label(
+        self,
+        *,
+        start_time_live: datetime | None,
+        end_time_live: datetime | None,
+        is_forever: bool,
+    ) -> str:
+        if is_forever:
+            return "Live 24/7"
+        if start_time_live and end_time_live and end_time_live >= start_time_live:
+            duration = end_time_live - start_time_live
+            total_seconds = int(duration.total_seconds())
+            hours, remainder = divmod(total_seconds, 3600)
+            if remainder > 0:
+                hours += 1
+            return f"Live {max(hours, 1)}h"
+        return "Live thường"
+
+    def _derive_live_status_defaults(
+        self,
+        *,
+        start_time_live: datetime | None,
+        is_live_now: bool,
+        is_forever: bool,
+        status_override: str | None = None,
+        log_override: str | None = None,
+    ) -> tuple[str, str]:
+        if status_override:
+            normalized_status = str(status_override or "").strip().lower()
+        elif is_live_now:
+            normalized_status = "streaming"
+        elif start_time_live or is_forever:
+            normalized_status = "scheduled"
+        else:
+            normalized_status = "draft"
+
+        if log_override:
+            return normalized_status, str(log_override).strip()
+        if normalized_status == "streaming":
+            return normalized_status, "Đang live"
+        if normalized_status == "scheduled":
+            return normalized_status, "Lên lịch"
+        if normalized_status == "error":
+            return normalized_status, "Lỗi"
+        if normalized_status == "ended":
+            return normalized_status, "Kết thúc"
+        if normalized_status == "stopped":
+            return normalized_status, "Đã dừng"
+        return normalized_status, "Khởi tạo"
+
+    def _validate_live_schedule(
+        self,
+        *,
+        start_time_live: datetime | None,
+        end_time_live: datetime | None,
+        is_live_now: bool,
+        is_forever: bool,
+    ) -> tuple[datetime | None, datetime | None]:
+        if not is_live_now and start_time_live is None:
+            raise ValueError("Thời gian bắt đầu là bắt buộc nếu không chọn live ngay.")
+        if is_forever:
+            return start_time_live, None
+        if start_time_live and end_time_live and end_time_live < start_time_live:
+            raise ValueError("Thời gian kết thúc phải lớn hơn hoặc bằng thời gian bắt đầu.")
+        return start_time_live, end_time_live
+
+    def create_live_stream(
+        self,
+        *,
+        owner_user_id: str,
+        stream_name: str,
+        primary_worker_id: str,
+        stream_key: str,
+        video_url: str,
+        audio_url: str | None = None,
+        backup_worker_id: str | None = None,
+        backup_delay_minutes: int | str | None = 3,
+        start_time_live: datetime | None = None,
+        end_time_live: datetime | None = None,
+        is_live_now: bool = False,
+        is_forever: bool = False,
+        platform: str = "youtube_rtmp",
+        viewer_role: str = "admin",
+        viewer_id: str | None = None,
+        status: str | None = None,
+        log_label: str | None = None,
+    ) -> LiveStreamRecord:
+        owner = self._require_workspace_user(owner_user_id)
+        self._assert_live_stream_owner_scope(owner, viewer_role=viewer_role, viewer_id=viewer_id)
+        normalized_name = self._normalize_live_text(stream_name, field_label="Tên luồng live")
+        normalized_stream_key = self._normalize_live_text(stream_key, field_label="Stream key")
+        normalized_video_url = self._normalize_live_text(video_url, field_label="Link video nguồn")
+        normalized_audio_url = self._normalize_live_optional_text(audio_url)
+        primary_worker = self._validate_live_worker_for_owner(owner, primary_worker_id, field_label="BOT chính", role="primary")
+        backup_worker: WorkerRecord | None = None
+        normalized_backup_worker_id = str(backup_worker_id or "").strip() or None
+        if normalized_backup_worker_id:
+            if normalized_backup_worker_id == primary_worker.id:
+                raise ValueError("BOT backup phải khác BOT chính.")
+            backup_worker = self._validate_live_worker_for_owner(owner, normalized_backup_worker_id, field_label="BOT backup", role="backup")
+        normalized_delay = self._normalize_backup_delay_minutes(backup_delay_minutes)
+        start_time_live, end_time_live = self._validate_live_schedule(
+            start_time_live=start_time_live,
+            end_time_live=end_time_live,
+            is_live_now=is_live_now,
+            is_forever=is_forever,
+        )
+        manager_id, manager_name = self._resolve_live_owner_manager_scope(owner, primary_worker=primary_worker)
+        live_status, live_log_label = self._derive_live_status_defaults(
+            start_time_live=start_time_live,
+            is_live_now=is_live_now,
+            is_forever=is_forever,
+            status_override=status,
+            log_override=log_label,
+        )
+        now = self._now(trim=False)
+        stream = LiveStreamRecord(
+            id=f"live-{uuid4().hex[:10]}",
+            owner_user_id=owner.id,
+            owner_username=owner.username,
+            owner_display_name=owner.display_name,
+            manager_id=manager_id,
+            manager_name=manager_name,
+            primary_worker_id=primary_worker.id,
+            primary_worker_name=self._resolve_live_worker_display_name(primary_worker.id),
+            primary_group=primary_worker.group or primary_worker.manager_name,
+            backup_worker_id=backup_worker.id if backup_worker else None,
+            backup_worker_name=(
+                f"{self._resolve_live_worker_display_name(backup_worker.id)} - T"
+                if backup_worker
+                else None
+            ),
+            backup_group=backup_worker.group if backup_worker else None,
+            stream_name=normalized_name,
+            stream_key=normalized_stream_key,
+            platform=str(platform or "youtube_rtmp").strip().lower() or "youtube_rtmp",
+            video_url=normalized_video_url,
+            audio_url=normalized_audio_url,
+            live_label=self._derive_live_label(
+                start_time_live=start_time_live,
+                end_time_live=end_time_live,
+                is_forever=is_forever,
+            ),
+            is_forever=is_forever,
+            is_live_now=is_live_now,
+            start_time_live=start_time_live,
+            end_time_live=end_time_live,
+            backup_delay_minutes=normalized_delay,
+            status=live_status,
+            log_label=live_log_label,
+            created_at=now,
+            updated_at=now,
+        )
+        self.live_streams.append(stream)
+        self._save_state()
+        return deepcopy(stream)
+
+    def get_live_stream(
+        self,
+        stream_id: str,
+        *,
+        viewer_role: str = "admin",
+        viewer_id: str | None = None,
+    ) -> LiveStreamRecord:
+        stream = self._find_live_stream(stream_id)
+        owner = self._require_workspace_user(stream.owner_user_id)
+        self._assert_live_stream_owner_scope(owner, viewer_role=viewer_role, viewer_id=viewer_id)
+        return deepcopy(stream)
+
+    def update_live_stream(
+        self,
+        *,
+        stream_id: str,
+        stream_name: str,
+        primary_worker_id: str,
+        stream_key: str,
+        video_url: str,
+        audio_url: str | None = None,
+        backup_worker_id: str | None = None,
+        backup_delay_minutes: int | str | None = 3,
+        start_time_live: datetime | None = None,
+        end_time_live: datetime | None = None,
+        is_live_now: bool = False,
+        is_forever: bool = False,
+        platform: str = "youtube_rtmp",
+        viewer_role: str = "admin",
+        viewer_id: str | None = None,
+        status: str | None = None,
+        log_label: str | None = None,
+    ) -> LiveStreamRecord:
+        stream = self._find_live_stream(stream_id)
+        owner = self._require_workspace_user(stream.owner_user_id)
+        self._assert_live_stream_owner_scope(owner, viewer_role=viewer_role, viewer_id=viewer_id)
+        normalized_name = self._normalize_live_text(stream_name, field_label="Tên luồng live")
+        normalized_stream_key = self._normalize_live_text(stream_key, field_label="Stream key")
+        normalized_video_url = self._normalize_live_text(video_url, field_label="Link video nguồn")
+        normalized_audio_url = self._normalize_live_optional_text(audio_url)
+        primary_worker = self._validate_live_worker_for_owner(owner, primary_worker_id, field_label="BOT chính", role="primary")
+        backup_worker: WorkerRecord | None = None
+        normalized_backup_worker_id = str(backup_worker_id or "").strip() or None
+        if normalized_backup_worker_id:
+            if normalized_backup_worker_id == primary_worker.id:
+                raise ValueError("BOT backup phải khác BOT chính.")
+            backup_worker = self._validate_live_worker_for_owner(owner, normalized_backup_worker_id, field_label="BOT backup", role="backup")
+        normalized_delay = self._normalize_backup_delay_minutes(backup_delay_minutes)
+        start_time_live, end_time_live = self._validate_live_schedule(
+            start_time_live=start_time_live,
+            end_time_live=end_time_live,
+            is_live_now=is_live_now,
+            is_forever=is_forever,
+        )
+        manager_id, manager_name = self._resolve_live_owner_manager_scope(owner, primary_worker=primary_worker)
+        live_status, live_log_label = self._derive_live_status_defaults(
+            start_time_live=start_time_live,
+            is_live_now=is_live_now,
+            is_forever=is_forever,
+            status_override=status,
+            log_override=log_label,
+        )
+
+        stream.manager_id = manager_id
+        stream.manager_name = manager_name
+        stream.primary_worker_id = primary_worker.id
+        stream.primary_worker_name = self._resolve_live_worker_display_name(primary_worker.id)
+        stream.primary_group = primary_worker.group or primary_worker.manager_name
+        stream.backup_worker_id = backup_worker.id if backup_worker else None
+        stream.backup_worker_name = (
+            f"{self._resolve_live_worker_display_name(backup_worker.id)} - T"
+            if backup_worker
+            else None
+        )
+        stream.backup_group = backup_worker.group if backup_worker else None
+        stream.stream_name = normalized_name
+        stream.stream_key = normalized_stream_key
+        stream.platform = str(platform or "youtube_rtmp").strip().lower() or "youtube_rtmp"
+        stream.video_url = normalized_video_url
+        stream.audio_url = normalized_audio_url
+        stream.live_label = self._derive_live_label(
+            start_time_live=start_time_live,
+            end_time_live=end_time_live,
+            is_forever=is_forever,
+        )
+        stream.is_forever = is_forever
+        stream.is_live_now = is_live_now
+        stream.start_time_live = start_time_live
+        stream.end_time_live = end_time_live
+        stream.backup_delay_minutes = normalized_delay
+        stream.status = live_status
+        stream.log_label = live_log_label
+        stream.updated_at = self._now(trim=False)
+        self._save_state()
+        return deepcopy(stream)
+
+    def delete_live_stream(
+        self,
+        stream_id: str,
+        *,
+        viewer_role: str = "admin",
+        viewer_id: str | None = None,
+    ) -> None:
+        stream = self._find_live_stream(stream_id)
+        owner = self._require_workspace_user(stream.owner_user_id)
+        self._assert_live_stream_owner_scope(owner, viewer_role=viewer_role, viewer_id=viewer_id)
+        self.live_streams = [item for item in self.live_streams if item.id != stream.id]
+        self._save_state()
+
+    def update_live_stream_status(
+        self,
+        stream_id: str,
+        *,
+        status: str,
+        log_label: str | None = None,
+        error_message: str | None = None,
+    ) -> LiveStreamRecord:
+        stream = self._find_live_stream(stream_id)
+        normalized_status, resolved_log = self._derive_live_status_defaults(
+            start_time_live=stream.start_time_live,
+            is_live_now=stream.is_live_now,
+            is_forever=stream.is_forever,
+            status_override=status,
+            log_override=log_label,
+        )
+        stream.status = normalized_status
+        stream.log_label = resolved_log
+        stream.error_message = self._normalize_live_optional_text(error_message)
+        stream.updated_at = self._now(trim=False)
+        self._save_state()
+        return deepcopy(stream)
+
+    def _scoped_live_streams(
+        self,
+        *,
+        viewer_role: str = "admin",
+        viewer_id: str | None = None,
+        manager_ids: list[str] | None = None,
+    ) -> list[LiveStreamRecord]:
+        effective_manager_ids = self._effective_manager_scope_ids(
+            viewer_role=viewer_role,
+            viewer_id=viewer_id,
+            manager_ids=manager_ids,
+        )
+        if viewer_role == "manager" and viewer_id:
+            scoped = [
+                stream for stream in self.live_streams
+                if stream.manager_id == viewer_id
+            ]
+            return sorted(scoped, key=lambda item: (item.created_at or datetime.min, item.id), reverse=True)
+        if not effective_manager_ids:
+            return sorted(list(self.live_streams), key=lambda item: (item.created_at or datetime.min, item.id), reverse=True)
+        scoped = [
+            stream
+            for stream in self.live_streams
+            if stream.manager_id in effective_manager_ids
+        ]
+        return sorted(scoped, key=lambda item: (item.created_at or datetime.min, item.id), reverse=True)
+
+    def _live_status_presentation(self, status: str) -> tuple[str, str]:
+        normalized = str(status or "").strip().lower()
+        if normalized == "streaming":
+            return ("Đang live", "border-emerald-200 bg-emerald-50 text-emerald-700")
+        if normalized == "scheduled":
+            return ("Chờ lịch", "border-amber-200 bg-amber-50 text-amber-700")
+        if normalized == "ended":
+            return ("Kết thúc", "border-slate-200 bg-slate-50 text-slate-700")
+        if normalized == "error":
+            return ("Lỗi", "border-rose-200 bg-rose-50 text-rose-700")
+        return ("Đã dừng", "border-rose-200 bg-rose-50 text-rose-700")
+
+    def _live_duration_text(self, stream: LiveStreamRecord) -> str:
+        if stream.is_forever:
+            return "24/7"
+        if stream.start_time_live and stream.end_time_live and stream.end_time_live >= stream.start_time_live:
+            duration = stream.end_time_live - stream.start_time_live
+            total_seconds = int(duration.total_seconds())
+            hours, remainder = divmod(total_seconds, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+        return stream.live_label
+
+    def _live_streams_using_worker(self, worker_id: str) -> list[LiveStreamRecord]:
+        normalized_worker_id = str(worker_id or "").strip()
+        if not normalized_worker_id:
+            return []
+        return [
+            stream
+            for stream in self.live_streams
+            if stream.primary_worker_id == normalized_worker_id or stream.backup_worker_id == normalized_worker_id
+        ]
+
+    def _live_worker_thread_summary(self, worker: WorkerRecord) -> dict[str, int | str]:
+        streams = self._live_streams_using_worker(worker.id)
+        running_threads = len([stream for stream in streams if stream.status == "streaming"])
+        max_threads = max(1, int(worker.threads or worker.capacity or 1))
+        return {
+            "running_threads": running_threads,
+            "max_threads": max_threads,
+            "thread_text": f"{running_threads}/{max_threads}",
+        }
+
+    def _live_user_metrics(self, user: UserSummary) -> dict[str, Any]:
+        live_streams = [stream for stream in self.live_streams if stream.owner_user_id == user.id]
+        live_bots = self._assigned_live_workers_for_user(user)
+        backup_worker_ids = {stream.backup_worker_id for stream in live_streams if stream.backup_worker_id}
+        manager = next(
+            (
+                item
+                for item in self.users
+                if item.role == "manager" and item.username == (user.manager_name or "")
+            ),
+            None,
+        )
+        manager_telegram = ""
+        if manager is not None:
+            manager_telegram = str(self._user_meta_record(manager.id).get("telegram") or "").strip()
+        return {
+            "live_threads_running": len([stream for stream in live_streams if stream.status == "streaming"]),
+            "live_threads_total": len(live_streams),
+            "live_bots_total": len(live_bots),
+            "live_threads_backup_running": len(
+                [stream for stream in live_streams if stream.status == "streaming" and stream.backup_worker_id]
+            ),
+            "live_threads_backup_pending": len(
+                [stream for stream in live_streams if stream.status == "scheduled" and stream.backup_worker_id]
+            ),
+            "live_threads_backup_total": len([stream for stream in live_streams if stream.backup_worker_id]),
+            "live_bots_backup_total": len(backup_worker_ids),
+            "live_total_bots": len(live_bots),
+            "telegram_manager": manager_telegram,
+        }
+
+    def _live_stream_display_row(self, stream: LiveStreamRecord) -> dict[str, Any]:
+        status_label, status_class = self._live_status_presentation(stream.status)
+        primary_name = stream.primary_worker_name or self._resolve_live_worker_display_name(stream.primary_worker_id)
+        backup_name = stream.backup_worker_name
+        return {
+            "id": stream.id,
+            "manager_id": stream.manager_id,
+            "manager_name": stream.manager_name or "-",
+            "username": stream.owner_username,
+            "bot_name": primary_name,
+            "bot_group": stream.primary_group or "-",
+            "group_name": stream.primary_group or "-",
+            "group_meta": stream.manager_name or "-",
+            "title": stream.stream_name,
+            "stream_name": stream.stream_name,
+            "stream_key": stream.stream_key,
+            "stream_key_masked": stream.stream_key,
+            "bot_backup_name": backup_name or "Không dùng backup",
+            "bot_backup_group": stream.backup_group or "",
+            "live_label": stream.live_label,
+            "live_type_label": stream.live_label,
+            "start_at": self._format_full_datetime(stream.start_time_live) if stream.start_time_live else "-",
+            "end_at": self._format_full_datetime(stream.end_time_live) if stream.end_time_live else "-",
+            "start_date_text": self._format_date(stream.start_time_live) if stream.start_time_live else "-",
+            "start_clock_text": self._format_clock(stream.start_time_live) if stream.start_time_live else "",
+            "end_date_text": self._format_date(stream.end_time_live) if stream.end_time_live else ("24/7" if stream.is_forever else "-"),
+            "end_clock_text": self._format_clock(stream.end_time_live) if stream.end_time_live else "",
+            "duration_text": self._live_duration_text(stream),
+            "duration_meta": "",
+            "log_label": stream.log_label,
+            "log_class": "border-rose-200 bg-rose-50 text-rose-700" if stream.log_label == "Kết thúc" else "border-slate-200 bg-slate-50 text-slate-700",
+            "status_label": status_label,
+            "status_class": status_class,
+            "detail_href": "",
+        }
+
+    def _build_live_stream_rows(self, streams: list[LiveStreamRecord]) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        for index, stream in enumerate(streams, start=1):
+            rows.append({"index": index, **self._live_stream_display_row(stream)})
+        return rows
+
+    def _build_live_render_rows(self, streams: list[LiveStreamRecord]) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        for index, stream in enumerate(streams, start=1):
+            rows.append({"index": index, **self._live_stream_display_row(stream)})
+        return rows
 
     def get_user_bootstrap(self, user_id: str) -> UserBootstrapResponse:
         user = deepcopy(self._require_workspace_user(user_id))
@@ -4859,6 +6087,7 @@ class AppStore:
         self,
         manager_ids: list[str] | None = None,
         *,
+        workspace_mode: str = "upload",
         viewer_role: str = "admin",
         viewer_id: str | None = None,
     ) -> list[dict[str, Any]]:
@@ -4896,26 +6125,28 @@ class AppStore:
             meta = self._user_meta_record(user.id)
             row_manager_name = user.manager_name or (user.username if user.role == "manager" else "-")
             row_manager_id = manager.id if manager else (user.id if user.role == "manager" else "")
-            rows.append(
-                {
-                    "index": len(rows) + 1,
-                    "id": user.id,
-                    "username": user.username,
-                    "display_name": user.username,
-                    "avatar_initials": self._initials(user.username),
-                    "avatar_class": self._avatar_palette(user.username),
-                    "role": user.role,
-                    "role_label": role_label,
-                    "role_class": role_class,
-                    "manager_name": row_manager_name,
-                    "manager_id": row_manager_id,
-                    "telegram": meta.get("telegram") or "",
-                    "updated_meta": f"{meta.get('updated_by') or '-'} • {self._format_compact_datetime(meta.get('updated_at'))}",
-                    "total_channels": self._user_channel_count(user),
-                    "total_workers": self._user_worker_count(user),
-                    "can_delete": not (viewer_role == "manager" and viewer_id and user.role == "manager" and user.id == viewer_id),
-                }
-            )
+            row = {
+                "index": len(rows) + 1,
+                "id": user.id,
+                "username": user.username,
+                "display_name": user.username,
+                "avatar_initials": self._initials(user.username),
+                "avatar_class": self._avatar_palette(user.username),
+                "role": user.role,
+                "role_label": role_label,
+                "role_class": role_class,
+                "manager_name": row_manager_name,
+                "manager_id": row_manager_id,
+                "telegram": meta.get("telegram") or "",
+                "updated_meta": f"{meta.get('updated_by') or '-'} • {self._format_compact_datetime(meta.get('updated_at'))}",
+                "total_channels": self._user_channel_count(user),
+                "total_workers": self._user_worker_count(user),
+                "can_delete": not (viewer_role == "manager" and viewer_id and user.role == "manager" and user.id == viewer_id),
+            }
+            if workspace_mode == "live":
+                row.update(self._live_user_metrics(user))
+                row["total_workers"] = self._user_live_worker_count(user)
+            rows.append(row)
         return rows
 
     @staticmethod
@@ -5004,25 +6235,34 @@ class AppStore:
         )
         return context
 
-    def _build_user_bot_links(self, user_id: str) -> list[dict[str, Any]]:
+    def _build_user_bot_links(self, user_id: str, *, workspace_mode: str = "upload") -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
-        for mapping in self.user_worker_links:
+        is_live_workspace = workspace_mode == "live"
+        link_source = self.live_user_worker_links if is_live_workspace else self.user_worker_links
+        for mapping in link_source:
             if mapping["user_id"] != user_id:
                 continue
-            worker = self._find_worker(mapping["worker_id"])
+            worker = self._find_live_worker(mapping["worker_id"]) if is_live_workspace else self._find_worker(mapping["worker_id"])
             status_label, status_class = self._worker_status_badge(worker.status)
+            live_role = (
+                self._normalize_live_assignment_role(mapping.get("live_role"), fallback_note=mapping.get("note"))
+                if is_live_workspace
+                else None
+            )
             rows.append(
                 {
                     "index": len(rows) + 1,
                     "id": mapping["id"],
                     "worker_id": worker.id,
-                    "worker_name": self._resolve_worker_display_name(worker.id),
+                    "worker_name": self._resolve_live_worker_display_name(worker.id) if is_live_workspace else self._resolve_worker_display_name(worker.id),
                     "manager_name": worker.manager_name,
                     "status_label": status_label,
                     "status_class": status_class,
-                    "bot_type": mapping.get("bot_type", "1080p"),
+                    "bot_type": mapping.get("bot_type", "live"),
                     "number_of_threads": mapping["threads"],
-                    "note": mapping.get("note") or "VPS duoc cap",
+                    "live_role": live_role or "",
+                    "live_role_label": self._live_assignment_role_label(live_role) if is_live_workspace else "",
+                    "note": mapping.get("note") or (self._live_assignment_note(live_role) if is_live_workspace else "VPS duoc cap"),
                     "disk_text": f"{worker.disk_used_gb:.1f}/{worker.disk_total_gb:.1f}GB",
                     "bandwidth_text": f"{worker.bandwidth_kbps:.2f}KB/s",
                 }
@@ -5031,6 +6271,15 @@ class AppStore:
 
     def _worker_assigned_user_link(self, worker_id: str, *, exclude_user_id: str | None = None) -> dict[str, Any] | None:
         for mapping in self.user_worker_links:
+            if mapping.get("worker_id") != worker_id:
+                continue
+            if exclude_user_id and mapping.get("user_id") == exclude_user_id:
+                continue
+            return mapping
+        return None
+
+    def _live_worker_assigned_user_link(self, worker_id: str, *, exclude_user_id: str | None = None) -> dict[str, Any] | None:
+        for mapping in self.live_user_worker_links:
             if mapping.get("worker_id") != worker_id:
                 continue
             if exclude_user_id and mapping.get("user_id") == exclude_user_id:
@@ -5055,6 +6304,37 @@ class AppStore:
             seen_user_ids.add(user_id)
         return users
 
+    def _assigned_live_users_for_worker(
+        self,
+        worker_id: str,
+        *,
+        role: str | None = None,
+    ) -> list[UserSummary]:
+        normalized_role = self._normalize_live_assignment_role(role) if role is not None else None
+        users: list[UserSummary] = []
+        seen_user_ids: set[str] = set()
+        for mapping in sorted(self.live_user_worker_links, key=lambda item: int(item.get("id") or 0)):
+            if str(mapping.get("worker_id") or "").strip() != str(worker_id or "").strip():
+                continue
+            if normalized_role is not None and self._normalize_live_assignment_role(mapping.get("live_role"), fallback_note=mapping.get("note")) != normalized_role:
+                continue
+            user_id = str(mapping.get("user_id") or "").strip()
+            if not user_id or user_id in seen_user_ids:
+                continue
+            try:
+                user = self._find_user(user_id)
+            except KeyError:
+                continue
+            users.append(user)
+            seen_user_ids.add(user_id)
+        return users
+
+    def _assigned_live_user_for_worker(self, worker_id: str, *, role: str | None = None) -> UserSummary | None:
+        users = self._assigned_live_users_for_worker(worker_id, role=role)
+        if not users:
+            return None
+        return users[0]
+
     def _worker_candidates_for_user(self, user: UserSummary) -> list[dict[str, str]]:
         candidates: list[dict[str, str]] = []
         current_worker_ids = {
@@ -5072,6 +6352,26 @@ class AppStore:
                 continue
             worker = self._find_worker(worker_id)
             candidates.insert(0, {"id": worker.id, "name": self._resolve_worker_display_name(worker.id)})
+            candidate_ids.add(worker.id)
+        return candidates
+
+    def _live_worker_candidates_for_user(self, user: UserSummary) -> list[dict[str, str]]:
+        candidates: list[dict[str, str]] = []
+        current_worker_ids = {
+            str(link.get("worker_id") or "").strip()
+            for link in self._assigned_live_worker_links_for_user(user.id)
+            if str(link.get("worker_id") or "").strip()
+        }
+        for worker in self.live_workers:
+            if user.manager_name and worker.manager_name != user.manager_name:
+                continue
+            candidates.append({"id": worker.id, "name": self._resolve_live_worker_display_name(worker.id)})
+        candidate_ids = {item["id"] for item in candidates}
+        for worker_id in sorted(current_worker_ids):
+            if worker_id in candidate_ids:
+                continue
+            worker = self._find_live_worker(worker_id)
+            candidates.insert(0, {"id": worker.id, "name": self._resolve_live_worker_display_name(worker.id)})
             candidate_ids.add(worker.id)
         return candidates
 
@@ -5101,7 +6401,74 @@ class AppStore:
         *,
         viewer_role: str = "admin",
         viewer_id: str | None = None,
+        workspace_mode: str = "upload",
     ) -> list[dict[str, Any]]:
+        if workspace_mode == "live":
+            options: list[dict[str, Any]] = []
+            normalized_viewer_id = str(viewer_id or "").strip()
+            for user in self.users:
+                if viewer_role == "manager":
+                    if user.role == "manager" and user.id != normalized_viewer_id:
+                        continue
+                    if user.role == "admin":
+                        continue
+                    if user.role == "user" and self._resolved_user_manager_id(user) != normalized_viewer_id:
+                        continue
+                elif viewer_role == "admin" and user.role == "admin" and user.id != normalized_viewer_id:
+                    continue
+
+                if user.role == "user":
+                    manager_id = self._resolved_user_manager_id(user) or ""
+                    role_label = "User"
+                    scope_locked = False
+                    self_assignable = False
+                elif user.role == "manager":
+                    manager_id = user.id
+                    role_label = "Manager"
+                    scope_locked = viewer_role == "admin"
+                    self_assignable = viewer_role == "manager" and user.id == normalized_viewer_id
+                elif user.role == "admin":
+                    manager_id = ""
+                    role_label = "Admin"
+                    scope_locked = False
+                    self_assignable = viewer_role == "admin" and user.id == normalized_viewer_id
+                else:
+                    continue
+
+                assigned_workers = self._workspace_live_workers_for_user(user.id)
+                assigned_worker = assigned_workers[0] if assigned_workers else None
+                assigned_worker_ids = [worker.id for worker in assigned_workers]
+                assigned_worker_names = [self._resolve_live_worker_display_name(worker.id) for worker in assigned_workers]
+                assigned_links = self._assigned_live_worker_links_for_user(user.id)
+                assigned_role_labels = [
+                    self._live_assignment_role_label(
+                        self._normalize_live_assignment_role(link.get("live_role"), fallback_note=link.get("note"))
+                    )
+                    for link in assigned_links
+                ]
+                options.append(
+                    {
+                        "id": user.id,
+                        "username": user.username,
+                        "display_name": user.display_name,
+                        "role": user.role,
+                        "role_label": role_label,
+                        "manager_id": manager_id,
+                        "manager_name": user.manager_name or "",
+                        "assigned_worker_id": assigned_worker.id if assigned_worker else "",
+                        "assigned_worker_name": self._resolve_live_worker_display_name(assigned_worker.id) if assigned_worker else "",
+                        "assigned_worker_ids": assigned_worker_ids,
+                        "assigned_worker_names": assigned_worker_names,
+                        "assigned_worker_count": len(assigned_workers),
+                        "assigned_worker_names_text": ", ".join(assigned_worker_names),
+                        "assigned_role_labels": assigned_role_labels,
+                        "assigned_role_labels_text": ", ".join(assigned_role_labels),
+                        "scope_locked": scope_locked,
+                        "self_assignable": self_assignable,
+                    }
+                )
+            return options
+
         options: list[dict[str, Any]] = []
         viewer_scope_manager_id = str(viewer_id or "").strip()
         for user in self.users:
@@ -5385,7 +6752,12 @@ class AppStore:
         context.update(
             {
                 "template": "admin/user_index.html",
-                "users": self._build_user_rows(manager_ids, viewer_role=viewer_role, viewer_id=viewer_id),
+                "users": self._build_user_rows(
+                    manager_ids,
+                    workspace_mode=workspace_mode,
+                    viewer_role=viewer_role,
+                    viewer_id=viewer_id,
+                ),
                 "manager_form_options": [
                     {"id": user.id, "label": user.username}
                     for user in self.users
@@ -5522,7 +6894,8 @@ class AppStore:
     ) -> dict[str, Any]:
         user = self._find_user(user_id)
         meta = self._user_meta_record(user.id)
-        assigned_workers = self._assigned_workers_for_user(user)
+        is_live_workspace = workspace_mode == "live"
+        assigned_workers = self._assigned_live_workers_for_user(user) if is_live_workspace else self._assigned_workers_for_user(user)
         assigned_worker = assigned_workers[0] if assigned_workers else None
         context = self._admin_shell_context(
             page_title=f"BOT của {user.username}",
@@ -5554,19 +6927,19 @@ class AppStore:
                 "assigned_workers": [
                     {
                         "id": worker.id,
-                        "name": self._resolve_worker_display_name(worker.id),
+                        "name": self._resolve_live_worker_display_name(worker.id) if is_live_workspace else self._resolve_worker_display_name(worker.id),
                     }
                     for worker in assigned_workers
                 ],
                 "assigned_worker": {
                     "id": assigned_worker.id,
-                    "name": self._resolve_worker_display_name(assigned_worker.id),
+                    "name": self._resolve_live_worker_display_name(assigned_worker.id) if is_live_workspace else self._resolve_worker_display_name(assigned_worker.id),
                 }
                 if assigned_worker
                 else None,
                 "assigned_worker_count": len(assigned_workers),
-                "rows": self._build_user_bot_links(user.id),
-                "worker_candidates": self._worker_candidates_for_user(user),
+                "rows": self._build_user_bot_links(user.id, workspace_mode=workspace_mode),
+                "worker_candidates": self._live_worker_candidates_for_user(user) if is_live_workspace else self._worker_candidates_for_user(user),
             }
         )
         return context
@@ -5648,19 +7021,40 @@ class AppStore:
         )
         return updated_row
 
-    def _build_bot_rows(self, manager_ids: list[str] | None = None) -> list[dict[str, Any]]:
+    def _build_bot_rows(self, manager_ids: list[str] | None = None, *, workspace_mode: str = "upload") -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
-        operation_tasks = self._filtered_worker_operation_tasks(manager_ids)
+        is_live_workspace = workspace_mode == "live"
+        operation_tasks = [] if is_live_workspace else self._filtered_worker_operation_tasks(manager_ids)
         operation_by_worker_id = {
             str(task.get("worker_id") or "").strip(): task
             for task in operation_tasks
             if str(task.get("worker_id") or "").strip()
         }
         visible_worker_ids: set[str] = set()
-        for worker in self._filtered_workers(manager_ids):
+        worker_source = self._filtered_live_workers(manager_ids) if is_live_workspace else self._filtered_workers(manager_ids)
+        for worker in worker_source:
             status_label, status_class = self._worker_status_badge(worker.status)
-            thread_summary = self._worker_thread_summary(worker)
-            assigned_users = self._assigned_users_for_worker(worker.id)
+            thread_summary = self._live_worker_thread_summary(worker) if is_live_workspace else self._worker_thread_summary(worker)
+            assigned_users = self._assigned_live_users_for_worker(worker.id) if is_live_workspace else self._assigned_users_for_worker(worker.id)
+            assigned_live_role = ""
+            assigned_live_role_label = ""
+            if is_live_workspace:
+                role_values = {
+                    self._normalize_live_assignment_role(link.get("live_role"), fallback_note=link.get("note"))
+                    for link in self.live_user_worker_links
+                    if str(link.get("worker_id") or "").strip() == worker.id
+                }
+                if len(role_values) == 1:
+                    assigned_live_role = next(iter(role_values))
+                elif role_values:
+                    assigned_live_role = "mixed"
+                assigned_live_role_label = (
+                    "Hỗn hợp"
+                    if assigned_live_role == "mixed"
+                    else self._live_assignment_role_label(assigned_live_role)
+                    if assigned_live_role
+                    else ""
+                )
             assigned_user_ids = [user.id for user in assigned_users]
             assigned_user_names = [user.username for user in assigned_users]
             if len(assigned_users) == 1:
@@ -5685,13 +7079,22 @@ class AppStore:
                 "assigned_user_ids": assigned_user_ids,
                 "assigned_user_name": assigned_user_name,
                 "assigned_user_names_text": ", ".join(assigned_user_names),
+                "assigned_live_role": assigned_live_role,
+                "assigned_live_role_label": assigned_live_role_label,
                 "status_key": worker.status,
                 "status_label": status_label,
                 "status_class": status_class,
                 "created_at": self._format_full_datetime(worker.created_at or worker.last_seen_at),
-                "total_channels": len([channel for channel in self.channels if channel.worker_id == worker.id]),
-                "total_users": len([link for link in self.user_worker_links if link["worker_id"] == worker.id]),
+                "total_channels": 0 if is_live_workspace else len([channel for channel in self.channels if channel.worker_id == worker.id]),
+                "total_users": len(
+                    [
+                        link
+                        for link in (self.live_user_worker_links if is_live_workspace else self.user_worker_links)
+                        if link["worker_id"] == worker.id
+                    ]
+                ),
                 "thread_text": thread_summary["thread_text"],
+                "live_thread_text": thread_summary["thread_text"],
                 "running_threads": thread_summary["running_threads"],
                 "max_threads": thread_summary["max_threads"],
                 "threads": worker.threads,
@@ -5700,8 +7103,10 @@ class AppStore:
                 else "--",
                 "ram_percent": worker.ram_percent,
                 "disk_text": f"{worker.disk_used_gb:.1f}/{worker.disk_total_gb:.1f}GB",
+                "space_text": f"{worker.disk_used_gb:.1f}/{worker.disk_total_gb:.1f}GB",
                 "bandwidth_text": f"{worker.bandwidth_kbps:.2f}KB/s",
                 "load_percent": worker.load_percent,
+                "cpu_percent": worker.load_percent,
                 "meta_text": worker.manager_name,
                 "row_dimmed": False,
                 "actions_disabled": False,
@@ -5736,7 +7141,7 @@ class AppStore:
         notice: str | None = None,
         notice_level: str = "success",
     ) -> dict[str, Any]:
-        worker_rows = self._build_bot_rows(manager_ids)
+        worker_rows = self._build_bot_rows(manager_ids, workspace_mode=workspace_mode)
         context = self._admin_shell_context(
             page_title="Danh sách BOT",
             active_page="workers",
@@ -5751,7 +7156,11 @@ class AppStore:
         if focus_user_id:
             user = self._find_user(focus_user_id)
             resolved_manager_id = user.id if user.role == "manager" else (self._resolved_user_manager_id(user) or "")
-            assigned_workers = self._workspace_workers_for_user(user.id) if user.role in {"user", "manager", "admin"} else []
+            assigned_workers = (
+                self._workspace_live_workers_for_user(user.id)
+                if workspace_mode == "live" and user.role in {"user", "manager", "admin"}
+                else self._workspace_workers_for_user(user.id) if user.role in {"user", "manager", "admin"} else []
+            )
             focus_user = {
                 "id": user.id,
                 "username": user.username,
@@ -5760,9 +7169,16 @@ class AppStore:
                 "manager_id": resolved_manager_id,
                 "manager_name": user.manager_name or (user.username if user.role == "manager" else "-"),
                 "assigned_worker_id": assigned_workers[0].id if assigned_workers else "",
-                "assigned_worker_name": self._resolve_worker_display_name(assigned_workers[0].id) if assigned_workers else "",
+                "assigned_worker_name": (
+                    self._resolve_live_worker_display_name(assigned_workers[0].id)
+                    if workspace_mode == "live" and assigned_workers
+                    else self._resolve_worker_display_name(assigned_workers[0].id) if assigned_workers else ""
+                ),
                 "assigned_worker_ids": [worker.id for worker in assigned_workers],
-                "assigned_worker_names": [self._resolve_worker_display_name(worker.id) for worker in assigned_workers],
+                "assigned_worker_names": [
+                    self._resolve_live_worker_display_name(worker.id) if workspace_mode == "live" else self._resolve_worker_display_name(worker.id)
+                    for worker in assigned_workers
+                ],
                 "assigned_worker_count": len(assigned_workers),
                 "total_channels": self._user_channel_count(user),
             }
@@ -5774,7 +7190,11 @@ class AppStore:
                 "focus_user": focus_user,
                 "manager_binding_locked": viewer_role == "manager",
                 "bot_manager_options": self._bot_manager_options(viewer_role=viewer_role, viewer_id=viewer_id),
-                "bot_user_options": self._bot_user_options(viewer_role=viewer_role, viewer_id=viewer_id),
+                "bot_user_options": self._bot_user_options(
+                    viewer_role=viewer_role,
+                    viewer_id=viewer_id,
+                    workspace_mode=workspace_mode,
+                ),
                 "selected_manager_labels": [
                     item["username"] for item in context.get("manager_options", []) if item.get("selected")
                 ],
@@ -5795,12 +7215,14 @@ class AppStore:
         notice_level: str = "success",
     ) -> dict[str, Any]:
         user = self._find_user(user_id)
+        is_live_workspace = workspace_mode == "live"
+        worker_pool = self.live_workers if is_live_workspace else self.workers
         if user.role == "user":
-            worker_source = self._assigned_workers_for_user(user)
+            worker_source = self._assigned_live_workers_for_user(user) if is_live_workspace else self._assigned_workers_for_user(user)
         elif user.role == "manager":
-            worker_source = [worker for worker in self.workers if worker.manager_name == user.username]
+            worker_source = [worker for worker in worker_pool if worker.manager_name == user.username]
         else:
-            worker_source = list(self.workers)
+            worker_source = list(worker_pool)
 
         rows = []
         for index, worker in enumerate(worker_source, start=1):
@@ -5810,13 +7232,19 @@ class AppStore:
                     "index": index,
                     "id": worker.id,
                     "bot_id": worker.id,
-                    "name": self._resolve_worker_display_name(worker.id),
+                    "name": self._resolve_live_worker_display_name(worker.id) if is_live_workspace else self._resolve_worker_display_name(worker.id),
                     "group": worker.group or worker.manager_name,
                     "status_label": status_label,
                     "status_class": status_class,
                     "created_at": self._format_full_datetime(worker.last_seen_at),
-                    "total_channels": len([channel for channel in self.channels if channel.worker_id == worker.id]),
-                    "total_users": len([link for link in self.user_worker_links if link["worker_id"] == worker.id]),
+                    "total_channels": 0 if is_live_workspace else len([channel for channel in self.channels if channel.worker_id == worker.id]),
+                    "total_users": len(
+                        [
+                            link
+                            for link in (self.live_user_worker_links if is_live_workspace else self.user_worker_links)
+                            if link["worker_id"] == worker.id
+                        ]
+                    ),
                     "threads": worker.threads,
                     "disk_text": f"{worker.disk_used_gb:.1f}/{worker.disk_total_gb:.1f}GB",
                     "bandwidth_text": f"{worker.bandwidth_kbps:.2f}KB/s",
@@ -5855,10 +7283,16 @@ class AppStore:
         notice: str | None = None,
         notice_level: str = "success",
     ) -> dict[str, Any]:
-        worker = self._find_worker(worker_id)
-        assigned_ids = [link["user_id"] for link in self.user_worker_links if link["worker_id"] == worker.id]
+        is_live_workspace = workspace_mode == "live"
+        worker = self._find_live_worker(worker_id) if is_live_workspace else self._find_worker(worker_id)
+        assigned_links = [
+            link
+            for link in (self.live_user_worker_links if is_live_workspace else self.user_worker_links)
+            if link["worker_id"] == worker.id
+        ]
         rows = []
-        for index, user_id in enumerate(assigned_ids, start=1):
+        for index, mapping in enumerate(assigned_links, start=1):
+            user_id = mapping["user_id"]
             user = self._find_user(user_id)
             rows.append(
                 {
@@ -5867,12 +7301,26 @@ class AppStore:
                     "username": user.username,
                     "display_name": user.display_name,
                     "total_channels": self._user_channel_count(user),
-                    "total_bots": self._user_worker_count(user),
+                    "total_bots": self._user_live_worker_count(user) if is_live_workspace else self._user_worker_count(user),
+                    "live_role": (
+                        self._normalize_live_assignment_role(mapping.get("live_role"), fallback_note=mapping.get("note"))
+                        if is_live_workspace
+                        else ""
+                    ),
+                    "live_role_label": (
+                        self._live_assignment_role_label(mapping.get("live_role"))
+                        if is_live_workspace
+                        else ""
+                    ),
                 }
             )
 
         context = self._admin_shell_context(
-            page_title=f"Danh sách user của {self._resolve_worker_display_name(worker.id)}",
+            page_title=(
+                f"Danh sách user của {self._resolve_live_worker_display_name(worker.id)}"
+                if is_live_workspace
+                else f"Danh sách user của {self._resolve_worker_display_name(worker.id)}"
+            ),
             active_page="workers",
             workspace_mode=workspace_mode,
             viewer_role=viewer_role,
@@ -5885,7 +7333,7 @@ class AppStore:
                 "template": "admin/user_of_bot.html",
                 "target_bot": {
                     "id": worker.id,
-                    "name": self._resolve_worker_display_name(worker.id),
+                    "name": self._resolve_live_worker_display_name(worker.id) if is_live_workspace else self._resolve_worker_display_name(worker.id),
                 },
                 "users": rows,
             }
@@ -5904,25 +7352,31 @@ class AppStore:
             viewer_id=viewer_id,
             manager_ids=manager_ids,
         )
-        scoped_workers = [worker for worker in self.workers if not selected_manager_ids or worker.manager_id in selected_manager_ids]
+        scoped_workers = [
+            worker for worker in self.live_workers if not selected_manager_ids or worker.manager_id in selected_manager_ids
+        ]
+        scoped_user_ids = {
+            str(link.get("user_id") or "").strip()
+            for link in self.live_user_worker_links
+            if str(link.get("user_id") or "").strip()
+        }
         scoped_users = [
             user
             for user in self.users
-            if user.role == "user" and (not selected_manager_ids or self._resolved_user_manager_id(user) in selected_manager_ids)
+            if user.id in scoped_user_ids
+            and user.role == "user"
+            and (not selected_manager_ids or self._resolved_user_manager_id(user) in selected_manager_ids)
         ]
-        total_managers = len(selected_manager_ids) if selected_manager_ids else len([user for user in self.users if user.role == "manager"])
+        scoped_streams = self._scoped_live_streams(
+            viewer_role=viewer_role,
+            viewer_id=viewer_id,
+            manager_ids=manager_ids,
+        )
         live_ready = len([worker for worker in scoped_workers if worker.status in {"online", "busy"}])
+        active_live_count = len([stream for stream in scoped_streams if stream.status == "streaming"])
+        scheduled_live_count = len([stream for stream in scoped_streams if stream.status == "scheduled"])
+        backup_live_count = len({stream.backup_worker_id for stream in scoped_streams if stream.backup_worker_id})
         return [
-            {
-                "value": str(total_managers),
-                "label": "Manager Trong Scope",
-                "icon": "users",
-                "icon_class": "text-emerald-500",
-                "accent": "Scope",
-                "accent_badge_class": "border-emerald-200 bg-emerald-50 text-emerald-700",
-                "value_class": "text-emerald-600",
-                "bar_color": "#10b981",
-            },
             {
                 "value": f"{live_ready}/{len(scoped_workers)}",
                 "label": "BOT Đang Chạy",
@@ -5944,33 +7398,33 @@ class AppStore:
                 "bar_color": "#f43f5e",
             },
             {
-                "value": "0",
+                "value": str(active_live_count),
                 "label": "Đang Live",
                 "icon": "radio",
                 "icon_class": "text-brand-500",
                 "accent": "Live",
                 "accent_badge_class": "border-indigo-200 bg-indigo-50 text-indigo-700",
-                "value_class": "text-brand-600",
+                "value_class": "text-brand-600" if active_live_count else "text-slate-900",
                 "bar_color": "#5d67df",
             },
             {
-                "value": "0",
+                "value": str(scheduled_live_count),
                 "label": "Chờ Lên Lịch",
                 "icon": "clock-3",
                 "icon_class": "text-sky-500",
                 "accent": "Queue",
                 "accent_badge_class": "border-sky-200 bg-sky-50 text-sky-700",
-                "value_class": "text-slate-900",
+                "value_class": "text-sky-500" if scheduled_live_count else "text-slate-900",
                 "bar_color": "#0284c7",
             },
             {
-                "value": "0",
+                "value": str(backup_live_count),
                 "label": "BOT Backup",
                 "icon": "shield-check",
                 "icon_class": "text-amber-500",
                 "accent": "Fallback",
                 "accent_badge_class": "border-amber-200 bg-amber-50 text-amber-700",
-                "value_class": "text-amber-600",
+                "value_class": "text-amber-600" if backup_live_count else "text-slate-900",
                 "bar_color": "#f59e0b",
             },
         ]
@@ -5983,25 +7437,49 @@ class AppStore:
         viewer_id: str | None = None,
         notice: str | None = None,
         notice_level: str = "success",
+        live_form_values: dict[str, Any] | None = None,
+        editing_stream_id: str | None = None,
+        detail_stream_id: str | None = None,
     ) -> dict[str, Any]:
         effective_manager_ids = self._effective_manager_scope_ids(
             viewer_role=viewer_role,
             viewer_id=viewer_id,
             manager_ids=manager_ids,
         )
-        scoped_workers = [worker for worker in self.workers if not effective_manager_ids or worker.manager_id in effective_manager_ids]
-        live_workers: list[dict[str, Any]] = []
-        for worker in scoped_workers:
-            live_workers.append(
-                {
-                    "id": worker.id,
-                    "name": self._resolve_worker_display_name(worker.id),
-                    "manager_name": worker.manager_name or "-",
-                }
-            )
+        scoped_workers = [
+            worker for worker in self.live_workers if not effective_manager_ids or worker.manager_id in effective_manager_ids
+        ]
+        scoped_streams = self._scoped_live_streams(
+            viewer_role=viewer_role,
+            viewer_id=viewer_id,
+            manager_ids=manager_ids,
+        )
+        editing_stream = None
+        if editing_stream_id:
+            editing_stream = self.get_live_stream(editing_stream_id, viewer_role=viewer_role, viewer_id=viewer_id)
+        detail_stream = None
+        if detail_stream_id:
+            detail_stream = self.get_live_stream(detail_stream_id, viewer_role=viewer_role, viewer_id=viewer_id)
+        primary_worker_ids = {
+            str(link.get("worker_id") or "").strip()
+            for link in self.live_user_worker_links
+            if self._normalize_live_assignment_role(link.get("live_role"), fallback_note=link.get("note")) == "primary"
+        }
+        backup_worker_ids = {
+            str(link.get("worker_id") or "").strip()
+            for link in self.live_user_worker_links
+            if self._normalize_live_assignment_role(link.get("live_role"), fallback_note=link.get("note")) == "backup"
+        }
+        primary_workers = [worker for worker in scoped_workers if worker.id in primary_worker_ids]
+        backup_workers = [worker for worker in scoped_workers if worker.id in backup_worker_ids]
+        effective_form_values = live_form_values or (self._build_live_form_values_from_stream(editing_stream) if editing_stream else None)
+        live_form_state = self._build_live_form_state(effective_form_values)
         live_ready = len([worker for worker in scoped_workers if worker.status in {"online", "busy"}])
         total_workers = len(scoped_workers)
         assigned_bot_count = total_workers
+        active_live_count = len([stream for stream in scoped_streams if stream.status == "streaming"])
+        scheduled_live_count = len([stream for stream in scoped_streams if stream.status == "scheduled"])
+        backup_live_count = len({stream.backup_worker_id for stream in scoped_streams if stream.backup_worker_id})
         kpis = [
             {
                 "label": "BOT được cấp",
@@ -6027,30 +7505,30 @@ class AppStore:
                 "label": "Đang live",
                 "icon": "radio",
                 "icon_class": "text-rose-500",
-                "value": 0,
+                "value": active_live_count,
                 "accent": "Live",
                 "accent_class": "text-rose-500",
-                "value_class": "text-slate-900",
+                "value_class": "text-slate-900" if active_live_count == 0 else "text-rose-500",
                 "bar_class": "bg-rose-400",
             },
             {
                 "label": "Chờ lên lịch",
                 "icon": "clock-3",
                 "icon_class": "text-amber-500",
-                "value": 0,
+                "value": scheduled_live_count,
                 "accent": "Lịch",
                 "accent_class": "text-amber-600",
-                "value_class": "text-slate-900",
+                "value_class": "text-slate-900" if scheduled_live_count == 0 else "text-amber-600",
                 "bar_class": "bg-amber-400",
             },
             {
                 "label": "BOT backup",
                 "icon": "shield-check",
                 "icon_class": "text-sky-500",
-                "value": 0,
+                "value": backup_live_count,
                 "accent": "Fallback",
                 "accent_class": "text-sky-500",
-                "value_class": "text-slate-900",
+                "value_class": "text-slate-900" if backup_live_count == 0 else "text-sky-500",
                 "bar_class": "bg-sky-400",
             },
         ]
@@ -6072,20 +7550,28 @@ class AppStore:
                 "title": "Live Config",
                 "description": "Thiết lập BOT chính, BOT backup, media nguồn và lịch live.",
             },
-            "live_form": {
-                "stream_name": "",
-                "video_url": "",
-                "audio_url": "",
-                "stream_key": "",
-                "backup_delay_minutes": 3,
-            },
-            "live_workers": live_workers,
+            "live_form_action": "/admin/live/update" if editing_stream else "/admin/live/create",
+            "live_form_manager_ids": effective_manager_ids,
+            "live_form_mode": "edit" if editing_stream else "create",
+            "live_form_submit_label": "Cập nhật luồng live" if editing_stream else "Tạo luồng live",
+            "live_form_reset_label": "Hủy chỉnh sửa" if editing_stream else "Đặt lại",
+            "live_form_cancel_href": "/admin/live" if editing_stream else "",
+            "live_form": live_form_state,
+            "primary_live_workers": self._build_live_worker_picker_cards(primary_workers),
+            "backup_live_workers": self._build_live_worker_picker_cards(backup_workers),
+            "live_workers": self._build_live_worker_picker_cards(scoped_workers),
+            "editing_stream_id": editing_stream.id if editing_stream else "",
+            "detail_stream": self._live_stream_detail_payload(detail_stream) if detail_stream else None,
             "live_tabs": [
-                {"label": "Danh sách live", "count": 0, "active": True},
-                {"label": "Chờ lên lịch", "count": 0, "active": False},
+                {"label": "Danh sách live", "count": len(scoped_streams), "active": True},
+                {"label": "Chờ lên lịch", "count": scheduled_live_count, "active": False},
             ],
-            "live_stream_rows": [],
-            "live_summary": "Chưa có luồng live nào trong danh sách",
+            "live_stream_rows": self._build_live_stream_rows(scoped_streams),
+            "live_summary": (
+                f"Hiển thị 1 đến {len(scoped_streams)} trong {len(scoped_streams)} kết quả"
+                if scoped_streams
+                else "Chưa có luồng live nào trong danh sách"
+            ),
         }
 
     def create_admin_user(
@@ -6282,6 +7768,230 @@ class AppStore:
         meta["updated_at"] = self._now()
         self._save_state()
 
+    def suggest_next_live_worker_bootstrap_id(self) -> str:
+        existing_numbers = []
+        for worker in self.live_workers:
+            match = re.search(r"(\d+)$", str(worker.id or "").strip())
+            if match:
+                existing_numbers.append(int(match.group(1)))
+        next_number = (max(existing_numbers) + 1) if existing_numbers else 1
+        return f"live-worker-{next_number:02d}"
+
+    def create_live_bot(
+        self,
+        *,
+        name: str,
+        manager_id: str | None,
+        viewer_role: str = "admin",
+        viewer_id: str | None = None,
+    ) -> WorkerRecord:
+        normalized_name = str(name or "").strip()
+        if not normalized_name:
+            raise ValueError("Tên BOT là bắt buộc.")
+        manager: UserSummary | None = None
+        if manager_id:
+            manager = self._find_user(manager_id)
+            if manager.role != "manager":
+                raise ValueError("Manager được chọn không hợp lệ.")
+        if viewer_role == "manager":
+            if manager is None or (viewer_id and manager.id != viewer_id):
+                raise ValueError("Manager không được tạo BOT ngoài scope của mình.")
+        worker = WorkerRecord(
+            id=self.suggest_next_live_worker_bootstrap_id(),
+            name=normalized_name,
+            manager_id=manager.id if manager else None,
+            manager_name=manager.username if manager else "system",
+            group="S - Việt 3",
+            created_at=self._now(trim=False),
+            status="offline",
+            capacity=1,
+            load_percent=0,
+            ram_percent=0,
+            ram_used_gb=0.0,
+            ram_total_gb=8.0,
+            bandwidth_kbps=0,
+            disk_used_gb=0.0,
+            disk_total_gb=512.0,
+            threads=1,
+            last_seen_at=self._now(trim=False),
+        )
+        self.live_workers.append(worker)
+        self._save_state()
+        return deepcopy(worker)
+
+    def _apply_live_worker_manager(self, worker: WorkerRecord, manager: UserSummary | None) -> None:
+        worker.manager_id = manager.id if manager else None
+        worker.manager_name = manager.username if manager else "system"
+        if not str(worker.group or "").strip():
+            worker.group = "S - Việt 3"
+
+    def _purge_live_worker_assignment_scope(self, worker_id: str) -> None:
+        cleaned_worker_id = str(worker_id or "").strip()
+        if not cleaned_worker_id:
+            return
+        self.live_user_worker_links = [
+            link
+            for link in self.live_user_worker_links
+            if str(link.get("worker_id") or "").strip() != cleaned_worker_id
+        ]
+        remaining_streams: list[LiveStreamRecord] = []
+        for stream in self.live_streams:
+            if stream.primary_worker_id == cleaned_worker_id:
+                continue
+            if stream.backup_worker_id == cleaned_worker_id:
+                stream.backup_worker_id = None
+                stream.backup_worker_name = None
+                stream.backup_group = None
+                stream.updated_at = self._now(trim=False)
+            remaining_streams.append(stream)
+        self.live_streams = remaining_streams
+
+    def update_live_bot(
+        self,
+        worker_id: str,
+        name: str,
+        group: str | None,
+        manager_id: str | None,
+        *,
+        live_role: str | None = None,
+        assigned_user_id: str | None = None,
+        assigned_user_ids: list[str] | None = None,
+        confirm_manager_transfer_cleanup: bool = False,
+        viewer_role: str = "admin",
+        viewer_id: str | None = None,
+    ) -> None:
+        worker = self._find_live_worker(worker_id)
+        normalized_name = str(name or "").strip()
+        if not normalized_name:
+            raise ValueError("Tên BOT là bắt buộc.")
+        worker.name = normalized_name
+        normalized_group = str(group or "").strip() or "S - Việt 3"
+        normalized_user_id = str(assigned_user_id or "").strip()
+        normalized_user_ids: list[str] = []
+        seen_user_ids: set[str] = set()
+        if assigned_user_ids is not None:
+            for raw_user_id in assigned_user_ids:
+                selected_user_id = str(raw_user_id or "").strip()
+                if not selected_user_id or selected_user_id in seen_user_ids:
+                    continue
+                normalized_user_ids.append(selected_user_id)
+                seen_user_ids.add(selected_user_id)
+        manager: UserSummary | None = None
+        normalized_manager_id = str(manager_id or "").strip()
+        normalized_live_role = (
+            self._normalize_live_assignment_role(live_role)
+            if str(live_role or "").strip()
+            else None
+        )
+        if normalized_manager_id:
+            manager = self._find_user(normalized_manager_id)
+            if manager.role != "manager":
+                raise ValueError("Manager được chọn không hợp lệ.")
+        if viewer_role == "manager":
+            if manager is None or (viewer_id and manager.id != viewer_id):
+                raise ValueError("Manager không được đổi phạm vi BOT sang manager khác.")
+            if worker.manager_id and worker.manager_id != manager.id:
+                raise ValueError("BOT này không nằm trong phạm vi manager hiện tại.")
+
+        current_user_ids = {
+            str(link.get("user_id") or "").strip()
+            for link in self.live_user_worker_links
+            if str(link.get("worker_id") or "").strip() == worker.id and str(link.get("user_id") or "").strip()
+        }
+        manager_changed = str(worker.manager_id or "").strip() != str(manager.id if manager else "").strip()
+        if manager_changed and (current_user_ids or any(stream.primary_worker_id == worker.id for stream in self.live_streams)):
+            if not confirm_manager_transfer_cleanup:
+                raise ValueError(
+                    "Đổi manager BOT live này sẽ làm sạch gán user và luồng live hiện tại. "
+                    "Hãy xác nhận cảnh báo rồi thử lại."
+                )
+            self._purge_live_worker_assignment_scope(worker.id)
+            current_user_ids = set()
+
+        self._apply_live_worker_manager(worker, manager)
+        worker.group = normalized_group
+
+        selected_users: list[UserSummary] = []
+        target_user_ids = normalized_user_ids if assigned_user_ids is not None else ([normalized_user_id] if normalized_user_id else [])
+        for selected_user_id in target_user_ids:
+            assigned_user = self._find_user(selected_user_id)
+            already_assigned = assigned_user.id in current_user_ids
+            if assigned_user.role == "user":
+                assigned_user_manager_id = self._resolved_user_manager_id(assigned_user)
+                if manager and assigned_user_manager_id != manager.id and not already_assigned:
+                    raise ValueError("User phải thuộc manager đã chọn.")
+            elif assigned_user.role == "manager":
+                if manager and assigned_user.id != manager.id and not already_assigned:
+                    raise ValueError("Manager chỉ được chọn chính mình trong BOT này.")
+            elif assigned_user.role == "admin":
+                if not already_assigned and (not viewer_id or assigned_user.id != viewer_id):
+                    raise ValueError("Admin chỉ được tự gán BOT cho chính tài khoản admin đang đăng nhập.")
+            else:
+                raise ValueError("User được chọn không hợp lệ.")
+            selected_users.append(assigned_user)
+
+        if assigned_user_ids is not None or normalized_user_id:
+            selected_user_id_set = {item.id for item in selected_users}
+            self.live_user_worker_links = [
+                link
+                for link in self.live_user_worker_links
+                if not (
+                    str(link.get("worker_id") or "").strip() == worker.id
+                    and str(link.get("user_id") or "").strip() not in selected_user_id_set
+                )
+            ]
+            current_links_by_user_id = {
+                str(link.get("user_id") or "").strip(): link
+                for link in self.live_user_worker_links
+                if str(link.get("worker_id") or "").strip() == worker.id
+            }
+            next_id = max([int(item.get("id") or 0) for item in self.live_user_worker_links], default=0) + 1
+            for assigned_user in selected_users:
+                existing_link = current_links_by_user_id.get(assigned_user.id)
+                selected_role = (
+                    normalized_live_role
+                    or (
+                        self._normalize_live_assignment_role(existing_link.get("live_role"), fallback_note=existing_link.get("note"))
+                        if existing_link is not None
+                        else "primary"
+                    )
+                )
+                if existing_link is None:
+                    self.live_user_worker_links.append(
+                        {
+                            "id": next_id,
+                            "user_id": assigned_user.id,
+                            "worker_id": worker.id,
+                            "threads": 1,
+                            "live_role": selected_role,
+                            "note": self._live_assignment_note(selected_role),
+                        }
+                    )
+                    next_id += 1
+                else:
+                    existing_link["threads"] = 1
+                    existing_link["live_role"] = selected_role
+                    existing_link["note"] = self._live_assignment_note(selected_role)
+
+        self._save_state()
+
+    def delete_live_bot(self, worker_id: str) -> None:
+        self._find_live_worker(worker_id)
+        self._purge_live_worker_assignment_scope(worker_id)
+        self.live_workers = [worker for worker in self.live_workers if worker.id != worker_id]
+        self._save_state()
+
+    def delete_live_bot_without_ssh(self, worker_id: str, *, deleted_by: str = "system") -> None:
+        self.delete_live_bot(worker_id)
+
+    def update_live_bot_thread(self, worker_id: str, thread: int) -> None:
+        worker = self._find_live_worker(worker_id)
+        if thread < 1:
+            raise ValueError("Số luồng phải lớn hơn hoặc bằng 1.")
+        worker.threads = 1
+        worker.capacity = 1
+        self._save_state()
+
     def update_bot(
         self,
         worker_id: str,
@@ -6289,6 +7999,8 @@ class AppStore:
         group: str | None,
         manager_id: str | None,
         *,
+        workspace_mode: str = "upload",
+        live_role: str | None = None,
         assigned_user_id: str | None = None,
         assigned_user_ids: list[str] | None = None,
         confirm_manager_transfer_cleanup: bool = False,
@@ -6296,6 +8008,20 @@ class AppStore:
         viewer_id: str | None = None,
         updated_by: str = "admin",
     ) -> None:
+        if workspace_mode == "live":
+            self.update_live_bot(
+                worker_id,
+                name,
+                group,
+                manager_id,
+                live_role=live_role,
+                assigned_user_id=assigned_user_id,
+                assigned_user_ids=assigned_user_ids,
+                confirm_manager_transfer_cleanup=confirm_manager_transfer_cleanup,
+                viewer_role=viewer_role,
+                viewer_id=viewer_id,
+            )
+            return
         worker = self._find_worker(worker_id)
         if not name.strip():
             raise ValueError("Tên BOT là bắt buộc.")
@@ -6909,6 +8635,26 @@ class AppStore:
         notice: str | None = None,
         notice_level: str = "success",
     ) -> dict[str, Any]:
+        if workspace_mode == "live":
+            context = self._admin_shell_context(
+                page_title="Danh sách Kênh",
+                active_page="channels",
+                workspace_mode=workspace_mode,
+                viewer_role=viewer_role,
+                viewer_id=viewer_id,
+                manager_ids=manager_ids,
+                notice=notice,
+                notice_level=notice_level,
+            )
+            context.update(
+                {
+                    "template": "admin/channel_index.html",
+                    "channels": [],
+                    "filtered_user": None,
+                    "filtered_bot": None,
+                }
+            )
+            return context
         channels, filtered_user, filtered_bot = self._filtered_channels_v2(
             manager_ids=manager_ids,
             user_id=user_id,
@@ -7237,6 +8983,34 @@ class AppStore:
             notice=notice,
             notice_level=notice_level,
         )
+
+        if workspace_mode == "live":
+            scoped_streams = self._scoped_live_streams(
+                viewer_role=viewer_role,
+                viewer_id=viewer_id,
+                manager_ids=manager_ids,
+            )
+            render_rows = self._build_live_render_rows(scoped_streams)
+
+            context.update(
+                {
+                    "template": "admin/live_render_index.html",
+                    "summary_strip": self._live_summary_strip(
+                        viewer_role=viewer_role,
+                        viewer_id=viewer_id,
+                        manager_ids=manager_ids,
+                    ),
+                    "renders": render_rows,
+                    "render_heading": "Danh sách live stream",
+                    "render_note": "Theo dõi luồng live stream theo bộ cột quản trị hiện tại, gộp timeline và cấu hình để bảng gọn và dễ rà soát hơn.",
+                    "render_summary": (
+                        f"Hiển thị 1 đến {len(render_rows)} trong {len(render_rows)} kết quả"
+                        if render_rows
+                        else "Chưa có live stream nào trong danh sách"
+                    ),
+                }
+            )
+            return context
 
         selected_manager_ids = set(self._selected_manager_ids(manager_ids))
         job_source = list(self.jobs)

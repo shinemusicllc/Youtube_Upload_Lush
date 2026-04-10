@@ -393,6 +393,7 @@
                                     data-worker-name="{{ worker.raw_name }}"
                                     data-worker-group="{{ worker.group or '' }}"
                                     data-manager-id="{{ worker.manager_id }}"
+                                    data-live-role="{{ worker.assigned_live_role or 'primary' }}"
                                     data-user-id="{{ worker.assigned_user_id }}"
                                     data-user-ids="{{ worker.assigned_user_ids | join(',') }}"
                                 >
@@ -469,6 +470,7 @@
                                     data-worker-name="{{ worker.raw_name }}"
                                     data-worker-group="{{ worker.group or '' }}"
                                     data-manager-id="{{ worker.manager_id }}"
+                                    data-live-role="{{ worker.assigned_live_role or 'primary' }}"
                                     data-user-id="{{ worker.assigned_user_id }}"
                                     data-user-ids="{{ worker.assigned_user_ids | join(',') }}"
                                 >
@@ -510,17 +512,17 @@
             {% endif %}
 
             <div class="border-b border-slate-200 px-5 py-4">
-                <h3 class="section-title">Th&#234;m BOT m&#7899;i</h3>
-                <p class="section-note">Control-plane sẽ SSH sang VPS, clone repo, cài worker service và hiển thị tiến trình cài đặt trực tiếp ngay trong danh sách BOT.</p>
+                <h3 class="section-title">{% if dashboard.workspace_mode == 'live' %}Th&#234;m BOT live m&#7899;i{% else %}Th&#234;m BOT m&#7899;i{% endif %}</h3>
+                <p class="section-note">{% if dashboard.workspace_mode == 'live' %}Th&#234;m nhanh BOT live v&#224;o live pool chung. Admin c&#243; th&#7875; g&#225;n manager/user v&#224; ch&#7885;n ch&#7913;c n&#259;ng `live ch&#237;nh` ho&#7863;c `backup` ngay sau &#273;&#243;.{% else %}Control-plane sẽ SSH sang VPS, clone repo, cài worker service và hiển thị tiến trình cài đặt trực tiếp ngay trong danh sách BOT.{% endif %}</p>
             </div>
             <div class="space-y-4 px-5 py-5">
                 <div class="rounded-2xl border border-brand-100 bg-brand-50/70 px-4 py-3 text-[12px] leading-5 text-brand-700">
                     <p class="font-semibold">BOT ID tự cấp: {{ dashboard.new_worker_defaults.worker_id }}</p>
-                    <p class="mt-1">Tên BOT sẽ dùng IP VPS. Browser session/noVNC được bật sẵn để đăng nhập Google và thêm channel sau khi cài xong. Manager và group có thể chỉnh sau.</p>
+                    <p class="mt-1">{% if dashboard.workspace_mode == 'live' %}T&#234;n BOT live s&#7869; d&#249;ng &#273;&#7883;a ch&#7881; IP VPS. Manager t&#7841;o BOT s&#7869; s&#7903; h&#7919;u BOT ngay trong scope c&#7911;a m&#236;nh; admin c&#243; th&#7875; g&#225;n manager ho&#7863;c user sau t&#7841;i n&#250;t Sửa.{% else %}Tên BOT sẽ dùng IP VPS. Browser session/noVNC được bật sẵn để đăng nhập Google và thêm channel sau khi cài xong. Manager và group có thể chỉnh sau.{% endif %}</p>
                 </div>
 
                 <div>
-                    <label class="field-label" for="create-bot-vps-ip">VPS IP</label>
+                    <label class="field-label" for="create-bot-vps-ip">{% if dashboard.workspace_mode == 'live' %}IP VPS / T&#234;n BOT live{% else %}VPS IP{% endif %}</label>
                     <input
                         class="toolbar-input"
                         id="create-bot-vps-ip"
@@ -531,6 +533,7 @@
                         placeholder="109.123.233.131"
                     >
                 </div>
+                {% if dashboard.workspace_mode != 'live' %}
                 <div>
                     <label class="field-label" for="create-bot-ssh-user">Root user</label>
                     <input
@@ -557,10 +560,11 @@
                         spellcheck="false"
                     >
                 </div>
+                {% endif %}
             </div>
             <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
                 <button type="button" class="action-btn action-btn-slate" data-dialog-close>&#272;&#243;ng</button>
-                <button type="submit" class="action-btn action-btn-brand" data-create-bot-submit>C&#224;i worker</button>
+                <button type="submit" class="action-btn action-btn-brand" data-create-bot-submit>{% if dashboard.workspace_mode == 'live' %}Th&#234;m BOT live{% else %}C&#224;i worker{% endif %}</button>
             </div>
         </form>
     </div>
@@ -579,10 +583,18 @@
 
                 <div class="border-b border-slate-200 px-5 py-4">
                     <h3 class="section-title">C&#7853;p nh&#7853;t BOT</h3>
-                {% if dashboard.manager_binding_locked %}
-                <p class="section-note">S&#7917;a t&#234;n BOT, gi&#7919; manager c&#7889; &#273;&#7883;nh v&#224; g&#225;n user d&#249;ng BOT ngay t&#7841;i Danh s&#225;ch BOT. Manager ch&#7881; thao t&#225;c trong ph&#7841;m vi user do ch&#237;nh m&#236;nh qu&#7843;n l&#253;.</p>
+                {% if dashboard.workspace_mode == 'live' %}
+                    {% if dashboard.manager_binding_locked %}
+                <p class="section-note">S&#7917;a t&#234;n BOT live, gi&#7919; manager c&#7889; &#273;&#7883;nh v&#224; g&#225;n user ngay t&#7841;i Danh s&#225;ch BOT. Manager ch&#7881; thao t&#225;c trong ph&#7841;m vi user do ch&#237;nh m&#236;nh qu&#7843;n l&#253; v&#224; m&#7895;i BOT ch&#7881; ch&#7885;n m&#7897;t ch&#7913;c n&#259;ng `live ch&#237;nh` ho&#7863;c `backup`.</p>
+                    {% else %}
+                <p class="section-note">S&#7917;a t&#234;n BOT live, ch&#7885;n manager, g&#225;n user v&#224; ch&#7885;n ch&#7913;c n&#259;ng `live ch&#237;nh` ho&#7863;c `backup` ngay trong c&#249;ng modal.</p>
+                    {% endif %}
                 {% else %}
+                    {% if dashboard.manager_binding_locked %}
+                <p class="section-note">S&#7917;a t&#234;n BOT, gi&#7919; manager c&#7889; &#273;&#7883;nh v&#224; g&#225;n user d&#249;ng BOT ngay t&#7841;i Danh s&#225;ch BOT. Manager ch&#7881; thao t&#225;c trong ph&#7841;m vi user do ch&#237;nh m&#236;nh qu&#7843;n l&#253;.</p>
+                    {% else %}
                 <p class="section-note">S&#7917;a t&#234;n BOT, ch&#7885;n manager v&#224; g&#225;n user d&#249;ng BOT. N&#7871;u BOT hi&#7879;n &#273;ang &#273;&#432;&#7907;c admin ho&#7863;c manager d&#249;ng th&#236; t&#224;i kho&#7843;n &#273;&#243; c&#361;ng s&#7869; xu&#7845;t hi&#7879;n trong danh s&#225;ch Users &#273;&#7875; b&#7841;n gi&#7919; ho&#7863;c g&#7905;.</p>
+                    {% endif %}
                 {% endif %}
             </div>
             <div class="space-y-4 px-5 py-5">
@@ -624,6 +636,15 @@
                     </select>
                 </div>
                 {% endif %}
+                {% if dashboard.workspace_mode == 'live' %}
+                <div>
+                    <label class="field-label" for="edit-bot-live-role">Chức năng BOT</label>
+                    <select class="toolbar-select" id="edit-bot-live-role" name="LiveRole">
+                        <option value="primary">Live chính</option>
+                        <option value="backup">Backup</option>
+                    </select>
+                </div>
+                {% endif %}
                 <div>
                     <label class="field-label" for="edit-bot-user-picker-button">Users</label>
                     <div
@@ -656,7 +677,7 @@
                                     data-user-role="{{ user.role }}"
                                     data-user-scope-locked="{% if user.scope_locked %}1{% else %}0{% endif %}"
                                     data-user-self-assignable="{% if user.self_assignable %}1{% else %}0{% endif %}"
-                                    data-user-search-text="{{ user_label }} {{ user.display_name or '' }} {{ user.role_label or '' }} {{ user.manager_name or '' }} {{ user.assigned_worker_names_text or '' }}"
+                                    data-user-search-text="{{ user_label }} {{ user.display_name or '' }} {{ user.role_label or '' }} {{ user.manager_name or '' }} {{ user.assigned_worker_names_text or '' }} {{ user.assigned_role_labels_text or '' }}"
                                 >
                                     <input type="checkbox" class="sr-only" name="UserIds" value="{{ user.id }}" data-bot-user-input form="edit-bot-form">
                                     <span class="bot-user-picker-checkbox">
@@ -669,7 +690,7 @@
                             <div class="bot-user-picker-empty" data-bot-user-picker-empty hidden>Kh&#244;ng t&#236;m th&#7845;y user ph&#249; h&#7907;p.</div>
                         </div>
                     </div>
-                    <p class="mt-1 text-[11px] text-slate-500" data-bot-user-picker-help>Ch&#7885;n user cho BOT; n&#7871;u BOT &#273;ang &#273;&#432;&#7907;c admin ho&#7863;c manager d&#249;ng th&#236; t&#224;i kho&#7843;n &#273;&#243; c&#361;ng s&#7869; hi&#7879;n t&#7841;i &#273;&#226;y.</p>
+                    <p class="mt-1 text-[11px] text-slate-500" data-bot-user-picker-help>{% if dashboard.workspace_mode == 'live' %}Ch&#7885;n user d&#249;ng BOT live n&#224;y; vai tr&#242; `live ch&#237;nh` hay `backup` s&#7869; &#273;&#432;&#7907;c l&#432;u theo ch&#7913;c n&#259;ng BOT &#273;&#227; ch&#7885;n b&#234;n tr&#234;n.{% else %}Ch&#7885;n user cho BOT; n&#7871;u BOT &#273;ang &#273;&#432;&#7907;c admin ho&#7863;c manager d&#249;ng th&#236; t&#224;i kho&#7843;n &#273;&#243; c&#361;ng s&#7869; hi&#7879;n t&#7841;i &#273;&#226;y.{% endif %}</p>
                 </div>
             </div>
             <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
@@ -690,6 +711,7 @@
     const table = document.querySelector('table[data-admin-list-table="worker-index"]');
     const tbody = table ? table.querySelector('[data-worker-live-body]') : null;
     const editManagerSelect = document.getElementById('edit-bot-manager-id');
+    const editBotLiveRoleSelect = document.getElementById('edit-bot-live-role');
     const editBotDialog = document.getElementById('edit-bot-dialog');
     const editBotForm = document.querySelector('#edit-bot-dialog form');
     const editBotManagerTransferCleanupInput = document.getElementById('edit-bot-manager-transfer-cleanup');
@@ -776,7 +798,7 @@
       if (createBotPasswordInput) {
         createBotPasswordInput.value = '';
       }
-      setSubmitLoading(createBotSubmit, false, 'Đang cài đặt...');
+      setSubmitLoading(createBotSubmit, false, isLiveWorkspace ? 'Đang thêm BOT live...' : 'Đang cài đặt...');
     }
 
     function escapeHtml(value) {
@@ -910,13 +932,14 @@
       const workerIdParam = encodeURIComponent(String(worker.id || ''));
       const workerNameParam = encodeURIComponent(String(worker.raw_name || worker.name || ''));
       const assignedUserIds = escapeHtml(Array.isArray(worker.assigned_user_ids) ? worker.assigned_user_ids.join(',') : '');
+      const assignedLiveRole = escapeHtml(worker.assigned_live_role || 'primary');
       if (isLiveWorkspace) {
         return [
           '<a href="/admin/bot/userofbot?botId=', workerIdParam, '&botName=', workerNameParam, '&workspace=live" class="action-btn action-btn-sky whitespace-nowrap">',
           '  <i data-lucide="users" class="h-3.5 w-3.5"></i>',
           '  DS User',
           '</a>',
-          '<button type="button" class="action-btn action-btn-emerald whitespace-nowrap" data-dialog-open="edit-bot-dialog" data-worker-id="', workerId, '" data-worker-name="', rawWorkerName, '" data-worker-group="', workerGroup, '" data-manager-id="', managerId, '" data-user-id="', assignedUserId, '" data-user-ids="', assignedUserIds, '">',
+          '<button type="button" class="action-btn action-btn-emerald whitespace-nowrap" data-dialog-open="edit-bot-dialog" data-worker-id="', workerId, '" data-worker-name="', rawWorkerName, '" data-worker-group="', workerGroup, '" data-manager-id="', managerId, '" data-live-role="', assignedLiveRole, '" data-user-id="', assignedUserId, '" data-user-ids="', assignedUserIds, '">',
           '  <i data-lucide="pencil" class="h-3.5 w-3.5"></i>',
           '  S&#7917;a',
           '</button>',
@@ -1087,7 +1110,9 @@
         editBotUserPickerSummary.classList.remove('is-placeholder');
       }
       if (editBotUserPickerHelp) {
-        editBotUserPickerHelp.textContent = 'Chọn user cho BOT; nếu BOT đang được admin hoặc manager dùng thì tài khoản đó cũng sẽ hiện tại đây.';
+        editBotUserPickerHelp.textContent = isLiveWorkspace
+          ? 'Chọn user dùng BOT live này; chức năng live chính hoặc backup sẽ đi theo cấu hình BOT đang chọn.'
+          : 'Chọn user cho BOT; nếu BOT đang được admin hoặc manager dùng thì tài khoản đó cũng sẽ hiện tại đây.';
       }
     }
 
@@ -1212,6 +1237,9 @@
         document.getElementById('edit-bot-id').value = button.dataset.workerId || '';
         document.getElementById('edit-bot-name').value = button.dataset.workerName || '';
         document.getElementById('edit-bot-group').value = button.dataset.workerGroup || '';
+        if (editBotLiveRoleSelect) {
+          editBotLiveRoleSelect.value = String(button.dataset.liveRole || 'primary').trim() || 'primary';
+        }
         initialEditBotManagerId = String(button.dataset.managerId || '').trim();
         if (editBotManagerTransferCleanupInput) {
           editBotManagerTransferCleanupInput.value = '0';
@@ -1327,9 +1355,17 @@
           editBotManagerTransferCleanupInput.value = '0';
           return;
         }
-        const confirmMessage = nextManagerId
-          ? 'Chuyển BOT sang manager khác sẽ xóa sạch user, kênh, profile Chrome và job đang gắn với manager hiện tại trên VPS này.\n\nBạn có chắc muốn tiếp tục không?'
-          : 'Chọn BOT trống sẽ gỡ manager khỏi BOT này và xóa sạch user, kênh, profile Chrome và job đang gắn với manager hiện tại trên VPS này.\n\nBạn có chắc muốn tiếp tục không?';
+        const confirmMessage = isLiveWorkspace
+          ? (
+              nextManagerId
+                ? 'Chuyển BOT sang manager khác sẽ xóa sạch gán user và các luồng live hiện tại đang dùng BOT này.\n\nBạn có chắc muốn tiếp tục không?'
+                : 'Chọn BOT trống sẽ gỡ manager khỏi BOT live này và xóa sạch gán user cùng các luồng live hiện tại đang dùng BOT này.\n\nBạn có chắc muốn tiếp tục không?'
+            )
+          : (
+              nextManagerId
+                ? 'Chuyển BOT sang manager khác sẽ xóa sạch user, kênh, profile Chrome và job đang gắn với manager hiện tại trên VPS này.\n\nBạn có chắc muốn tiếp tục không?'
+                : 'Chọn BOT trống sẽ gỡ manager khỏi BOT này và xóa sạch user, kênh, profile Chrome và job đang gắn với manager hiện tại trên VPS này.\n\nBạn có chắc muốn tiếp tục không?'
+            );
         const confirmed = window.confirm(confirmMessage);
         if (!confirmed) {
           event.preventDefault();
@@ -1384,13 +1420,15 @@
       if (!createBotForm) {
         return;
       }
-      setSubmitLoading(createBotSubmit, true, 'Đang cài đặt...');
+      const loadingLabel = isLiveWorkspace ? 'Đang thêm BOT live...' : 'Đang cài đặt...';
+      setSubmitLoading(createBotSubmit, true, loadingLabel);
       const formData = new FormData(createBotForm);
       const payload = {
         vps_ip: String(formData.get('vps_ip') || '').trim(),
         ssh_user: String(formData.get('ssh_user') || '').trim() || 'root',
         auth_mode: 'password',
-        password: String(formData.get('password') || '')
+        password: String(formData.get('password') || ''),
+        workspace: isLiveWorkspace ? 'live' : 'upload'
       };
       try {
         const response = await fetch('/api/admin/bots/install', {
@@ -1402,19 +1440,32 @@
           },
           body: JSON.stringify(payload)
         });
+        const responsePayload = await response.json();
         if (!response.ok) {
-          throw new Error(await parseResponseError(response));
+          throw new Error(
+            responsePayload && typeof responsePayload.detail === 'string' && responsePayload.detail.trim()
+              ? responsePayload.detail.trim()
+              : 'Không thể xử lý yêu cầu. Hãy thử lại.'
+          );
         }
         closeDialog(createBotDialog);
         resetCreateBotDialog();
+        showSystemNotice(
+          responsePayload && typeof responsePayload.message === 'string' && responsePayload.message.trim()
+            ? responsePayload.message.trim()
+            : (isLiveWorkspace ? 'Đã thêm BOT live mới.' : 'Đã bắt đầu cài worker mới.'),
+          'success'
+        );
         await fetchLiveWorkers();
       } catch (error) {
         showSystemNotice(
-          error && error.message ? error.message : 'Không thể cài worker lúc này.',
+          error && error.message
+            ? error.message
+            : (isLiveWorkspace ? 'Không thể thêm BOT live lúc này.' : 'Không thể cài worker lúc này.'),
           'error'
         );
       } finally {
-        setSubmitLoading(createBotSubmit, false, 'Đang cài đặt...');
+        setSubmitLoading(createBotSubmit, false, loadingLabel);
       }
     }
 
@@ -1434,7 +1485,7 @@
             'Content-Type': 'application/json',
             'X-Requested-With': 'XMLHttpRequest'
           },
-          body: JSON.stringify({})
+          body: JSON.stringify({ workspace: isLiveWorkspace ? 'live' : 'upload' })
         });
         if (!response.ok) {
           throw new Error(await parseResponseError(response));
@@ -1447,6 +1498,53 @@
       } catch (error) {
         showSystemNotice(
           error && error.message ? error.message : 'Không thể xóa BOT lúc này.',
+          'error'
+        );
+      }
+    }
+
+    async function requestDeleteBot(workerId, workerName) {
+      const normalizedWorkerId = String(workerId || '').trim();
+      if (!normalizedWorkerId) {
+        return;
+      }
+      if (!window.confirm(isLiveWorkspace ? 'Bạn có chắc chắn muốn xóa BOT live này không?' : 'Bạn có chắc chắn muốn xóa BOT này không?')) {
+        return;
+      }
+      try {
+        const response = await fetch('/api/admin/bots/' + encodeURIComponent(normalizedWorkerId), {
+          method: 'DELETE',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+          },
+          body: JSON.stringify({ workspace: isLiveWorkspace ? 'live' : 'upload' })
+        });
+        const responsePayload = await response.json();
+        if (!response.ok) {
+          throw new Error(
+            responsePayload && typeof responsePayload.detail === 'string' && responsePayload.detail.trim()
+              ? responsePayload.detail.trim()
+              : 'Không thể xử lý yêu cầu. Hãy thử lại.'
+          );
+        }
+        showSystemNotice(
+          responsePayload && typeof responsePayload.message === 'string' && responsePayload.message.trim()
+            ? responsePayload.message.trim()
+            : (
+                isLiveWorkspace
+                  ? (workerName ? ('Đã xóa BOT live ' + workerName + '.') : 'Đã xóa BOT live.')
+                  : ((workerName ? ('Đã bắt đầu xóa BOT ' + workerName + '.') : 'Đã bắt đầu xóa BOT.') + ' Hệ thống sẽ tự dọn VPS và cập nhật danh sách.')
+              ),
+          'success'
+        );
+        await fetchLiveWorkers();
+      } catch (error) {
+        showSystemNotice(
+          error && error.message
+            ? error.message
+            : (isLiveWorkspace ? 'Không thể xóa BOT live lúc này.' : 'Không thể xóa BOT lúc này.'),
           'error'
         );
       }

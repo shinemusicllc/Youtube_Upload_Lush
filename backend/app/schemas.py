@@ -15,6 +15,8 @@ JobVisibility = Literal["draft", "private", "public", "unlisted"]
 UploadSessionStatus = Literal["active", "completed", "expired", "cancelled"]
 ChannelConnectionMode = Literal["oauth", "browser_profile"]
 BrowserSessionStatus = Literal["launching", "awaiting_confirmation", "confirmed", "closed", "expired", "failed"]
+LiveStreamStatus = Literal["draft", "scheduled", "streaming", "ended", "stopped", "error"]
+LivePlatform = Literal["youtube_rtmp"]
 
 
 class UserSummary(BaseModel):
@@ -155,6 +157,38 @@ class RenderJobRecord(BaseModel):
     thumbnail_path: str | None = None
     can_cancel: bool = True
     assets: list[JobAsset] = Field(default_factory=list)
+
+
+class LiveStreamRecord(BaseModel):
+    id: str
+    owner_user_id: str
+    owner_username: str
+    owner_display_name: str
+    manager_id: str | None = None
+    manager_name: str | None = None
+    primary_worker_id: str
+    primary_worker_name: str
+    primary_group: str | None = None
+    backup_worker_id: str | None = None
+    backup_worker_name: str | None = None
+    backup_group: str | None = None
+    stream_name: str
+    stream_key: str
+    rtmp_url: str = "rtmp://x.rtmp.youtube.com/live2"
+    platform: LivePlatform = "youtube_rtmp"
+    video_url: str
+    audio_url: str | None = None
+    live_label: str = "Live 11h"
+    is_forever: bool = False
+    is_live_now: bool = False
+    start_time_live: datetime | None = None
+    end_time_live: datetime | None = None
+    backup_delay_minutes: int = 3
+    status: LiveStreamStatus = "draft"
+    log_label: str = "Khởi tạo"
+    error_message: str | None = None
+    created_at: datetime
+    updated_at: datetime | None = None
 
 
 class UserJobsResponse(BaseModel):

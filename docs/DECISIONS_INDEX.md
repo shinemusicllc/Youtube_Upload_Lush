@@ -25,6 +25,8 @@
 | DEC-020 | `admin` va `manager` duoc xem nhu account workspace rieng tren cung VPS, nhung `ChannelRecord` van global theo `channel_id` nen `confirm_browser_session` phai chan viec link them mot kenh da thuoc account khac | Active | admin workspace + shared VPS isolation | High |
 | DEC-021 | Neu worker phai dung snap-backed `chromium-browser`, runtime phai override `SNAP_USER_COMMON`, `SNAP_USER_DATA`, `SNAP_REAL_HOME` va `XDG_*` theo tung `browser_profile_path`; bootstrap BOT moi van uu tien browser non-snap, nhung login va upload phai dung cung mot env builder de profile isolation hoat dong ca voi snap | Active | worker runtime + browser profile isolation | High |
 | DEC-022 | Production worker browser canonical chuyen sang native `google-chrome-stable`; login noVNC va upload phai dung chung `profile_path + _build_browser_env()` voi `HOME`, `DBUS`, `XDG_*`, `password-store=basic`, shutdown graceful, va khong pin `chromedriver` co dinh trong bootstrap | Active | worker runtime + browser profile | High |
+| DEC-023 | Live stream dung chung account/role model voi upload, nhung tach rieng live bot pool, live assignment `primary/backup`, va CRUD route cua live stream | Active | backend + admin/live workspace | High |
+| DEC-024 | Workspace live cua admin/manager bo han `Danh sách Kênh`; username/password van dung chung mot account voi upload, con Telegram live se xu ly rieng o app workspace sau | Active | admin/live workspace + auth model | High |
 
 ## Notes
 - `docs/DECISIONS.md` van giu full history va ly do chi tiet.

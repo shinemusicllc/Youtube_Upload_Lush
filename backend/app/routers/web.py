@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import os
+from datetime import datetime
 from io import StringIO
 from pathlib import Path
 from urllib.parse import quote, urlencode
@@ -21,6 +22,7 @@ from ..auth import (
     normalize_manager_filter_ids,
     require_admin_access,
     require_admin_only,
+    require_app_access,
     set_app_session_user,
     set_admin_session_user,
 )
@@ -175,11 +177,53 @@ def _redirect_bot_page_with_scope(
     return RedirectResponse(url=f"{base_path}?{urlencode(query, doseq=True)}", status_code=303)
 
 
+def _redirect_live_page_with_scope(
+    message: str,
+    level: str = "success",
+    *,
+    manager_ids: list[str] | None = None,
+):
+    query: list[tuple[str, str]] = [
+        ("notice", message),
+        ("notice_level", level),
+    ]
+    for manager_id in manager_ids or []:
+        if manager_id:
+            query.append(("manager_ids", manager_id))
+    return RedirectResponse(url=f"/admin/live?{urlencode(query, doseq=True)}", status_code=303)
+
+
 def _resolve_worker_bootstrap_control_plane_url(request: Request) -> str:
     configured = str(os.getenv("WORKER_BOOTSTRAP_CONTROL_PLANE_URL", "")).strip()
     if configured:
         return configured.rstrip("/")
     return str(request.base_url).rstrip("/")
+
+
+def _parse_live_form_datetime(value: str | None) -> datetime | None:
+    cleaned = str(value or "").strip()
+    if not cleaned:
+        return None
+    for fmt in ("%d/%m/%Y %H:%M", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return datetime.strptime(cleaned, fmt)
+        except ValueError:
+            continue
+    raise ValueError("Thời gian live không đúng định dạng hỗ trợ.")
+
+
+def _extract_live_form_values(form) -> dict[str, str]:
+    return {
+        "stream_name": str(form.get("stream_name") or "").strip(),
+        "video_url": str(form.get("video_url") or "").strip(),
+        "audio_url": str(form.get("audio_url") or "").strip(),
+        "stream_key": str(form.get("stream_key") or "").strip(),
+        "backup_delay_minutes": str(form.get("backup_delay_minutes") or "3").strip() or "3",
+        "primary_worker_id": str(form.get("primary_worker_id") or "").strip(),
+        "backup_worker_id": str(form.get("backup_worker_id") or "").strip(),
+        "start_at": str(form.get("start_time_live") or "").strip(),
+        "end_at": str(form.get("end_time_live") or "").strip(),
+    }
 
 
 def _sanitize_next_url(value: str | None, *, default_path: str) -> str:
@@ -235,10 +279,10 @@ def _enforce_user_scope(current_user: AdminSessionUser, user_id: str) -> None:
         raise HTTPException(status_code=403, detail="Khong du quyen thao tac user khac manager.")
 
 
-def _enforce_worker_scope(current_user: AdminSessionUser, worker_id: str) -> None:
+def _enforce_worker_scope(current_user: AdminSessionUser, worker_id: str, *, workspace_mode: str = "upload") -> None:
     if current_user.role != "manager":
         return
-    worker = store._find_worker(worker_id)
+    worker = store._find_live_worker(worker_id) if workspace_mode == "live" else store._find_worker(worker_id)
     if worker.manager_id != current_user.id:
         raise HTTPException(status_code=403, detail="Khong du quyen thao tac BOT ngoai scope manager.")
 
@@ -550,6 +594,8 @@ async def user_live_dashboard(
     request: Request,
     notice: str | None = None,
     notice_level: str = "success",
+    edit: str | None = None,
+    detail: str | None = None,
 ):
     current_user = get_app_session_user(request)
     admin_user = get_admin_session_user(request)
@@ -570,9 +616,111 @@ async def user_live_dashboard(
                 user_id=current_user.id,
                 notice=notice,
                 notice_level=notice_level,
+                editing_stream_id=edit,
+                detail_stream_id=detail,
             ),
         },
     )
+
+
+@router.post("/app/live/create")
+async def user_live_create(request: Request):
+    current_user = require_app_access(request, "user", "manager", "admin")
+    form = await request.form()
+    live_form_values = _extract_live_form_values(form)
+    try:
+        start_time_live = _parse_live_form_datetime(live_form_values["start_at"])
+        end_time_live = _parse_live_form_datetime(live_form_values["end_at"])
+        store.create_live_stream(
+            owner_user_id=current_user.id,
+            stream_name=live_form_values["stream_name"],
+            primary_worker_id=live_form_values["primary_worker_id"],
+            stream_key=live_form_values["stream_key"],
+            video_url=live_form_values["video_url"],
+            audio_url=live_form_values["audio_url"] or None,
+            backup_worker_id=live_form_values["backup_worker_id"] or None,
+            backup_delay_minutes=live_form_values["backup_delay_minutes"],
+            start_time_live=start_time_live,
+            end_time_live=end_time_live,
+            is_live_now=False,
+            is_forever=end_time_live is None,
+            viewer_role=current_user.role,
+            viewer_id=current_user.id,
+        )
+        return _redirect_with_notice("/app/live", "Đã tạo luồng live stream.", "success")
+    except (KeyError, ValueError) as exc:
+        return templates.TemplateResponse(
+            "user_live_dashboard.html",
+            {
+                "request": request,
+                "dashboard": store.get_user_live_workspace_view(
+                    user_id=current_user.id,
+                    notice=str(exc),
+                    notice_level="error",
+                    live_form_values=live_form_values,
+                ),
+            },
+            status_code=422,
+        )
+
+
+@router.post("/app/live/update")
+async def user_live_update(request: Request):
+    current_user = require_app_access(request, "user", "manager", "admin")
+    form = await request.form()
+    stream_id = str(form.get("stream_id") or "").strip()
+    live_form_values = _extract_live_form_values(form)
+    try:
+        start_time_live = _parse_live_form_datetime(live_form_values["start_at"])
+        end_time_live = _parse_live_form_datetime(live_form_values["end_at"])
+        store.update_live_stream(
+            stream_id=stream_id,
+            stream_name=live_form_values["stream_name"],
+            primary_worker_id=live_form_values["primary_worker_id"],
+            stream_key=live_form_values["stream_key"],
+            video_url=live_form_values["video_url"],
+            audio_url=live_form_values["audio_url"] or None,
+            backup_worker_id=live_form_values["backup_worker_id"] or None,
+            backup_delay_minutes=live_form_values["backup_delay_minutes"],
+            start_time_live=start_time_live,
+            end_time_live=end_time_live,
+            is_live_now=False,
+            is_forever=end_time_live is None,
+            viewer_role=current_user.role,
+            viewer_id=current_user.id,
+        )
+        return _redirect_with_notice("/app/live", "Đã cập nhật luồng live stream.", "success")
+    except (KeyError, ValueError) as exc:
+        return templates.TemplateResponse(
+            "user_live_dashboard.html",
+            {
+                "request": request,
+                "dashboard": store.get_user_live_workspace_view(
+                    user_id=current_user.id,
+                    notice=str(exc),
+                    notice_level="error",
+                    live_form_values=live_form_values,
+                    editing_stream_id=stream_id,
+                ),
+            },
+            status_code=422,
+        )
+
+
+@router.post("/app/live/delete")
+async def user_live_delete(request: Request):
+    current_user = require_app_access(request, "user", "manager", "admin")
+    form = await request.form()
+    stream_id = str(form.get("stream_id") or "").strip()
+    try:
+        store.delete_live_stream(
+            stream_id,
+            viewer_role=current_user.role,
+            viewer_id=current_user.id,
+        )
+        return _redirect_with_notice("/app/live", "Đã xóa luồng live stream.", "success")
+    except (KeyError, ValueError) as exc:
+        return _redirect_with_notice("/app/live", str(exc), "error")
 
 
 @router.get("/auth/google/callback")
@@ -1044,7 +1192,11 @@ async def admin_bot_index(
         workspace_mode=workspace_mode,
     )
     dashboard["new_worker_defaults"] = {
-        "worker_id": store.suggest_next_worker_bootstrap_id(),
+        "worker_id": (
+            store.suggest_next_live_worker_bootstrap_id()
+            if workspace_mode == "live"
+            else store.suggest_next_worker_bootstrap_id()
+        ),
         "worker_name_hint": "IP VPS",
         "ssh_user": "root",
         "browser_session_enabled": True,
@@ -1118,13 +1270,14 @@ async def admin_bot_update(request: Request):
     form = await request.form()
     workspace_mode = _resolve_admin_workspace(str(form.get("workspace") or "").strip())
     worker_id = str(form.get("Id") or form.get("worker_id") or "").strip()
-    _enforce_worker_scope(current_admin, worker_id)
+    _enforce_worker_scope(current_admin, worker_id, workspace_mode=workspace_mode)
     name = str(form.get("Name") or form.get("name") or "").strip()
     group = str(form.get("Group") or form.get("group") or "").strip() or None
     raw_manager_id = str(form.get("UserIdManager") or form.get("manager_id") or "").strip()
     if raw_manager_id == "__bot_empty__":
         raw_manager_id = ""
     manager_id = _force_manager_binding(current_admin, raw_manager_id or None)
+    live_role = str(form.get("LiveRole") or form.get("live_role") or "").strip() or None
     assigned_user_id = str(form.get("UserId") or form.get("user_id") or "").strip() or None
     assigned_user_ids = [
         str(value).strip()
@@ -1138,7 +1291,14 @@ async def admin_bot_update(request: Request):
     existing_assigned_user_ids = set()
     if manage_user_assignments:
         try:
-            existing_assigned_user_ids = {user.id for user in store._assigned_users_for_worker(worker_id)}
+            existing_assigned_user_ids = {
+                user.id
+                for user in (
+                    store._assigned_live_users_for_worker(worker_id)
+                    if workspace_mode == "live"
+                    else store._assigned_users_for_worker(worker_id)
+                )
+            }
         except KeyError:
             existing_assigned_user_ids = set()
     if current_admin.role == "admin" and manager_id:
@@ -1161,6 +1321,8 @@ async def admin_bot_update(request: Request):
             name,
             group,
             manager_id,
+            workspace_mode=workspace_mode,
+            live_role=live_role,
             assigned_user_id=assigned_user_id,
             assigned_user_ids=assigned_user_ids if manage_user_assignments else None,
             confirm_manager_transfer_cleanup=confirm_manager_transfer_cleanup,
@@ -1199,9 +1361,27 @@ async def admin_bot_create(request: Request):
     return_manager_ids = [str(value).strip() for value in form.getlist("return_manager_ids") if str(value).strip()]
     manager_name = current_admin.username if current_admin.role == "manager" else "system"
     manager_id = current_admin.id if current_admin.role == "manager" else None
-    worker_id = store.suggest_next_worker_bootstrap_id()
+    worker_id = (
+        store.suggest_next_live_worker_bootstrap_id()
+        if workspace_mode == "live"
+        else store.suggest_next_worker_bootstrap_id()
+    )
 
     try:
+        if workspace_mode == "live":
+            worker = store.create_live_bot(
+                name=vps_ip,
+                manager_id=manager_id,
+                viewer_role=current_admin.role,
+                viewer_id=current_admin.id,
+            )
+            return _redirect_bot_page_with_scope(
+                f"Đã thêm BOT live {worker.id} với địa chỉ {worker.name}.",
+                "success",
+                manager_ids=return_manager_ids,
+                user_id=return_user_id,
+                workspace=workspace_mode,
+            )
         bootstrap_request = build_worker_bootstrap_request(
             vps_ip=vps_ip,
             ssh_user=ssh_user,
@@ -1250,10 +1430,19 @@ async def admin_bot_delete(request: Request):
     form = await request.form()
     workspace_mode = _resolve_admin_workspace(str(form.get("workspace") or "").strip())
     worker_id = str(form.get("Id") or form.get("worker_id") or "").strip()
-    _enforce_worker_scope(current_admin, worker_id)
+    _enforce_worker_scope(current_admin, worker_id, workspace_mode=workspace_mode)
     return_user_id = str(form.get("return_user_id") or "").strip() or None
     return_manager_ids = [str(value).strip() for value in form.getlist("return_manager_ids") if str(value).strip()]
     try:
+        if workspace_mode == "live":
+            store.delete_live_bot_without_ssh(worker_id, deleted_by=current_admin.username)
+            return _redirect_bot_page_with_scope(
+                f"Đã xóa BOT live {worker_id}.",
+                "success",
+                manager_ids=return_manager_ids,
+                user_id=return_user_id,
+                workspace=workspace_mode,
+            )
         worker = next((item for item in store.workers if item.id == worker_id), None)
         if worker is None:
             raise KeyError(worker_id)
@@ -1325,7 +1514,7 @@ async def admin_bot_update_thread(request: Request):
     worker_id = str(form.get("Id") or form.get("worker_id") or "").strip()
     try:
         if worker_id:
-            _enforce_worker_scope(current_admin, worker_id)
+            _enforce_worker_scope(current_admin, worker_id, workspace_mode=workspace_mode)
         return _redirect_with_notice(
             "/admin/ManagerBOT/index",
             "Thiet lap luong BOT cu da duoc bo khoi UI dieu phoi hien tai.",
@@ -1342,6 +1531,8 @@ async def admin_live_index(
     manager_ids: list[str] = Query(default=[]),
     notice: str | None = None,
     notice_level: str = "success",
+    edit: str | None = None,
+    detail: str | None = None,
 ):
     current_admin = require_admin_access(request)
     selected_manager_ids = _resolve_manager_ids(request, manager_ids)
@@ -1351,8 +1542,116 @@ async def admin_live_index(
         viewer_id=current_admin.id,
         notice=notice,
         notice_level=notice_level,
+        editing_stream_id=edit,
+        detail_stream_id=detail,
     )
     return _render(request, dashboard)
+
+
+@router.post("/admin/live/create")
+async def admin_live_create(request: Request):
+    current_admin = require_admin_access(request)
+    form = await request.form()
+    manager_ids = [str(value).strip() for value in form.getlist("manager_ids") if str(value).strip()]
+    if current_admin.role == "manager" and not manager_ids:
+        manager_ids = [current_admin.id]
+    live_form_values = _extract_live_form_values(form)
+    try:
+        start_time_live = _parse_live_form_datetime(live_form_values["start_at"])
+        end_time_live = _parse_live_form_datetime(live_form_values["end_at"])
+        owner = store.resolve_live_owner_from_primary_worker(
+            live_form_values["primary_worker_id"],
+            viewer_role=current_admin.role,
+            viewer_id=current_admin.id,
+        )
+        store.create_live_stream(
+            owner_user_id=owner.id,
+            stream_name=live_form_values["stream_name"],
+            primary_worker_id=live_form_values["primary_worker_id"],
+            stream_key=live_form_values["stream_key"],
+            video_url=live_form_values["video_url"],
+            audio_url=live_form_values["audio_url"] or None,
+            backup_worker_id=live_form_values["backup_worker_id"] or None,
+            backup_delay_minutes=live_form_values["backup_delay_minutes"],
+            start_time_live=start_time_live,
+            end_time_live=end_time_live,
+            is_live_now=False,
+            is_forever=end_time_live is None,
+            viewer_role=current_admin.role,
+            viewer_id=current_admin.id,
+        )
+        return _redirect_live_page_with_scope("Đã tạo luồng live stream.", "success", manager_ids=manager_ids)
+    except (KeyError, ValueError) as exc:
+        dashboard = store.get_admin_live_workspace_context(
+            manager_ids=manager_ids,
+            viewer_role=current_admin.role,
+            viewer_id=current_admin.id,
+            notice=str(exc),
+            notice_level="error",
+            live_form_values=live_form_values,
+        )
+        return _render(request, dashboard, status_code=422)
+
+
+@router.post("/admin/live/update")
+async def admin_live_update(request: Request):
+    current_admin = require_admin_access(request)
+    form = await request.form()
+    manager_ids = [str(value).strip() for value in form.getlist("manager_ids") if str(value).strip()]
+    if current_admin.role == "manager" and not manager_ids:
+        manager_ids = [current_admin.id]
+    stream_id = str(form.get("stream_id") or "").strip()
+    live_form_values = _extract_live_form_values(form)
+    try:
+        start_time_live = _parse_live_form_datetime(live_form_values["start_at"])
+        end_time_live = _parse_live_form_datetime(live_form_values["end_at"])
+        store.update_live_stream(
+            stream_id=stream_id,
+            stream_name=live_form_values["stream_name"],
+            primary_worker_id=live_form_values["primary_worker_id"],
+            stream_key=live_form_values["stream_key"],
+            video_url=live_form_values["video_url"],
+            audio_url=live_form_values["audio_url"] or None,
+            backup_worker_id=live_form_values["backup_worker_id"] or None,
+            backup_delay_minutes=live_form_values["backup_delay_minutes"],
+            start_time_live=start_time_live,
+            end_time_live=end_time_live,
+            is_live_now=False,
+            is_forever=end_time_live is None,
+            viewer_role=current_admin.role,
+            viewer_id=current_admin.id,
+        )
+        return _redirect_live_page_with_scope("Đã cập nhật luồng live stream.", "success", manager_ids=manager_ids)
+    except (KeyError, ValueError) as exc:
+        dashboard = store.get_admin_live_workspace_context(
+            manager_ids=manager_ids,
+            viewer_role=current_admin.role,
+            viewer_id=current_admin.id,
+            notice=str(exc),
+            notice_level="error",
+            live_form_values=live_form_values,
+            editing_stream_id=stream_id,
+        )
+        return _render(request, dashboard, status_code=422)
+
+
+@router.post("/admin/live/delete")
+async def admin_live_delete(request: Request):
+    current_admin = require_admin_access(request)
+    form = await request.form()
+    manager_ids = [str(value).strip() for value in form.getlist("manager_ids") if str(value).strip()]
+    if current_admin.role == "manager" and not manager_ids:
+        manager_ids = [current_admin.id]
+    stream_id = str(form.get("stream_id") or "").strip()
+    try:
+        store.delete_live_stream(
+            stream_id,
+            viewer_role=current_admin.role,
+            viewer_id=current_admin.id,
+        )
+        return _redirect_live_page_with_scope("Đã xóa luồng live stream.", "success", manager_ids=manager_ids)
+    except (KeyError, ValueError) as exc:
+        return _redirect_live_page_with_scope(str(exc), "error", manager_ids=manager_ids)
 
 
 @router.get("/admin/live/index")
@@ -1398,7 +1697,8 @@ async def admin_user_of_bot(
     workspace: str = "upload",
 ):
     current_admin = require_admin_access(request)
-    _enforce_worker_scope(current_admin, botId)
+    workspace_mode = _resolve_admin_workspace(workspace)
+    _enforce_worker_scope(current_admin, botId, workspace_mode=workspace_mode)
     return _render(
         request,
         store.get_admin_users_of_bot_context(
@@ -1407,7 +1707,7 @@ async def admin_user_of_bot(
             viewer_id=current_admin.id,
             notice=notice,
             notice_level=notice_level,
-            workspace_mode=_resolve_admin_workspace(workspace),
+            workspace_mode=workspace_mode,
         ),
     )
 
@@ -1425,8 +1725,11 @@ async def admin_channel_index(
     current_admin = require_admin_access(request)
     if userId:
         _enforce_user_scope(current_admin, userId)
+    workspace_mode = _resolve_admin_workspace(workspace)
+    if workspace_mode == "live":
+        return RedirectResponse(url="/admin/live", status_code=status.HTTP_303_SEE_OTHER)
     if botId:
-        _enforce_worker_scope(current_admin, botId)
+        _enforce_worker_scope(current_admin, botId, workspace_mode=workspace_mode)
     selected_manager_ids = _resolve_manager_ids(request, manager_ids)
     return _render(
         request,
@@ -1438,7 +1741,7 @@ async def admin_channel_index(
             viewer_id=current_admin.id,
             notice=notice,
             notice_level=notice_level,
-            workspace_mode=_resolve_admin_workspace(workspace),
+            workspace_mode=workspace_mode,
         ),
     )
 
