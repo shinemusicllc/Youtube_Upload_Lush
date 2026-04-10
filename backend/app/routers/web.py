@@ -38,6 +38,7 @@ router = APIRouter(tags=["web"])
 
 PUBLIC_APP_NAME = "JazzRelaxation Upload Manager"
 PUBLIC_SUPPORT_EMAIL = "hoangpear99@gmail.com"
+ADMIN_DASHBOARD_HOME = "/admin/user/index"
 
 
 def _admin_identity_payload(current_user: AdminSessionUser) -> dict:
@@ -105,7 +106,7 @@ def _app_login_template_payload(
 
 
 def _default_home_for_role(role: str) -> str:
-    return "/app" if role == "user" else "/admin/user/index"
+    return "/app" if role == "user" else ADMIN_DASHBOARD_HOME
 
 
 def _resolve_login_redirect(role: str, requested_next: str | None) -> str:
@@ -114,7 +115,7 @@ def _resolve_login_redirect(role: str, requested_next: str | None) -> str:
         if candidate.startswith("/app") or candidate.startswith("/auth/google"):
             return candidate
         return "/app"
-    return "/admin/user/index"
+    return ADMIN_DASHBOARD_HOME
 
 
 def _render(request: Request, dashboard: dict, status_code: int = 200):
@@ -271,10 +272,10 @@ def _admin_forbidden_redirect(path: str = "/admin/user/index") -> RedirectRespon
 
 @router.get("/", response_class=HTMLResponse)
 async def root(request: Request):
+    if get_admin_session_user(request):
+        return RedirectResponse(url=ADMIN_DASHBOARD_HOME, status_code=302)
     if get_app_session_user(request):
         return RedirectResponse(url="/app", status_code=302)
-    if get_admin_session_user(request):
-        return RedirectResponse(url="/admin/user/index", status_code=302)
     return RedirectResponse(url="/login", status_code=302)
 
 
@@ -420,12 +421,12 @@ async def app_login_page(
     next: str | None = None,
     notice: str | None = None,
 ):
+    current_admin_user = get_admin_session_user(request)
+    if current_admin_user:
+        return RedirectResponse(url=ADMIN_DASHBOARD_HOME, status_code=302)
     current_app_user = get_app_session_user(request)
     if current_app_user:
         return RedirectResponse(url="/app", status_code=302)
-    current_admin_user = get_admin_session_user(request)
-    if current_admin_user:
-        return RedirectResponse(url="/admin/user/index", status_code=302)
     next_url = _sanitize_next_url(next, default_path="/app")
     return templates.TemplateResponse(
         "admin/login.html",
@@ -505,12 +506,10 @@ async def user_dashboard(
 ):
     current_user = get_app_session_user(request)
     admin_user = get_admin_session_user(request)
-    if admin_user and (
-        not current_user
-        or current_user.id != admin_user.id
-        or current_user.role != admin_user.role
-    ):
+    if admin_user:
         store.assert_admin_session_user(admin_user.id, admin_user.role)
+        if current_user:
+            clear_app_session(request)
         current_user = AppSessionUser(
             id=admin_user.id,
             username=admin_user.username,
@@ -518,7 +517,6 @@ async def user_dashboard(
             role=admin_user.role,
             manager_name=admin_user.manager_name,
         )
-        set_app_session_user(request, current_user)
     if not current_user:
         return RedirectResponse(url="/login?next=/app", status_code=302)
     store.assert_app_session_user(current_user.id, current_user.role)
@@ -552,12 +550,15 @@ async def google_oauth_callback(
 
 @router.get("/admin", response_class=HTMLResponse)
 async def admin_dashboard(request: Request):
+    admin_user = get_admin_session_user(request)
+    if admin_user:
+        return RedirectResponse(url=ADMIN_DASHBOARD_HOME, status_code=302)
     if get_app_session_user(request):
         return RedirectResponse(url="/app", status_code=302)
-    if not get_admin_session_user(request):
+    if not admin_user:
         next_url = request.url.path
         return RedirectResponse(url=f"/login?next={next_url}", status_code=302)
-    return RedirectResponse(url="/admin/user/index", status_code=302)
+    return RedirectResponse(url=ADMIN_DASHBOARD_HOME, status_code=302)
 
 
 @router.get("/admin/login", response_class=HTMLResponse)
@@ -566,7 +567,7 @@ async def admin_login_page(
     next: str | None = None,
     notice: str | None = None,
 ):
-    target = _sanitize_next_url(next, default_path="/admin/user/index")
+    target = _sanitize_next_url(next, default_path=ADMIN_DASHBOARD_HOME)
     payload = {"next": target}
     if notice:
         payload["notice"] = notice
@@ -575,7 +576,7 @@ async def admin_login_page(
 
 @router.post("/admin/login")
 async def admin_login_submit(request: Request):
-    return RedirectResponse(url="/login?next=/admin/user/index", status_code=303)
+    return RedirectResponse(url=f"/login?next={ADMIN_DASHBOARD_HOME}", status_code=303)
 
 
 @router.post("/admin/logout")
