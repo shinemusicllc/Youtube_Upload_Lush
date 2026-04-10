@@ -13,12 +13,12 @@
                     <p class="section-note">Khởi tạo username, mật khẩu và chọn manager phụ trách ngay từ đầu nếu cần.</p>
                 </div>
             </div>
-            {% include "admin/_user_tabs.html" %}
         </div>
     </div>
 
     <div class="panel max-w-3xl p-6">
         <form method="post" action="/admin/user/create" class="space-y-5" autocomplete="off">
+            <input type="hidden" name="workspace" value="{{ dashboard.workspace_mode }}">
             {% if dashboard.error %}
             <div class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] font-medium text-rose-700">{{ dashboard.error }}</div>
             {% endif %}
@@ -51,7 +51,7 @@
             </label>
 
             <div class="flex items-center justify-end gap-3 border-t border-slate-200 pt-4">
-                <a href="/admin/user/index" class="action-btn action-btn-slate px-4 py-2 text-[13px]">Quay lại</a>
+                <a href="/admin/user/index?workspace={{ dashboard.workspace_mode }}" class="action-btn action-btn-slate px-4 py-2 text-[13px]">Quay lại</a>
                 <button type="submit" class="action-btn action-btn-emerald px-4 py-2 text-[13px]">
                     <i data-lucide="user-plus" class="h-4 w-4"></i>
                     Tạo tài khoản

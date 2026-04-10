@@ -2,7 +2,93 @@
 
 {% block content %}
 <section class="space-y-6">
-    {% include "admin/_user_tabs.html" %}
+    {% set is_live_workspace = dashboard.workspace_mode == 'live' %}
+    {% if is_live_workspace %}
+    <style>
+        .admin-table-live-users {
+            width: 100%;
+            table-layout: fixed;
+        }
+
+        .admin-table-live-users thead th,
+        .admin-table-live-users tbody td {
+            white-space: normal;
+            vertical-align: middle;
+        }
+
+        .admin-table-live-users .table-head-stack {
+            display: inline-flex;
+            flex-direction: column;
+            gap: 2px;
+            line-height: 1.25;
+        }
+
+        .admin-table-live-users .table-head-note {
+            font-size: 10px;
+            font-weight: 600;
+            color: rgb(100 116 139);
+        }
+
+        .admin-table-live-users .user-avatar-compact {
+            width: 38px;
+            height: 38px;
+            flex: 0 0 38px;
+            border-radius: 999px;
+        }
+
+        .admin-table-live-users .action-btn {
+            min-height: 32px;
+            padding: 0 10px;
+            font-size: 11px;
+            white-space: nowrap;
+        }
+
+        .admin-table-live-users .action-row-nowrap {
+            flex-wrap: nowrap;
+            gap: 8px;
+        }
+
+        .admin-table-live-users .role-col {
+            width: 98px;
+        }
+
+        .admin-table-live-users .stt-col {
+            width: 84px;
+        }
+
+        .admin-table-live-users .info-col {
+            width: 204px;
+        }
+
+        .admin-table-live-users .manager-col {
+            width: 110px;
+        }
+
+        .admin-table-live-users .updated-col {
+            width: 148px;
+        }
+
+        .admin-table-live-users .live-col {
+            width: 176px;
+        }
+
+        .admin-table-live-users .backup-col {
+            width: 188px;
+        }
+
+        .admin-table-live-users .telegram-col {
+            width: 120px;
+        }
+
+        .admin-table-live-users .bot-col {
+            width: 102px;
+        }
+
+        .admin-table-live-users .action-col {
+            width: 232px;
+        }
+    </style>
+    {% endif %}
     {% include "admin/_admin_notice.html" %}
 
     <div class="panel p-5">
@@ -13,12 +99,19 @@
                 </div>
                 <div>
                     <h2 class="section-title">Danh sách người dùng</h2>
-                    <p class="section-note">Manager filter, cập nhật user và gán BOT theo user.</p>
+                    <p class="section-note">
+                        {% if is_live_workspace %}
+                        Giữ nguyên quản lý admin và manager cho live stream, đồng bộ theo scope manager hiện tại.
+                        {% else %}
+                        Manager filter, cập nhật user và gán BOT theo user.
+                        {% endif %}
+                    </p>
                 </div>
             </div>
             <form method="get" action="/admin/user/index" class="grid gap-3 lg:min-w-[560px] lg:grid-cols-[1fr_auto]" data-manager-auto-submit="true">
+                <input type="hidden" name="workspace" value="{{ dashboard.workspace_mode }}">
                 {% include "admin/_manager_picker.html" %}
-                <a href="/admin/user/create" class="action-btn action-btn-emerald h-11 justify-center px-4 text-[13px]">
+                <a href="/admin/user/create?workspace={{ dashboard.workspace_mode }}" class="action-btn action-btn-emerald h-11 justify-center px-4 text-[13px]">
                     <i data-lucide="user-plus" class="h-4 w-4"></i>
                     Tạo mới
                 </a>
@@ -31,13 +124,41 @@
     <div class="panel overflow-hidden">
         <div class="border-b border-slate-200/80 px-5 py-4">
             <h3 class="section-title">Danh sách người dùng</h3>
-            <p class="section-note">Theo dõi tài khoản, phân quyền và quản lý thông tin người dùng trong hệ thống.</p>
+            <p class="section-note">
+                {% if is_live_workspace %}
+                Bảng này giữ riêng các cột quản trị live stream; cột tương đồng với app hiện tại vẫn được gộp theo visual mới.
+                {% else %}
+                Theo dõi tài khoản, phân quyền và quản lý thông tin người dùng trong hệ thống.
+                {% endif %}
+            </p>
         </div>
 
-        <div class="table-shell">
-            <table class="admin-table" data-admin-list-table>
+        <div class="table-shell {% if is_live_workspace %}overflow-x-hidden{% endif %}">
+            <table class="admin-table {% if is_live_workspace %}admin-table-live-users{% endif %}" data-admin-list-table>
                 <thead>
                     <tr>
+                        {% if is_live_workspace %}
+                        <th class="stt-col">STT</th>
+                        <th class="info-col">Thông tin user</th>
+                        <th class="role-col">Vai trò</th>
+                        <th class="manager-col">Manager</th>
+                        <th class="updated-col">Cập nhật</th>
+                        <th class="live-col">
+                            <span class="table-head-stack">
+                                <span>Luồng live stream</span>
+                                <span class="table-head-note">(Chạy/Tổng/BOT)</span>
+                            </span>
+                        </th>
+                        <th class="backup-col">
+                            <span class="table-head-stack">
+                                <span>Backup</span>
+                                <span class="table-head-note">(Chạy/Chờ/Tổng/BOT)</span>
+                            </span>
+                        </th>
+                        <th class="telegram-col">Telegram</th>
+                        <th class="bot-col">BOT</th>
+                        <th class="action-col text-right">Tác vụ</th>
+                        {% else %}
                         <th class="w-14">STT</th>
                         <th>Thông tin user</th>
                         <th>Vai trò</th>
@@ -46,12 +167,86 @@
                         <th>Kênh</th>
                         <th>BOT</th>
                         <th class="text-right">Tác vụ</th>
+                        {% endif %}
                     </tr>
                 </thead>
                 <tbody>
                     {% for user in dashboard.users %}
                     <tr>
                         <td class="table-mono text-slate-500">{{ user.index }}</td>
+                        {% if is_live_workspace %}
+                        <td>
+                            <div class="flex items-center gap-3">
+                                <div class="user-avatar-compact flex items-center justify-center text-[12px] font-bold {{ user.avatar_class }}">
+                                    {{ user.avatar_initials }}
+                                </div>
+                                <div class="min-w-0">
+                                    <p class="text-[13px] font-semibold text-slate-900">{{ user.username }}</p>
+                                </div>
+                            </div>
+                        </td>
+                        <td><span class="{{ user.role_class }}">{{ user.role_label }}</span></td>
+                        <td class="text-[12px] font-medium text-slate-700">{{ user.manager_name }}</td>
+                        <td class="table-meta">{{ user.updated_meta }}</td>
+                        <td>
+                            <span class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold text-emerald-700">
+                                {{ user.live_threads_running }}/{{ user.live_threads_total }}/{{ user.live_bots_total }}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold text-amber-700">
+                                {{ user.live_threads_backup_running }}/{{ user.live_threads_backup_pending }}/{{ user.live_threads_backup_total }}/{{ user.live_bots_backup_total }}
+                            </span>
+                        </td>
+                        <td>
+                            <div class="space-y-1">
+                                <p class="table-meta">{{ user.telegram or '--' }}</p>
+                                <p class="table-meta">QL: {{ user.telegram_manager or '--' }}</p>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="inline-flex items-center rounded-full border border-brand-100 bg-brand-50 px-2.5 py-1 text-[10px] font-semibold text-brand-700">
+                                {{ user.live_total_bots }} BOT
+                            </span>
+                        </td>
+                        <td>
+                            <div class="flex action-row-nowrap items-center justify-end">
+                                <a
+                                    href="{% if user.role == 'manager' %}/admin/ManagerBOT/index?workspace=live&manager_ids={{ user.id }}{% elif user.role == 'user' %}/admin/ManagerBOT/index?workspace=live&userId={{ user.id }}{% else %}/admin/ManagerBOT/index?workspace=live{% endif %}"
+                                    class="action-btn action-btn-primary"
+                                >
+                                    <i data-lucide="server" class="h-3.5 w-3.5"></i>
+                                    BOT
+                                </a>
+                                <button
+                                    type="button"
+                                    class="action-btn action-btn-emerald"
+                                    data-dialog-open="edit-user-dialog"
+                                    data-user-id="{{ user.id }}"
+                                    data-username="{{ user.username }}"
+                                    data-telegram="{{ user.telegram }}"
+                                    data-manager-id="{{ user.manager_id }}"
+                                    data-role="{{ user.role }}"
+                                    data-can-edit-username="{{ 'true' if dashboard.current_user.role == 'admin' or (dashboard.current_user.role == 'manager' and user.role == 'user') else 'false' }}"
+                                >
+                                    <i data-lucide="pencil" class="h-3.5 w-3.5"></i>
+                                    Sửa
+                                </button>
+                                {% if user.can_delete %}
+                                <button
+                                    type="button"
+                                    class="action-btn action-btn-rose"
+                                    data-dialog-open="delete-user-dialog"
+                                    data-user-id="{{ user.id }}"
+                                    data-username="{{ user.username }}"
+                                >
+                                    <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
+                                    Xóa
+                                </button>
+                                {% endif %}
+                            </div>
+                        </td>
+                        {% else %}
                         <td>
                             <div class="flex items-center gap-3">
                                 <div class="flex h-10 w-10 items-center justify-center rounded-full text-[12px] font-bold {{ user.avatar_class }}">
@@ -119,6 +314,7 @@
                                 </form>
                             </div>
                         </td>
+                        {% endif %}
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -136,6 +332,7 @@
             </div>
             <div class="space-y-4 px-5 py-5">
                 <input type="hidden" name="UserId" id="edit-user-id">
+                <input type="hidden" name="workspace" value="{{ dashboard.workspace_mode }}">
                 <div>
                     <label class="field-label" for="edit-username">Tên đăng nhập</label>
                     <input class="toolbar-input" id="edit-username" name="UserName" required>
@@ -201,6 +398,7 @@
             </div>
             <div class="space-y-3 px-5 py-5">
                 <input type="hidden" name="userId" id="delete-user-id">
+                <input type="hidden" name="workspace" value="{{ dashboard.workspace_mode }}">
                 <p class="text-[13px] text-slate-700">Bạn có chắc muốn xóa tài khoản <strong id="delete-username"></strong>?</p>
             </div>
             <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">

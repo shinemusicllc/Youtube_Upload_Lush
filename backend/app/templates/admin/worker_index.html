@@ -2,6 +2,32 @@
 
 {% block content %}
 <style>
+    .admin-table-upload-workers {
+        width: 100%;
+        table-layout: fixed;
+    }
+
+    .admin-table-upload-workers thead th,
+    .admin-table-upload-workers tbody td {
+        white-space: normal;
+        vertical-align: middle;
+    }
+
+    .admin-table-upload-workers .worker-actions-cell {
+        width: 250px;
+    }
+
+    .worker-name-cell {
+        min-width: 0;
+    }
+
+    .worker-name-text {
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        white-space: normal;
+        line-height: 1.4;
+    }
+
     .bot-user-picker {
         position: relative;
     }
@@ -140,6 +166,54 @@
     }
 </style>
 <section class="space-y-6">
+    {% set is_live_workspace = dashboard.workspace_mode == 'live' %}
+    {% if is_live_workspace %}
+    <style>
+        .admin-table-live-workers {
+            width: 100%;
+            table-layout: fixed;
+        }
+
+        .admin-table-live-workers thead th,
+        .admin-table-live-workers tbody td {
+            white-space: normal;
+            vertical-align: middle;
+        }
+
+        .admin-table-live-workers .table-head-stack {
+            display: inline-flex;
+            flex-direction: column;
+            gap: 2px;
+            line-height: 1.25;
+        }
+
+        .admin-table-live-workers .table-head-note {
+            font-size: 10px;
+            font-weight: 600;
+            color: rgb(100 116 139);
+        }
+
+        .admin-table-live-workers .action-row-nowrap {
+            flex-wrap: nowrap;
+            gap: 8px;
+        }
+
+        .admin-table-live-workers .action-btn {
+            min-height: 32px;
+            padding: 0 9px;
+            font-size: 11px;
+        }
+
+        .admin-table-live-workers .bot-cell-meta {
+            margin-top: 4px;
+            font-size: 11px;
+            color: rgb(100 116 139);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+    </style>
+    {% endif %}
     {% include "admin/_admin_notice.html" %}
 
     <div class="panel p-5">
@@ -150,11 +224,18 @@
                 </div>
                 <div>
                     <h2 class="section-title">Danh s&#225;ch BOT</h2>
-                    <p class="section-note">Theo d&#245;i c&#7909;m VPS, metadata BOT v&#224; tr&#7841;ng th&#225;i t&#224;i nguy&#234;n live theo th&#7901;i gian th&#7921;c.</p>
+                    <p class="section-note">
+                        {% if is_live_workspace %}
+                        Gi&#7919; b&#7897; c&#7897;t qu&#7843;n tr&#7883; BOT live theo app c&#361;, nh&#432;ng d&#249;ng shell v&#224; action style c&#7911;a control-plane hi&#7879;n t&#7841;i.
+                        {% else %}
+                        Theo d&#245;i c&#7909;m VPS, metadata BOT v&#224; tr&#7841;ng th&#225;i t&#224;i nguy&#234;n live theo th&#7901;i gian th&#7921;c.
+                        {% endif %}
+                    </p>
                 </div>
             </div>
 
             <form method="get" action="/admin/ManagerBOT/index" class="grid gap-3 lg:min-w-[560px] lg:grid-cols-[1fr_auto]" data-manager-auto-submit="true">
+                    <input type="hidden" name="workspace" value="{{ dashboard.workspace_mode }}">
                     {% if dashboard.focus_user %}
                     <input type="hidden" name="userId" value="{{ dashboard.focus_user.id }}">
                     {% endif %}
@@ -176,15 +257,40 @@
     <div class="panel overflow-hidden">
         <div class="border-b border-slate-200/80 px-5 py-4">
             <h3 class="section-title">C&#7909;m BOT VPS</h3>
-            <p class="section-note">M&#7895;i VPS c&#243; th&#7875; g&#225;n cho nhi&#7873;u user; b&#7843;ng n&#224;y theo d&#245;i metadata BOT, s&#7889; k&#234;nh, s&#7889; user v&#224; t&#224;i nguy&#234;n live t&#7915; heartbeat worker.</p>
+            <p class="section-note">
+                {% if is_live_workspace %}
+                Gi&#7919; nguy&#234;n logic qu&#7843;n l&#253; BOT live trong c&#249;ng shell: c&#7897;t t&#432;&#417;ng &#273;&#7891;ng v&#7899;i app upload v&#7851;n g&#7897;p theo visual hi&#7879;n t&#7841;i, c&#242;n schema live ri&#234;ng v&#7851;n &#273;&#432;&#7907;c b&#7843;o to&#224;n.
+                {% else %}
+                M&#7895;i VPS c&#243; th&#7875; g&#225;n cho nhi&#7873;u user; b&#7843;ng n&#224;y theo d&#245;i metadata BOT, s&#7889; k&#234;nh, s&#7889; user v&#224; t&#224;i nguy&#234;n live t&#7915; heartbeat worker.
+                {% endif %}
+            </p>
         </div>
 
-        <div class="table-shell">
-            <table class="admin-table" data-admin-list-table="worker-index">
+        <div class="table-shell {% if is_live_workspace %}overflow-x-hidden{% endif %}">
+            <table class="admin-table {% if is_live_workspace %}admin-table-live-workers{% else %}admin-table-upload-workers{% endif %}" data-admin-list-table="worker-index">
                 <thead>
                     <tr>
+                        {% if is_live_workspace %}
                         <th class="w-14">STT</th>
-                        <th>BOT</th>
+                        <th class="w-[156px]">BOT</th>
+                        <th class="w-[126px]">Group</th>
+                        <th class="w-[114px]">Tr&#7841;ng th&#225;i</th>
+                        <th class="w-[114px]">Ng&#224;y t&#7841;o</th>
+                        <th class="w-[84px]">
+                            <span class="table-head-stack">
+                                <span>Lu&#7891;ng live</span>
+                                <span class="table-head-note">stream</span>
+                            </span>
+                        </th>
+                        <th class="w-[82px]">S&#7889; user</th>
+                        <th class="w-[64px]">CPU</th>
+                        <th class="w-[96px]">RAM</th>
+                        <th class="w-[102px]">Bandwidth</th>
+                        <th class="w-[96px]">Space</th>
+                        <th class="w-[206px] text-right">T&#225;c v&#7909;</th>
+                        {% else %}
+                        <th class="w-14">STT</th>
+                        <th class="w-[200px]">BOT</th>
                         <th>Group</th>
                         <th>Ng&#224;y t&#7841;o</th>
                         <th>S&#7889; k&#234;nh</th>
@@ -194,7 +300,8 @@
                         <th class="w-[98px]">Disk</th>
                         <th class="w-[86px]">Bandwith</th>
                         <th>Lu&#7891;ng</th>
-                        <th class="w-[320px] text-right">T&#225;c v&#7909;</th>
+                        <th class="w-[250px] text-right">T&#225;c v&#7909;</th>
+                        {% endif %}
                     </tr>
                 </thead>
                 <tbody data-worker-live-body data-live-endpoint="/api/admin/bots" data-initial-event-cursor="{{ dashboard.worker_event_cursor or '' }}">
@@ -213,11 +320,11 @@
                     <tr
                         data-worker-row-id="{{ worker.id }}"
                         class="{% if worker.row_dimmed and not compact_operation_row %}bg-slate-50/70 opacity-80{% endif %}"
-                        data-search-text="{{ worker.bot_id }} {{ worker.name }} {{ worker.group }} {{ worker.manager_name }} {{ worker.assigned_user_name }} {{ worker.assigned_user_names_text }} {{ worker.created_at }} {{ worker.ram_text }} {{ worker.disk_text }} {{ worker.bandwidth_text }}"
+                        data-search-text="{{ worker.bot_id }} {{ worker.name }} {{ worker.group }} {{ worker.manager_name }} {{ worker.assigned_user_name }} {{ worker.assigned_user_names_text }} {{ worker.created_at }} {{ worker.ram_text }} {{ worker.disk_text }} {{ worker.bandwidth_text }} {{ worker.space_text }} {{ worker.live_thread_text }} {{ worker.cpu_percent }}"
                     >
                         <td class="table-mono text-slate-500">{{ worker.index }}</td>
                         {% if compact_operation_row %}
-                        <td colspan="11" class="py-3">
+                        <td colspan="{% if is_live_workspace %}11{% else %}11{% endif %}" class="py-3">
                             <div class="rounded-[18px] border px-4 py-3 {{ operation_shell_class }}">
                                 <div class="flex items-start gap-3">
                                     <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl {{ operation_icon_class }}">
@@ -234,9 +341,81 @@
                             </div>
                         </td>
                         {% else %}
+                        {% if is_live_workspace %}
                         <td>
-                            <div>
-                                <p class="text-[13px] font-semibold text-slate-900">{{ worker.name }}</p>
+                            <div class="worker-name-cell">
+                                <p class="worker-name-text text-[13px] font-semibold text-slate-900">{{ worker.name }}</p>
+                                <p class="bot-cell-meta">{{ worker.manager_name or '--' }}</p>
+                            </div>
+                        </td>
+                        <td class="text-[12px] font-medium text-slate-700">{{ worker.group }}</td>
+                        <td><span class="{{ worker.status_class }}">{{ worker.status_label }}</span></td>
+                        <td class="table-mono text-slate-600">
+                            <p>{{ created_parts[0] if created_parts and created_parts[0] else '--' }}</p>
+                            <p class="mt-1 text-[11px] text-slate-500">{{ ' '.join(created_parts[1:]) if created_parts|length > 1 else '--' }}</p>
+                        </td>
+                        <td>
+                            <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-700">
+                                {{ worker.live_thread_text }}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="inline-flex items-center rounded-full border border-sky-100 bg-sky-50 px-2.5 py-1 text-[10px] font-semibold text-sky-700">
+                                {{ worker.total_users }} user
+                            </span>
+                        </td>
+                        <td>
+                            <p class="table-mono font-semibold text-slate-800">{{ worker.cpu_percent }}%</p>
+                        </td>
+                        <td>
+                            <p class="table-mono font-semibold text-slate-800">{{ worker.ram_percent }}%</p>
+                            <p class="mt-1 text-[11px] text-slate-500">{{ worker.ram_text }}</p>
+                        </td>
+                        <td class="table-mono whitespace-nowrap text-[11px] leading-tight tracking-[-0.01em] text-slate-700">{{ worker.bandwidth_text }}</td>
+                        <td class="table-mono text-[11px] leading-tight tracking-[-0.01em] text-slate-700">{{ worker.space_text }}</td>
+                        <td class="align-middle">
+                            <div class="flex action-row-nowrap items-center justify-end">
+                                {% if worker.actions_disabled %}
+                                <span class="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-500">
+                                    <span class="font-mono tracking-[0.28em] text-slate-400">...</span>
+                                    {{ worker.status_label }}
+                                </span>
+                                {% else %}
+                                <a href="/admin/bot/userofbot?botId={{ worker.id }}&botName={{ worker.raw_name }}&workspace=live" class="action-btn action-btn-sky whitespace-nowrap">
+                                    <i data-lucide="users" class="h-3.5 w-3.5"></i>
+                                    DS User
+                                </a>
+                                <button
+                                    type="button"
+                                    class="action-btn action-btn-emerald whitespace-nowrap"
+                                    data-dialog-open="edit-bot-dialog"
+                                    data-worker-id="{{ worker.id }}"
+                                    data-worker-name="{{ worker.raw_name }}"
+                                    data-worker-group="{{ worker.group or '' }}"
+                                    data-manager-id="{{ worker.manager_id }}"
+                                    data-user-id="{{ worker.assigned_user_id }}"
+                                    data-user-ids="{{ worker.assigned_user_ids | join(',') }}"
+                                >
+                                    <i data-lucide="pencil" class="h-3.5 w-3.5"></i>
+                                    S&#7917;a
+                                </button>
+                                <button
+                                    type="button"
+                                    class="action-btn action-btn-rose whitespace-nowrap"
+                                    data-delete-bot-button="1"
+                                    data-worker-id="{{ worker.id }}"
+                                    data-worker-name="{{ worker.name }}"
+                                >
+                                    <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
+                                    X&#243;a
+                                </button>
+                                {% endif %}
+                            </div>
+                        </td>
+                        {% else %}
+                        <td>
+                            <div class="worker-name-cell">
+                                <p class="worker-name-text text-[13px] font-semibold text-slate-900">{{ worker.name }}</p>
                                 <p class="table-meta">{{ worker.meta_text or worker.manager_name }}</p>
                             </div>
                         </td>
@@ -270,7 +449,7 @@
                                 {{ worker.thread_text }}
                             </span>
                         </td>
-                        <td class="align-middle">
+                        <td class="align-middle worker-actions-cell">
                             <div class="flex flex-wrap items-center justify-end gap-2 xl:flex-nowrap">
                                 {% if worker.actions_disabled %}
                                 <span class="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-500">
@@ -310,6 +489,7 @@
                             </div>
                         </td>
                         {% endif %}
+                        {% endif %}
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -324,6 +504,7 @@
             {% for manager_id in dashboard.selected_manager_ids %}
             <input type="hidden" name="return_manager_ids" value="{{ manager_id }}">
             {% endfor %}
+            <input type="hidden" name="workspace" value="{{ dashboard.workspace_mode }}">
             {% if dashboard.focus_user %}
             <input type="hidden" name="return_user_id" value="{{ dashboard.focus_user.id }}">
             {% endif %}
@@ -391,6 +572,7 @@
             {% for manager_id in dashboard.selected_manager_ids %}
             <input type="hidden" name="return_manager_ids" value="{{ manager_id }}">
             {% endfor %}
+            <input type="hidden" name="workspace" value="{{ dashboard.workspace_mode }}">
             {% if dashboard.focus_user %}
             <input type="hidden" name="return_user_id" value="{{ dashboard.focus_user.id }}">
             {% endif %}
@@ -504,6 +686,7 @@
 <script>
   document.addEventListener('DOMContentLoaded', function () {
     const EMPTY_MANAGER_OPTION_VALUE = '__bot_empty__';
+    const isLiveWorkspace = {{ 'true' if dashboard.workspace_mode == 'live' else 'false' }};
     const table = document.querySelector('table[data-admin-list-table="worker-index"]');
     const tbody = table ? table.querySelector('[data-worker-live-body]') : null;
     const editManagerSelect = document.getElementById('edit-bot-manager-id');
@@ -616,7 +799,7 @@
     function buildManagerQuery(url) {
       const currentParams = new URLSearchParams(window.location.search);
       currentParams.forEach(function (value, key) {
-        if (key === 'manager_ids' || key === 'userId') {
+        if (key === 'manager_ids' || key === 'userId' || key === 'workspace') {
           url.searchParams.append(key, value);
         }
       });
@@ -637,8 +820,12 @@
         worker.ram_text,
         worker.bandwidth_text,
         worker.disk_text,
+        worker.space_text,
         worker.status_label,
         worker.thread_text,
+        worker.live_type_label,
+        worker.live_thread_text,
+        worker.cpu_percent,
         worker.meta_text
       ].filter(Boolean).join(' ');
     }
@@ -696,7 +883,7 @@
       return [
         '<tr data-worker-row-id="', workerId, '" data-search-text="', searchText, '">',
         '  <td class="table-mono text-slate-500">', escapeHtml(worker.index), '</td>',
-        '  <td colspan="11" class="py-3">',
+        '  <td colspan="', String(isLiveWorkspace ? 11 : 11), '" class="py-3">',
         '    <div class="rounded-[18px] border px-4 py-3 ', visual.shell, '">',
         '      <div class="flex items-start gap-3">',
         '        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ', visual.icon, '">',
@@ -723,6 +910,22 @@
       const workerIdParam = encodeURIComponent(String(worker.id || ''));
       const workerNameParam = encodeURIComponent(String(worker.raw_name || worker.name || ''));
       const assignedUserIds = escapeHtml(Array.isArray(worker.assigned_user_ids) ? worker.assigned_user_ids.join(',') : '');
+      if (isLiveWorkspace) {
+        return [
+          '<a href="/admin/bot/userofbot?botId=', workerIdParam, '&botName=', workerNameParam, '&workspace=live" class="action-btn action-btn-sky whitespace-nowrap">',
+          '  <i data-lucide="users" class="h-3.5 w-3.5"></i>',
+          '  DS User',
+          '</a>',
+          '<button type="button" class="action-btn action-btn-emerald whitespace-nowrap" data-dialog-open="edit-bot-dialog" data-worker-id="', workerId, '" data-worker-name="', rawWorkerName, '" data-worker-group="', workerGroup, '" data-manager-id="', managerId, '" data-user-id="', assignedUserId, '" data-user-ids="', assignedUserIds, '">',
+          '  <i data-lucide="pencil" class="h-3.5 w-3.5"></i>',
+          '  S&#7917;a',
+          '</button>',
+          '<button type="button" class="action-btn action-btn-rose whitespace-nowrap" data-delete-bot-button="1" data-worker-id="', workerId, '" data-worker-name="', workerName, '">',
+          '  <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>',
+          '  X&#243;a',
+          '</button>'
+        ].join('');
+      }
       return [
         '<a href="/admin/channel/bot?botId=', workerIdParam, '&botName=', workerNameParam, '" class="action-btn action-btn-sky whitespace-nowrap">',
         '  <i data-lucide="link-2" class="h-3.5 w-3.5"></i>',
@@ -746,18 +949,21 @@
       const workerName = escapeHtml(worker.name);
       const rawWorkerName = escapeHtml(worker.raw_name || worker.name);
       const workerGroup = escapeHtml(worker.group || worker.manager_name || '');
-      const managerName = escapeHtml(worker.manager_name || '-');
       const metaText = escapeHtml(worker.meta_text || worker.manager_name || '-');
       const managerId = escapeHtml(worker.manager_id || '');
       const assignedUserId = escapeHtml(worker.assigned_user_id || '');
       const statusLabel = escapeHtml(worker.status_label);
       const statusClass = escapeHtml(worker.status_class);
       const threadText = escapeHtml(worker.thread_text || '1/1');
+      const liveThreadText = escapeHtml(worker.live_thread_text || threadText);
       const bandwidthText = escapeHtml(worker.bandwidth_text || '0.00KB/s');
       const diskText = escapeHtml(worker.disk_text || '--');
+      const spaceText = escapeHtml(worker.space_text || diskText);
+      const cpuPercent = clampPercent(worker.cpu_percent);
       const createdAt = splitDateTime(worker.created_at);
       const totalChannels = escapeHtml(worker.total_channels || 0);
       const totalUsers = escapeHtml(worker.total_users || 0);
+      const botCellMeta = escapeHtml(worker.manager_name || '--');
       const searchText = escapeHtml(buildWorkerSearchText(worker));
       if (worker.row_dimmed && worker.actions_disabled) {
         return buildCompactOperationRowMarkup(worker, workerId, searchText);
@@ -773,12 +979,31 @@
         assignedUserId
       );
 
+      if (isLiveWorkspace) {
+        return [
+          '<tr data-worker-row-id="', workerId, '" data-search-text="', searchText, '"', rowClass, '>',
+          '  <td class="table-mono text-slate-500">', escapeHtml(worker.index), '</td>',
+          '  <td><div class="min-w-0"><p class="text-[13px] font-semibold text-slate-900">', workerName, '</p><p class="bot-cell-meta">', botCellMeta, '</p></div></td>',
+          '  <td class="text-[12px] font-medium text-slate-700">', workerGroup, '</td>',
+          '  <td><span class="', statusClass, '">', statusLabel, '</span></td>',
+          '  <td class="table-mono text-slate-600"><p>', escapeHtml(createdAt.date), '</p><p class="mt-1 text-[11px] text-slate-500">', escapeHtml(createdAt.time), '</p></td>',
+          '  <td><span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-700">', liveThreadText, '</span></td>',
+          '  <td>', renderCountBadge(totalUsers, 'border-sky-100 bg-sky-50 text-sky-700', 'user'), '</td>',
+          '  <td><p class="table-mono font-semibold text-slate-800">', String(cpuPercent), '%</p></td>',
+          '  <td><p class="table-mono font-semibold text-slate-800">', String(ramPercent), '%</p><p class="mt-1 text-[11px] text-slate-500">', ramText, '</p></td>',
+          '  <td class="table-mono whitespace-nowrap text-[11px] leading-tight tracking-[-0.01em] text-slate-700">', bandwidthText, '</td>',
+          '  <td class="table-mono text-[11px] leading-tight tracking-[-0.01em] text-slate-700">', spaceText, '</td>',
+          '  <td class="align-middle"><div class="flex action-row-nowrap items-center justify-end">', actionsMarkup, '</div></td>',
+          '</tr>'
+        ].join('');
+      }
+
       return [
         '<tr data-worker-row-id="', workerId, '" data-search-text="', searchText, '"', rowClass, '>',
         '  <td class="table-mono text-slate-500">', escapeHtml(worker.index), '</td>',
         '  <td>',
-        '    <div>',
-        '      <p class="text-[13px] font-semibold text-slate-900">', workerName, '</p>',
+        '    <div class="worker-name-cell">',
+        '      <p class="worker-name-text text-[13px] font-semibold text-slate-900">', workerName, '</p>',
         '      <p class="table-meta">', metaText, '</p>',
         '    </div>',
         '  </td>',
@@ -797,7 +1022,7 @@
         '  <td class="table-mono whitespace-nowrap text-[11px] leading-tight tracking-[-0.01em] text-slate-700">', diskText, '</td>',
         '  <td class="table-mono whitespace-nowrap text-[11px] leading-tight tracking-[-0.01em] text-slate-700">', bandwidthText, '</td>',
         '  <td><span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-700">', threadText, '</span></td>',
-        '  <td class="align-middle">',
+        '  <td class="align-middle worker-actions-cell">',
         '    <div class="flex flex-wrap items-center justify-end gap-2 xl:flex-nowrap">',
                  actionsMarkup,
         '    </div>',

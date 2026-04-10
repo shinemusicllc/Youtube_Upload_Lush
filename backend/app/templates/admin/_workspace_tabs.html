@@ -1,0 +1,16 @@
+{% if dashboard.workspace_tabs %}
+<div class="panel overflow-hidden px-5 pt-4">
+    <div class="flex items-center gap-6 overflow-x-auto">
+        {% for item in dashboard.workspace_tabs %}
+        <a href="{{ item.href }}" class="module-tab {% if item.active %}active{% endif %}">{{ item.label }}</a>
+        {% endfor %}
+        {% if dashboard.user_tabs %}
+            {% for item in dashboard.user_tabs %}
+                {% if item.key != 'users' %}
+        <a href="{{ item.href }}" class="module-tab {% if item.active %}active{% endif %}">{{ item.label }}</a>
+                {% endif %}
+            {% endfor %}
+        {% endif %}
+    </div>
+</div>
+{% endif %}

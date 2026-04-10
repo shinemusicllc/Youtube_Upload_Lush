@@ -135,6 +135,11 @@ def _redirect_with_notice(path: str, message: str, level: str = "success", **que
     return RedirectResponse(url=f"{path}?{urlencode(payload)}", status_code=303)
 
 
+def _resolve_admin_workspace(value: str | None) -> str:
+    normalized = str(value or "").strip().lower()
+    return "live" if normalized == "live" else "upload"
+
+
 def _resolve_bot_scope_manager_ids(selected_manager_ids: list[str], focus_user_id: str | None = None) -> list[str]:
     if selected_manager_ids:
         return selected_manager_ids
@@ -154,9 +159,14 @@ def _redirect_bot_page_with_scope(
     manager_ids: list[str] | None = None,
     user_id: str | None = None,
     page: str = "list",
+    workspace: str = "upload",
 ):
     base_path = "/admin/ManagerBOT/index"
-    query: list[tuple[str, str]] = [("notice", message), ("notice_level", level)]
+    query: list[tuple[str, str]] = [
+        ("notice", message),
+        ("notice_level", level),
+        ("workspace", _resolve_admin_workspace(workspace)),
+    ]
     for manager_id in manager_ids or []:
         if manager_id:
             query.append(("manager_ids", manager_id))
@@ -535,6 +545,36 @@ async def user_dashboard(
     )
 
 
+@router.get("/app/live", response_class=HTMLResponse)
+async def user_live_dashboard(
+    request: Request,
+    notice: str | None = None,
+    notice_level: str = "success",
+):
+    current_user = get_app_session_user(request)
+    admin_user = get_admin_session_user(request)
+    if admin_user:
+        query = request.url.query
+        return RedirectResponse(
+            url=f"/admin/live?{query}" if query else "/admin/live",
+            status_code=302,
+        )
+    if not current_user:
+        return RedirectResponse(url="/login?next=/app/live", status_code=302)
+    store.assert_app_session_user(current_user.id, current_user.role)
+    return templates.TemplateResponse(
+        "user_live_dashboard.html",
+        {
+            "request": request,
+            "dashboard": store.get_user_live_workspace_view(
+                user_id=current_user.id,
+                notice=notice,
+                notice_level=notice_level,
+            ),
+        },
+    )
+
+
 @router.get("/auth/google/callback")
 async def google_oauth_callback(
     request: Request,
@@ -601,15 +641,18 @@ async def admin_user_index(
     manager_ids: list[str] = Query(default=[]),
     notice: str | None = None,
     notice_level: str = "success",
+    workspace: str = "upload",
 ):
     current_admin = require_admin_access(request)
     selected_manager_ids = _resolve_manager_ids(request, manager_ids)
+    workspace_mode = _resolve_admin_workspace(workspace)
     dashboard = store.get_admin_user_index_context(
         manager_ids=selected_manager_ids,
         viewer_role=current_admin.role,
         viewer_id=current_admin.id,
         notice=notice,
         notice_level=notice_level,
+        workspace_mode=workspace_mode,
     )
     return _render(request, dashboard)
 
@@ -619,13 +662,16 @@ async def admin_user_create(
     request: Request,
     notice: str | None = None,
     notice_level: str = "success",
+    workspace: str = "upload",
 ):
     current_admin = require_admin_access(request)
+    workspace_mode = _resolve_admin_workspace(workspace)
     dashboard = store.get_admin_user_create_context(
         viewer_role=current_admin.role,
         viewer_id=current_admin.id,
         notice=notice,
         notice_level=notice_level,
+        workspace_mode=workspace_mode,
     )
     if current_admin.role == "manager":
         dashboard["manager_candidates"] = [
@@ -640,6 +686,7 @@ async def admin_user_create(
 async def admin_user_create_submit(request: Request):
     current_admin = require_admin_access(request)
     form = await request.form()
+    workspace_mode = _resolve_admin_workspace(str(form.get("workspace") or "").strip())
     username = str(form.get("username", "")).strip()
     password = str(form.get("password", "")).strip()
     manager_id = _force_manager_binding(current_admin, str(form.get("manager_id", "")).strip() or None)
@@ -658,6 +705,7 @@ async def admin_user_create_submit(request: Request):
             "/admin/user/index",
             f"Đã tạo user {result['username']}.",
             "success",
+            workspace=workspace_mode,
         )
     except ValueError as exc:
         dashboard = store.get_admin_user_create_context(
@@ -669,6 +717,7 @@ async def admin_user_create_submit(request: Request):
             },
             error=str(exc),
             notice_level="error",
+            workspace_mode=workspace_mode,
         )
         if current_admin.role == "manager":
             dashboard["manager_candidates"] = [
@@ -685,9 +734,11 @@ async def admin_user_edit_page(
     userId: str,
     notice: str | None = None,
     notice_level: str = "success",
+    workspace: str = "upload",
 ):
     current_admin = require_admin_access(request)
     _enforce_user_scope(current_admin, userId)
+    workspace_mode = _resolve_admin_workspace(workspace)
     return _render(
         request,
         store.get_admin_user_edit_context(
@@ -696,6 +747,7 @@ async def admin_user_edit_page(
             viewer_id=current_admin.id,
             notice=notice,
             notice_level=notice_level,
+            workspace_mode=workspace_mode,
         ),
     )
 
@@ -704,6 +756,7 @@ async def admin_user_edit_page(
 async def admin_user_update(request: Request):
     current_admin = require_admin_access(request)
     form = await request.form()
+    workspace_mode = _resolve_admin_workspace(str(form.get("workspace") or "").strip())
     user_id = str(form.get("UserId") or form.get("user_id") or "").strip()
     _enforce_user_scope(current_admin, user_id)
     target_user = next((item for item in store.users if item.id == user_id), None)
@@ -712,7 +765,10 @@ async def admin_user_update(request: Request):
     )
     password = str(form.get("Password") or form.get("password") or "").strip() or None
     telegram = str(form.get("TelegramId") or form.get("telegram") or "").strip()
-    manager_id = _force_manager_binding(current_admin, str(form.get("UserIdManager") or form.get("manager_id") or "").strip() or None)
+    manager_id = _force_manager_binding(
+        current_admin,
+        str(form.get("UserIdManager") or form.get("manager_id") or "").strip() or None,
+    )
 
     try:
         updated_user = store.update_admin_user(
@@ -726,9 +782,9 @@ async def admin_user_update(request: Request):
         )
         if current_admin.id == updated_user.id:
             set_admin_session_user(request, AdminSessionUser(**store._build_session_payload(updated_user)))
-        return _redirect_with_notice("/admin/user/index", "Đã cập nhật user.", "success")
+        return _redirect_with_notice("/admin/user/index", "Da cap nhat user.", "success", workspace=workspace_mode)
     except (KeyError, ValueError) as exc:
-        return _redirect_with_notice("/admin/user/index", str(exc), "error")
+        return _redirect_with_notice("/admin/user/index", str(exc), "error", workspace=workspace_mode)
 
 
 @router.post("/admin/user/telegram-link/request")
@@ -765,9 +821,15 @@ async def admin_user_reset_page(
     userId: str,
     notice: str | None = None,
     notice_level: str = "success",
+    workspace: str = "upload",
 ):
     require_admin_access(request)
-    query = {"userId": userId, "notice": notice or "Đổi mật khẩu đã được gộp vào Sửa user.", "notice_level": notice_level}
+    query = {
+        "userId": userId,
+        "notice": notice or "Doi mat khau da duoc gop vao sua user.",
+        "notice_level": notice_level,
+        "workspace": _resolve_admin_workspace(workspace),
+    }
     return RedirectResponse(url=f"/admin/user/edit?{urlencode(query)}", status_code=302)
 
 
@@ -775,27 +837,40 @@ async def admin_user_reset_page(
 async def admin_user_reset_password(request: Request):
     current_admin = require_admin_access(request)
     form = await request.form()
+    workspace_mode = _resolve_admin_workspace(str(form.get("workspace") or "").strip())
     user_id = str(form.get("userId") or form.get("user_id") or "").strip()
     if not user_id:
-        return _redirect_with_notice("/admin/user/index", "Đổi mật khẩu đã được gộp vào Sửa user.", "info")
+        return _redirect_with_notice(
+            "/admin/user/index",
+            "Doi mat khau da duoc gop vao sua user.",
+            "info",
+            workspace=workspace_mode,
+        )
     try:
         _enforce_user_scope(current_admin, user_id)
-        return _redirect_with_notice("/admin/user/edit", "Đổi mật khẩu đã được gộp vào Sửa user.", "info", userId=user_id)
+        return _redirect_with_notice(
+            "/admin/user/edit",
+            "Doi mat khau da duoc gop vao sua user.",
+            "info",
+            userId=user_id,
+            workspace=workspace_mode,
+        )
     except (KeyError, ValueError, WorkerBootstrapError) as exc:
-        return _redirect_with_notice("/admin/user/index", str(exc), "error")
+        return _redirect_with_notice("/admin/user/index", str(exc), "error", workspace=workspace_mode)
 
 
 @router.post("/admin/user/delete")
 async def admin_user_delete(request: Request):
     current_admin = require_admin_access(request)
     form = await request.form()
+    workspace_mode = _resolve_admin_workspace(str(form.get("workspace") or "").strip())
     user_id = str(form.get("userId") or form.get("user_id") or "").strip()
     _enforce_user_scope(current_admin, user_id)
     try:
         store.delete_admin_user(user_id)
-        return _redirect_with_notice("/admin/user/index", "Đã xóa user.", "success")
+        return _redirect_with_notice("/admin/user/index", "Da xoa user.", "success", workspace=workspace_mode)
     except (KeyError, ValueError) as exc:
-        return _redirect_with_notice("/admin/user/index", str(exc), "error")
+        return _redirect_with_notice("/admin/user/index", str(exc), "error", workspace=workspace_mode)
 
 
 @router.get("/admin/user/manager", response_class=HTMLResponse)
@@ -803,11 +878,16 @@ async def admin_manager_list(
     request: Request,
     notice: str | None = None,
     notice_level: str = "success",
+    workspace: str = "upload",
 ):
     require_admin_only(request)
     return _render(
         request,
-        store.get_admin_manager_page_context(notice=notice, notice_level=notice_level),
+        store.get_admin_manager_page_context(
+            notice=notice,
+            notice_level=notice_level,
+            workspace_mode=_resolve_admin_workspace(workspace),
+        ),
     )
 
 
@@ -815,6 +895,7 @@ async def admin_manager_list(
 async def admin_manager_toggle(request: Request):
     current_admin = require_admin_only(request)
     form = await request.form()
+    workspace_mode = _resolve_admin_workspace(str(form.get("workspace") or "").strip())
     try:
         user_id = _resolve_user_id(
             user_id=str(form.get("userId") or "").strip() or None,
@@ -822,9 +903,9 @@ async def admin_manager_toggle(request: Request):
         )
         promote = _resolve_role_action(user_id, "manager", str(form.get("action") or "").strip() or None)
         store.update_role_manager(user_id, promote=promote, updated_by=current_admin.username)
-        return _redirect_with_notice("/admin/user/manager", "Đã cập nhật quyền manager.", "success")
+        return _redirect_with_notice("/admin/user/manager", "Da cap nhat quyen manager.", "success", workspace=workspace_mode)
     except (KeyError, ValueError) as exc:
-        return _redirect_with_notice("/admin/user/manager", str(exc), "error")
+        return _redirect_with_notice("/admin/user/manager", str(exc), "error", workspace=workspace_mode)
 
 
 @router.get("/admin/user/admins", response_class=HTMLResponse)
@@ -832,11 +913,16 @@ async def admin_admins_list(
     request: Request,
     notice: str | None = None,
     notice_level: str = "success",
+    workspace: str = "upload",
 ):
     require_admin_only(request)
     return _render(
         request,
-        store.get_admin_admin_page_context(notice=notice, notice_level=notice_level),
+        store.get_admin_admin_page_context(
+            notice=notice,
+            notice_level=notice_level,
+            workspace_mode=_resolve_admin_workspace(workspace),
+        ),
     )
 
 
@@ -844,6 +930,7 @@ async def admin_admins_list(
 async def admin_admin_toggle(request: Request):
     current_admin = require_admin_only(request)
     form = await request.form()
+    workspace_mode = _resolve_admin_workspace(str(form.get("workspace") or "").strip())
     try:
         user_id = _resolve_user_id(
             user_id=str(form.get("userId") or "").strip() or None,
@@ -851,15 +938,16 @@ async def admin_admin_toggle(request: Request):
         )
         promote = _resolve_role_action(user_id, "admin", str(form.get("action") or "").strip() or None)
         store.update_role_admin(user_id, promote=promote, updated_by=current_admin.username)
-        return _redirect_with_notice("/admin/user/admins", "Đã cập nhật quyền admin.", "success")
+        return _redirect_with_notice("/admin/user/admins", "Da cap nhat quyen admin.", "success", workspace=workspace_mode)
     except (KeyError, ValueError) as exc:
-        return _redirect_with_notice("/admin/user/admins", str(exc), "error")
+        return _redirect_with_notice("/admin/user/admins", str(exc), "error", workspace=workspace_mode)
 
 
 @router.get("/admin/user/managerbot", response_class=HTMLResponse)
 async def admin_user_manager_bot(
     request: Request,
     userId: str,
+    workspace: str = "upload",
     notice: str | None = None,
     notice_level: str = "success",
 ):
@@ -873,6 +961,7 @@ async def admin_user_manager_bot(
             viewer_id=current_admin.id,
             notice=notice,
             notice_level=notice_level,
+            workspace_mode=_resolve_admin_workspace(workspace),
         ),
     )
 
@@ -935,6 +1024,7 @@ async def admin_bot_index(
     userId: str | None = None,
     notice: str | None = None,
     notice_level: str = "success",
+    workspace: str = "upload",
 ):
     current_admin = require_admin_access(request)
     if userId:
@@ -943,6 +1033,7 @@ async def admin_bot_index(
     selected_manager_ids = _resolve_bot_scope_manager_ids(selected_manager_ids, userId)
     if current_admin.role == "manager" and not selected_manager_ids:
         selected_manager_ids = [current_admin.id]
+    workspace_mode = _resolve_admin_workspace(workspace)
     dashboard = store.get_admin_bot_index_context(
         manager_ids=selected_manager_ids,
         viewer_role=current_admin.role,
@@ -950,6 +1041,7 @@ async def admin_bot_index(
         focus_user_id=userId,
         notice=notice,
         notice_level=notice_level,
+        workspace_mode=workspace_mode,
     )
     dashboard["new_worker_defaults"] = {
         "worker_id": store.suggest_next_worker_bootstrap_id(),
@@ -968,6 +1060,7 @@ async def admin_bot_assignment(
     userId: str | None = None,
     notice: str | None = None,
     notice_level: str = "success",
+    workspace: str = "upload",
 ):
     current_admin = require_admin_access(request)
     if userId:
@@ -977,10 +1070,11 @@ async def admin_bot_assignment(
     if current_admin.role == "manager" and not selected_manager_ids:
         selected_manager_ids = [current_admin.id]
     return _redirect_bot_page_with_scope(
-        notice or "Cấp phát BOT đã được gộp vào Danh sách BOT.",
+        notice or "Cap phat BOT da duoc gop vao Danh sach BOT.",
         notice_level or "info",
         manager_ids=selected_manager_ids,
         user_id=userId,
+        workspace=_resolve_admin_workspace(workspace),
     )
 
 
@@ -988,6 +1082,7 @@ async def admin_bot_assignment(
 async def admin_bot_assign(request: Request):
     current_admin = require_admin_access(request)
     form = await request.form()
+    workspace_mode = _resolve_admin_workspace(str(form.get("workspace") or "").strip())
     user_id = str(form.get("user_id") or form.get("UserId") or "").strip() or None
     return_user_id = str(form.get("return_user_id") or "").strip() or None
     return_manager_ids = [str(value).strip() for value in form.getlist("return_manager_ids") if str(value).strip()]
@@ -1001,10 +1096,11 @@ async def admin_bot_assign(request: Request):
         if user_id:
             _enforce_user_scope(current_admin, user_id)
         return _redirect_bot_page_with_scope(
-            "Màn Cấp phát BOT cũ đã được gộp vào Danh sách BOT.",
+            "Man cap phat BOT cu da duoc gop vao Danh sach BOT.",
             "info",
             manager_ids=scoped_manager_ids,
             user_id=redirect_user_id,
+            workspace=workspace_mode,
         )
     except (KeyError, ValueError) as exc:
         return _redirect_bot_page_with_scope(
@@ -1012,6 +1108,7 @@ async def admin_bot_assign(request: Request):
             "error",
             manager_ids=scoped_manager_ids,
             user_id=redirect_user_id,
+            workspace=workspace_mode,
         )
 
 
@@ -1019,6 +1116,7 @@ async def admin_bot_assign(request: Request):
 async def admin_bot_update(request: Request):
     current_admin = require_admin_access(request)
     form = await request.form()
+    workspace_mode = _resolve_admin_workspace(str(form.get("workspace") or "").strip())
     worker_id = str(form.get("Id") or form.get("worker_id") or "").strip()
     _enforce_worker_scope(current_admin, worker_id)
     name = str(form.get("Name") or form.get("name") or "").strip()
@@ -1071,10 +1169,11 @@ async def admin_bot_update(request: Request):
             updated_by=current_admin.username,
         )
         return _redirect_bot_page_with_scope(
-            "Đã cập nhật BOT.",
+            "Da cap nhat BOT.",
             "success",
             manager_ids=return_manager_ids,
             user_id=return_user_id,
+            workspace=workspace_mode,
         )
     except (KeyError, ValueError) as exc:
         return _redirect_bot_page_with_scope(
@@ -1082,6 +1181,7 @@ async def admin_bot_update(request: Request):
             "error",
             manager_ids=return_manager_ids,
             user_id=return_user_id,
+            workspace=workspace_mode,
         )
 
 
@@ -1089,6 +1189,7 @@ async def admin_bot_update(request: Request):
 async def admin_bot_create(request: Request):
     current_admin = require_admin_access(request)
     form = await request.form()
+    workspace_mode = _resolve_admin_workspace(str(form.get("workspace") or "").strip())
     vps_ip = str(form.get("vps_ip") or "").strip()
     ssh_user = str(form.get("ssh_user") or "").strip() or "root"
     return_user_id = str(form.get("return_user_id") or "").strip() or None
@@ -1131,6 +1232,7 @@ async def admin_bot_create(request: Request):
             "success",
             manager_ids=return_manager_ids,
             user_id=return_user_id,
+            workspace=workspace_mode,
         )
     except (WorkerBootstrapError, ValueError) as exc:
         return _redirect_bot_page_with_scope(
@@ -1138,6 +1240,7 @@ async def admin_bot_create(request: Request):
             "error",
             manager_ids=return_manager_ids,
             user_id=return_user_id,
+            workspace=workspace_mode,
         )
 
 
@@ -1145,6 +1248,7 @@ async def admin_bot_create(request: Request):
 async def admin_bot_delete(request: Request):
     current_admin = require_admin_access(request)
     form = await request.form()
+    workspace_mode = _resolve_admin_workspace(str(form.get("workspace") or "").strip())
     worker_id = str(form.get("Id") or form.get("worker_id") or "").strip()
     _enforce_worker_scope(current_admin, worker_id)
     return_user_id = str(form.get("return_user_id") or "").strip() or None
@@ -1200,6 +1304,7 @@ async def admin_bot_delete(request: Request):
             "success",
             manager_ids=return_manager_ids,
             user_id=return_user_id,
+            workspace=workspace_mode,
         )
     except (KeyError, ValueError) as exc:
         return _redirect_bot_page_with_scope(
@@ -1207,6 +1312,7 @@ async def admin_bot_delete(request: Request):
             "error",
             manager_ids=return_manager_ids,
             user_id=return_user_id,
+            workspace=workspace_mode,
         )
 
 
@@ -1215,17 +1321,47 @@ async def admin_bot_delete(request: Request):
 async def admin_bot_update_thread(request: Request):
     current_admin = require_admin_access(request)
     form = await request.form()
+    workspace_mode = _resolve_admin_workspace(str(form.get("workspace") or "").strip())
     worker_id = str(form.get("Id") or form.get("worker_id") or "").strip()
     try:
         if worker_id:
             _enforce_worker_scope(current_admin, worker_id)
         return _redirect_with_notice(
             "/admin/ManagerBOT/index",
-            "Thiết lập luồng BOT cũ đã được bỏ khỏi UI điều phối hiện tại.",
+            "Thiet lap luong BOT cu da duoc bo khoi UI dieu phoi hien tai.",
             "info",
+            workspace=workspace_mode,
         )
     except (KeyError, ValueError) as exc:
-        return _redirect_with_notice("/admin/ManagerBOT/index", str(exc), "error")
+        return _redirect_with_notice("/admin/ManagerBOT/index", str(exc), "error", workspace=workspace_mode)
+
+
+@router.get("/admin/live", response_class=HTMLResponse)
+async def admin_live_index(
+    request: Request,
+    manager_ids: list[str] = Query(default=[]),
+    notice: str | None = None,
+    notice_level: str = "success",
+):
+    current_admin = require_admin_access(request)
+    selected_manager_ids = _resolve_manager_ids(request, manager_ids)
+    dashboard = store.get_admin_live_workspace_context(
+        manager_ids=selected_manager_ids,
+        viewer_role=current_admin.role,
+        viewer_id=current_admin.id,
+        notice=notice,
+        notice_level=notice_level,
+    )
+    return _render(request, dashboard)
+
+
+@router.get("/admin/live/index")
+async def admin_live_index_legacy(request: Request):
+    query = request.url.query
+    return RedirectResponse(
+        url=f"/admin/live?{query}" if query else "/admin/live",
+        status_code=302,
+    )
 
 
 @router.get("/admin/bot/user", response_class=HTMLResponse)
@@ -1235,6 +1371,7 @@ async def admin_bot_of_user(
     username: str | None = None,
     notice: str | None = None,
     notice_level: str = "success",
+    workspace: str = "upload",
 ):
     current_admin = require_admin_access(request)
     _enforce_user_scope(current_admin, userId)
@@ -1246,6 +1383,7 @@ async def admin_bot_of_user(
             viewer_id=current_admin.id,
             notice=notice,
             notice_level=notice_level,
+            workspace_mode=_resolve_admin_workspace(workspace),
         ),
     )
 
@@ -1257,6 +1395,7 @@ async def admin_user_of_bot(
     botName: str | None = None,
     notice: str | None = None,
     notice_level: str = "success",
+    workspace: str = "upload",
 ):
     current_admin = require_admin_access(request)
     _enforce_worker_scope(current_admin, botId)
@@ -1268,6 +1407,7 @@ async def admin_user_of_bot(
             viewer_id=current_admin.id,
             notice=notice,
             notice_level=notice_level,
+            workspace_mode=_resolve_admin_workspace(workspace),
         ),
     )
 
@@ -1278,6 +1418,7 @@ async def admin_channel_index(
     manager_ids: list[str] = Query(default=[]),
     userId: str | None = None,
     botId: str | None = None,
+    workspace: str = "upload",
     notice: str | None = None,
     notice_level: str = "success",
 ):
@@ -1297,6 +1438,7 @@ async def admin_channel_index(
             viewer_id=current_admin.id,
             notice=notice,
             notice_level=notice_level,
+            workspace_mode=_resolve_admin_workspace(workspace),
         ),
     )
 
@@ -1508,10 +1650,12 @@ async def admin_channel_delete_ajax(request: Request, id: str | None = None):
 async def admin_render_index(
     request: Request,
     manager_ids: list[str] = Query(default=[]),
+    workspace: str = "upload",
     notice: str | None = None,
     notice_level: str = "success",
 ):
     current_admin = require_admin_access(request)
+    workspace_mode = _resolve_admin_workspace(workspace)
     selected_manager_ids = _resolve_manager_ids(request, manager_ids)
     return _render(
         request,
@@ -1521,6 +1665,7 @@ async def admin_render_index(
             viewer_id=current_admin.id,
             notice=notice,
             notice_level=notice_level,
+            workspace_mode=workspace_mode,
         ),
     )
 
@@ -1531,11 +1676,13 @@ async def admin_render_of_channel(
     channelId: str,
     channelName: str | None = None,
     manager_ids: list[str] = Query(default=[]),
+    workspace: str = "upload",
     notice: str | None = None,
     notice_level: str = "success",
 ):
     current_admin = require_admin_access(request)
     _enforce_channel_scope(current_admin, channelId)
+    workspace_mode = _resolve_admin_workspace(workspace)
     selected_manager_ids = _resolve_manager_ids(request, manager_ids)
     return _render(
         request,
@@ -1546,6 +1693,7 @@ async def admin_render_of_channel(
             viewer_id=current_admin.id,
             notice=notice,
             notice_level=notice_level,
+            workspace_mode=workspace_mode,
         ),
     )
 

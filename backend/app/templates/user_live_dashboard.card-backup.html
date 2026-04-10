@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ dashboard.page_title | e }}</title>
+  <link rel="icon" type="image/svg+xml" href="{{ request.url_for('static', path='brand/site-favicon.svg') }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              500: '#6b74f0',
+              600: '#5d67df',
+              700: '#4b56c9',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            display: ['Be Vietnam Pro', 'sans-serif'],
+            mono: ['IBM Plex Mono', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/vn.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    .datetime-field { position: relative; }
+    .datetime-field-input { padding-left: 16px !important; padding-right: 48px !important; }
+    .datetime-field-icon {
+      position: absolute; top: 1px; right: 1px; bottom: 1px; width: 48px; display: flex; align-items: center; justify-content: center;
+      background: white; color: rgb(148 163 184); border-left: 1px solid rgb(226 232 240); border-top-right-radius: 7px; border-bottom-right-radius: 7px; pointer-events: none;
+    }
+    .flatpickr-calendar { border: 1px solid rgb(226 232 240); box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08); border-radius: 10px; }
+    .elevated-card-panel {
+      background: linear-gradient(180deg, #ffffff 0%, #fefefe 100%); border-radius: 16px; border: 1px solid rgba(203, 213, 225, 0.6);
+      box-shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.05), 0 10px 15px -3px rgba(15, 23, 42, 0.03), 0 20px 25px -5px rgba(15, 23, 42, 0.02); position: relative;
+    }
+    .elevated-card-panel::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.8), transparent); z-index: 10; border-radius: 16px 16px 0 0;
+    }
+    .elevated-card { background: white; border-radius: 16px; border: 1px solid rgba(226, 232, 240, 0.7); box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04), 0 4px 14px rgba(15, 23, 42, 0.04); }
+    .nav-item { border-radius: 8px; margin: 0 12px; padding: 10px 14px; transition: all 0.15s ease; }
+    .nav-item:hover { background: rgba(93, 103, 223, 0.06); }
+    .nav-item.active { background: linear-gradient(135deg, #5d67df 0%, #4b56c9 100%); color: white; box-shadow: 0 2px 8px rgba(93, 103, 223, 0.3); }
+    .nav-item.active i, .nav-item.active span { color: white !important; }
+    body.admin-shell .nav-item { display: flex; align-items: center; gap: 12px; margin: 0 12px; padding: 10px 14px; border-radius: 10px; color: rgb(71 85 105); transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease; }
+    body.admin-shell .nav-item:hover { background: rgb(248 250 252); color: rgb(15 23 42); }
+    body.admin-shell .nav-item.active { background: linear-gradient(135deg, #5d67df 0%, #4b56c9 100%); color: #ffffff; box-shadow: 0 8px 18px rgba(93, 103, 223, 0.18); }
+    body.admin-shell .nav-item.active i, body.admin-shell .nav-item.active span { color: #ffffff !important; }
+    .frosted-header { background: rgba(255,255,255,0.82); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid rgba(226,232,240,0.6); box-shadow: 0 1px 3px rgba(15,23,42,0.03); }
+    .kpi-card:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(15,23,42,0.08), 0 1px 4px rgba(15,23,42,0.04); }
+    .panel-input { height: 42px; }
+    .panel-action-button { min-height: 40px; align-items: center; justify-content: center; }
+    .live-config-grid { display: grid; gap: 20px; grid-template-columns: minmax(0, 1.18fr) minmax(320px, 0.98fr); }
+    .live-config-section { min-width: 0; display: flex; flex-direction: column; }
+    .config-subcard {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      height: 100%;
+      padding: 18px;
+      border: 1px solid rgba(226, 232, 240, 0.95);
+      border-radius: 16px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.92) 100%);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.78);
+    }
+    .config-subcard-title {
+      margin-bottom: -2px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgb(100 116 139);
+    }
+    @media (max-width: 1180px) {
+      .live-config-grid { grid-template-columns: 1fr; }
+    }
+    .render-table thead th { position: relative; }
+    .render-table tbody td { vertical-align: middle; }
+    .render-table thead th:not(:last-child)::after { content: ''; position: absolute; right: 0; top: 50%; width: 1px; height: 20px; background: rgb(226 232 240); transform: translateY(-50%); }
+    .sortable-button { width: 100%; display: inline-flex; align-items: center; gap: 4px; color: rgb(71 85 105); font-size: 11px; font-weight: 600; letter-spacing: 0.02em; background: transparent; border: 0; padding: 0; }
+    .sortable-button.center { justify-content: center; }
+    .sortable-button.end { justify-content: flex-end; }
+    .sort-arrows { display: inline-flex; align-items: center; gap: 0; color: rgb(148 163 184); line-height: 1; }
+    .live-cover { width: 96px; aspect-ratio: 4 / 3; border-radius: 14px; overflow: hidden; border: 1px solid rgb(226 232 240); background: linear-gradient(135deg, rgb(15 23 42) 0%, rgb(30 41 59) 100%); position: relative; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+    .live-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .live-cover::after { content: ''; position: absolute; inset-inline: 0; bottom: 0; height: 2px; background: rgb(93 103 223); }
+    .live-cover-empty { font-size: 10px; font-weight: 700; letter-spacing: 0.16em; color: rgba(255,255,255,0.84); }
+    .table-meta { font-size: 11px; line-height: 1.4; color: rgb(100 116 139); }
+  </style>
+</head>
+<body class="font-sans antialiased text-slate-800 bg-[#f3f5f9] min-h-screen flex overflow-hidden{% if dashboard.admin_shell %} admin-shell{% endif %}">
+  <aside class="w-64 {% if dashboard.admin_shell %}bg-white border-r border-slate-200{% else %}bg-gradient-to-b from-white to-slate-50/80 border-r border-slate-200/70{% endif %} flex flex-col shrink-0 z-10 hidden md:flex">
+    <div class="h-16 flex items-center px-6 border-b border-slate-200">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 text-[#ff5528] flex items-center justify-center shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" class="w-10 h-10" aria-hidden="true">
+            <g fill="currentColor">
+              <path d="M58 22c-7 0-12 5-12 12v116c0 56 45 102 101 102h54c7 0 12-5 12-12s-5-12-12-12h-54c-43 0-77-35-77-78V34c0-7-5-12-12-12z"/>
+              <path d="M106 66c0-5 3-9 8-11 5-2 10-1 14 3l34 35 34-35c3-4 9-5 14-3 5 2 8 6 8 11v109c0 7-5 12-12 12s-12-5-12-12V95l-24 24c-5 5-12 5-17 0l-24-24v80c0 7-5 12-12 12s-12-5-12-12V66z"/>
+              <rect x="181" y="119" width="14" height="78" rx="7"/>
+              <circle cx="188" cy="205" r="28"/>
+            </g>
+          </svg>
+        </div>
+        <div>
+          <p class="font-display font-bold text-[17px] text-slate-900 tracking-tight leading-none">{{ dashboard.app_name | e }}</p>
+          <p class="text-[11px] text-slate-500 mt-1">{{ dashboard.workspace_label | e }}</p>
+        </div>
+      </div>
+    </div>
+
+    <nav class="flex-1 py-4 overflow-y-auto">
+      {% if dashboard.admin_shell %}
+      <div class="mb-2 px-6"><p class="text-[11px] font-medium text-slate-400">Điều hướng</p></div>
+      <div class="space-y-0.5">
+      {% else %}
+      <div class="space-y-0.5 px-3">
+      {% endif %}
+        {% for item in dashboard.nav_items %}
+        <a href="{{ item.href | e }}" class="nav-item {% if dashboard.active_page == item.key %}active{% endif %}{% if not dashboard.admin_shell %} flex items-center gap-3{% endif %}">
+          <i data-lucide="{{ item.icon | e }}" class="{% if dashboard.admin_shell %}h-4 w-4{% else %}w-4 h-4{% endif %}"></i>
+          <span class="text-[13px] {% if dashboard.active_page == item.key %}font-semibold{% else %}font-medium{% endif %}">{{ item.label | e }}</span>
+        </a>
+        {% endfor %}
+      </div>
+    </nav>
+
+    <div class="border-t border-slate-200 p-4">
+      <div class="flex items-center gap-3 {% if dashboard.admin_shell %}rounded-xl{% else %}rounded-md hover:bg-slate-50 cursor-pointer transition-colors{% endif %} px-2 py-2">
+        <div class="{% if dashboard.admin_shell %}flex h-10 w-10{% else %}w-9 h-9{% endif %} rounded-full bg-slate-100 flex items-center justify-center shrink-0">
+          <i data-lucide="{% if dashboard.admin_shell %}shield{% else %}user{% endif %}" class="w-4 h-4 text-slate-500"></i>
+        </div>
+        <div class="{% if dashboard.admin_shell %}min-w-0{% else %}overflow-hidden{% endif %}">
+          <p class="text-[13px] font-semibold text-slate-900 truncate">{{ dashboard.user_name | e }}</p>
+          <p class="text-[11px] text-slate-500 truncate">{% if dashboard.admin_shell %}{{ dashboard.user_role | capitalize | e }}{% else %}{{ dashboard.user_role | e }}{% endif %}</p>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="min-w-0 flex-1 flex flex-col h-screen relative overflow-x-hidden">
+    <header class="frosted-header h-16 flex items-center justify-between px-8 shrink-0 relative z-10">
+      <div class="flex items-center gap-2 text-[13px]">
+        <i data-lucide="panel-top-open" class="w-4 h-4 text-brand-600"></i>
+        <span class="font-medium text-slate-900">Điều phối live</span>
+      </div>
+      <form method="post" action="{{ dashboard.logout_path | default('/logout') }}">
+        <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 text-[13px] font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-slate-300 hover:shadow-sm transition-all">
+          <i data-lucide="log-out" class="w-4 h-4 text-slate-500"></i>
+          Đăng xuất
+        </button>
+      </form>
+    </header>
+
+    <div class="min-w-0 flex-1 overflow-y-auto w-full pb-16">
+      <div class="min-w-0 w-full px-8 py-6 space-y-6">
+        {% if dashboard.notice %}
+        <div class="elevated-card px-5 py-4 border transition-all duration-200 {% if dashboard.notice_level == 'error' %}border-rose-200 bg-rose-50/80{% else %}border-emerald-200 bg-emerald-50/80{% endif %}">
+          <div class="flex items-start gap-3">
+            <div class="mt-0.5 {% if dashboard.notice_level == 'error' %}text-rose-600{% else %}text-emerald-600{% endif %}">
+              <i data-lucide="{% if dashboard.notice_level == 'error' %}shield-alert{% else %}circle-check{% endif %}" class="w-4 h-4"></i>
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="text-[13px] font-semibold {% if dashboard.notice_level == 'error' %}text-rose-700{% else %}text-emerald-700{% endif %}">{{ dashboard.notice | e }}</p>
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
+        <div class="elevated-card grid grid-cols-5 divide-x divide-slate-200/70 overflow-hidden">
+          {% for kpi in dashboard.kpis %}
+          <div class="kpi-card relative px-6 py-5 text-center">
+            <div class="flex items-center justify-center gap-2 mb-3">
+              <p class="text-slate-500 text-[12px] font-medium">{{ kpi.label | e }}</p>
+              <i data-lucide="{{ kpi.icon | e }}" class="w-3.5 h-3.5 {{ kpi.icon_class | e }}"></i>
+            </div>
+            <p class="text-[28px] font-display font-bold {{ (kpi.value_class or kpi.accent_class) | e }} leading-none tracking-tight">{{ kpi.value }}</p>
+            <p class="text-[11px] font-semibold {{ (kpi.accent_class or kpi.value_class) | e }} mt-2.5">{{ kpi.accent | e }}</p>
+            <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-12 h-[3px] rounded-full {{ kpi.bar_class | e }}"></div>
+          </div>
+          {% endfor %}
+        </div>
+        <form class="elevated-card-panel overflow-visible" onsubmit="return false;">
+          <div class="p-6 flex flex-col relative bg-gradient-to-br from-white via-brand-50/10 to-white shadow-[inset_0_4px_24px_rgba(93,103,223,0.02)] rounded-2xl">
+            <div class="absolute top-0 left-6 h-1 w-16 bg-brand-500 rounded-b-full"></div>
+            <div class="flex items-start gap-3 pb-4 border-b border-slate-100/80 mb-6">
+              <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-50 to-white border border-brand-100/50 shadow-sm flex items-center justify-center shrink-0">
+                <i data-lucide="radio" class="w-5 h-5 text-brand-600"></i>
+              </div>
+              <div>
+                <h3 class="font-display font-bold text-[16px] text-slate-900 tracking-tight">{{ dashboard.live_config.title | e }}</h3>
+                <p class="text-[11px] text-slate-500 mt-0.5">{{ dashboard.live_config.description | e }}</p>
+              </div>
+            </div>
+
+            <div class="live-config-grid flex-1">
+              <div class="live-config-section">
+                <div class="config-subcard">
+                  <p class="config-subcard-title">Nguồn phát</p>
+                  <div>
+                    <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">Tên luồng live</label>
+                    <input type="text" value="{{ dashboard.live_form.stream_name | e }}" placeholder="Nhập tên luồng..." class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-4 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 placeholder:text-slate-400 text-[13px] transition-all shadow-sm shadow-slate-100/50">
+                  </div>
+                  <div>
+                    <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">Link video nguồn</label>
+                    <input type="text" value="{{ dashboard.live_form.video_url | e }}" placeholder="Dán link video live..." class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-4 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 placeholder:text-slate-400 text-[13px] transition-all shadow-sm shadow-slate-100/50">
+                  </div>
+                  <div>
+                    <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">Link audio</label>
+                    <input type="text" value="{{ dashboard.live_form.audio_url | e }}" placeholder="Tùy chọn: nhạc nền hoặc audio riêng..." class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-4 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 placeholder:text-slate-400 text-[13px] transition-all shadow-sm shadow-slate-100/50">
+                  </div>
+                </div>
+              </div>
+
+              <div class="live-config-section">
+                <div class="config-subcard">
+                  <p class="config-subcard-title">BOT và lên lịch</p>
+                  <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div>
+                      <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">BOT chính</label>
+                      <select class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-4 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 text-[13px] transition-all shadow-sm shadow-slate-100/50">
+                        <option value="">-- Chọn BOT live --</option>
+                        {% for worker in dashboard.live_workers %}
+                        <option value="{{ worker.id | e }}">{{ worker.name | e }} &bull; {{ worker.manager_name | e }}</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <div>
+                      <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">BOT backup</label>
+                      <select class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-4 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 text-[13px] transition-all shadow-sm shadow-slate-100/50">
+                        <option value="">-- Tùy chọn --</option>
+                        {% for worker in dashboard.live_workers %}
+                        <option value="{{ worker.id | e }}">{{ worker.name | e }} &bull; {{ worker.manager_name | e }}</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div>
+                      <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">Delay backup (phút)</label>
+                      <input type="number" min="0" value="{{ dashboard.live_form.backup_delay_minutes }}" class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-4 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 text-[13px] transition-all shadow-sm shadow-slate-100/50">
+                    </div>
+                    <div>
+                      <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">Stream key</label>
+                      <input type="text" value="{{ dashboard.live_form.stream_key | e }}" placeholder="Nhập stream key YouTube..." class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-4 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 placeholder:text-slate-400 text-[13px] transition-all shadow-sm shadow-slate-100/50">
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div>
+                      <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">Bắt đầu live</label>
+                      <div class="datetime-field">
+                        <input type="text" value="{{ dashboard.live_form.start_at | e }}" data-live-datetime placeholder="dd/mm/yyyy HH:mm" class="datetime-field-input panel-input w-full bg-white border border-slate-200 text-slate-700 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 shadow-sm shadow-slate-100/50 text-[12px] transition-all text-center font-mono">
+                        <span class="datetime-field-icon"><i data-lucide="calendar-days" class="w-[15px] h-[15px]"></i></span>
+                      </div>
+                    </div>
+                    <div>
+                      <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">Kết thúc live</label>
+                      <div class="datetime-field">
+                        <input type="text" value="{{ dashboard.live_form.end_at | e }}" data-live-datetime placeholder="dd/mm/yyyy HH:mm" class="datetime-field-input panel-input w-full bg-white border border-slate-200 text-slate-700 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 shadow-sm shadow-slate-100/50 text-[12px] transition-all text-center font-mono">
+                        <span class="datetime-field-icon"><i data-lucide="calendar-days" class="w-[15px] h-[15px]"></i></span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-auto border-t border-slate-100/80 pt-4">
+              <div class="flex items-center justify-end gap-2">
+                <button type="reset" class="panel-action-button inline-flex min-w-[108px] px-4 bg-white hover:bg-slate-50 text-slate-600 font-semibold transition-all border border-slate-200 rounded-lg text-[13px] hover:shadow-sm">Đặt lại</button>
+                <button type="submit" class="panel-action-button inline-flex min-w-[132px] bg-gradient-to-tr from-brand-600 to-brand-500 hover:from-brand-700 hover:to-brand-600 text-white font-semibold px-6 rounded-lg transition-transform text-[13px] whitespace-nowrap shadow-[0_8px_16px_rgba(93,103,223,0.18)] hover:shadow-[0_10px_18px_rgba(93,103,223,0.24)]">Tạo luồng live</button>
+              </div>
+            </div>
+          </div>
+        </form>
+
+        <div class="elevated-card mt-3 flex flex-col overflow-hidden">
+          <div class="px-5 border-b border-slate-200/80 flex items-center justify-between gap-5">
+            <div class="flex items-center gap-6 overflow-x-auto">
+              {% for tab in dashboard.live_tabs %}
+              <button type="button" class="px-1 py-4 text-[14px] {% if tab.active %}font-semibold text-brand-700 border-b-2 border-brand-600{% else %}font-medium text-slate-500 hover:text-slate-900 border-b-2 border-transparent{% endif %} whitespace-nowrap transition-colors">{{ tab.label | e }} ({{ tab.count }})</button>
+              {% endfor %}
+            </div>
+            <div class="relative w-full max-w-[320px] shrink-0 hidden md:block">
+              <i data-lucide="search" class="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"></i>
+              <input id="liveJobSearchInput" type="text" placeholder="Tìm kiếm nhanh..." class="w-full bg-slate-50 border border-slate-200 text-slate-900 pl-10 pr-4 py-2 rounded-lg outline-none focus:bg-white focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 text-[13px] transition-all">
+            </div>
+          </div>
+
+          <div class="min-w-0 overflow-x-auto w-full">
+            <table class="render-table w-full text-left text-sm whitespace-nowrap">
+              <thead class="text-slate-600 text-[11px] font-semibold tracking-wide bg-slate-50/70">
+                <tr>
+                  <th class="px-4 py-4 border-b border-slate-200 w-16 text-center"><button type="button" class="sortable-button center">STT <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
+                  <th class="px-6 py-4 border-b border-slate-200 w-[28%]"><button type="button" class="sortable-button">Thông tin stream <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
+                  <th class="px-6 py-4 border-b border-slate-200"><button type="button" class="sortable-button">Kênh <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
+                  <th class="px-6 py-4 border-b border-slate-200"><button type="button" class="sortable-button">BOT live <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
+                  <th class="px-6 py-4 border-b border-slate-200"><button type="button" class="sortable-button">Timeline <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
+                  <th class="px-6 py-4 border-b border-slate-200"><button type="button" class="sortable-button">Trạng thái <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
+                  <th class="px-6 py-4 border-b border-slate-200 text-right"><button type="button" class="sortable-button end">Tác vụ <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
+                </tr>
+              </thead>
+              <tbody id="liveStreamTableBody" class="divide-y divide-slate-200/70 text-slate-700">
+                {% if dashboard.live_stream_rows %}
+                {% for stream in dashboard.live_stream_rows %}
+                <tr class="hover:bg-slate-50 transition-colors" data-stream-search="{{ (stream.title ~ ' ' ~ stream.channel_name ~ ' ' ~ stream.bot_name) | lower | e }}">
+                  <td class="px-4 py-5 text-center font-mono text-[13px] text-slate-500">{{ stream.index }}</td>
+                  <td class="px-6 py-5"><div class="flex items-center gap-3 min-w-0"><div class="live-cover">{% if stream.cover_url %}<img src="{{ stream.cover_url | e }}" alt="{{ stream.title | e }}" loading="lazy" referrerpolicy="no-referrer">{% else %}<span class="live-cover-empty">{{ stream.cover_initials | default('LIVE', true) | e }}</span>{% endif %}</div><div class="min-w-0 flex-1 max-w-[340px]"><p class="text-[11px] font-bold uppercase tracking-[0.18em] text-rose-500">Live</p><p class="font-semibold text-brand-700 text-[15px] leading-[1.4] truncate" title="{{ stream.title | e }}">{{ stream.title | e }}</p><p class="mt-1 text-[11px] text-slate-600 truncate">{{ stream.stream_name | e }}</p><p class="mt-1 text-[11px] text-slate-500 truncate">Video: {{ stream.video_label | e }}</p></div></div></td>
+                  <td class="px-6 py-4"><div class="flex items-center gap-3"><span class="w-7 h-7 bg-emerald-800 text-white rounded-[4px] inline-flex items-center justify-center text-[10px] font-bold shrink-0">{{ stream.channel_avatar | e }}</span><div class="min-w-0"><p class="text-[12px] font-bold text-slate-900 leading-none mb-1 truncate">{{ stream.channel_name | e }}</p><p class="text-[10px] text-emerald-600 font-medium">{{ stream.channel_meta | e }}</p></div></div></td>
+                  <td class="px-6 py-4"><div class="min-w-0"><p class="font-bold text-[12px] text-slate-900 leading-none mb-1 truncate">{{ stream.bot_name | e }}</p><p class="text-[10px] text-brand-600 truncate">{{ stream.bot_backup_name | default('Không dùng backup', true) | e }}</p></div></td>
+                  <td class="px-6 py-4 text-[10px] text-slate-500 font-mono leading-relaxed"><p class="truncate"><span class="text-slate-500">Bắt đầu:</span> <span class="text-slate-700">{{ stream.start_time_text | e }}</span></p><p class="truncate mt-0.5"><span class="text-slate-500">Kết thúc:</span> <span class="text-slate-700">{{ stream.end_time_text | e }}</span></p><p class="truncate mt-0.5"><span class="text-slate-500">Delay:</span> <span class="text-slate-700">{{ stream.duration_text | e }}</span></p></td>
+                  <td class="px-6 py-4"><span class="{{ stream.status_class | e }} inline-flex justify-center items-center px-2.5 py-1 text-[10px] font-bold border rounded-full whitespace-nowrap">{{ stream.status_label | e }}</span></td>
+                  <td class="px-6 py-4 text-right"><div class="flex flex-nowrap items-center justify-end gap-2 whitespace-nowrap"><button type="button" class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 rounded-lg hover:bg-emerald-100 hover:text-emerald-900 hover:shadow-sm transition-all"><i data-lucide="eye" class="w-3 h-3"></i> Xem</button><button type="button" class="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 hover:text-amber-800 hover:shadow-sm transition-all"><i data-lucide="square" class="w-3 h-3"></i> Dừng</button></div></td>
+                </tr>
+                {% endfor %}
+                {% else %}
+                <tr data-live-empty-row>
+                  <td colspan="7" class="px-6 py-14 text-center">
+                    <div class="mx-auto max-w-[640px]">
+                      <div class="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-400"><i data-lucide="radio" class="h-6 w-6"></i></div>
+                      <p class="text-[15px] font-semibold text-slate-900">Chưa có luồng live nào</p>
+                      <p class="mt-2 text-[13px] leading-6 text-slate-500">Màn điều phối live đã được đưa vào đúng user workspace. Anh có thể rà tiếp bố cục form, bảng cover và các field cấu hình trước khi nối runtime thật.</p>
+                    </div>
+                  </td>
+                </tr>
+                {% endif %}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="px-5 py-4 border-t border-slate-200 flex items-center justify-between gap-4">
+            <p class="text-[13px] text-slate-500">{{ dashboard.live_summary | e }}</p>
+            <div class="flex items-center gap-2">
+              <button type="button" disabled class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-400"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
+              <button type="button" class="inline-flex h-9 min-w-[38px] items-center justify-center rounded-lg bg-brand-600 px-3 text-[12px] font-semibold text-white">1</button>
+              <button type="button" disabled class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-400"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    if (window.lucide) window.lucide.createIcons();
+    if (window.flatpickr) {
+      document.querySelectorAll('[data-live-datetime]').forEach((node) => {
+        window.flatpickr(node, { enableTime: true, dateFormat: 'd/m/Y H:i', time_24hr: true, locale: window.flatpickr?.l10ns?.vn || 'vn' });
+      });
+    }
+    const liveJobSearchInput = document.getElementById('liveJobSearchInput');
+    const liveStreamTableBody = document.getElementById('liveStreamTableBody');
+    if (liveJobSearchInput && liveStreamTableBody) {
+      liveJobSearchInput.addEventListener('input', () => {
+        const query = liveJobSearchInput.value.trim().toLowerCase();
+        liveStreamTableBody.querySelectorAll('tr[data-stream-search]').forEach((row) => {
+          const haystack = String(row.getAttribute('data-stream-search') || '').toLowerCase();
+          row.classList.toggle('hidden', Boolean(query) && !haystack.includes(query));
+        });
+      });
+    }
+  </script>
+</body>
+</html>

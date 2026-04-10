@@ -1,0 +1,517 @@
+{% extends "admin/_layout.html" %}
+
+{% block content %}
+<section class="space-y-6">
+    <style>
+        .live-workspace-grid {
+            display: grid;
+            gap: 24px;
+        }
+
+        @media (min-width: 1280px) {
+            .live-workspace-grid {
+                grid-template-columns: minmax(0, 1.65fr) 360px;
+            }
+        }
+
+        .live-form-grid {
+            display: grid;
+            gap: 18px;
+        }
+
+        .live-inline-grid {
+            display: grid;
+            gap: 18px;
+        }
+
+        @media (min-width: 768px) {
+            .live-inline-grid.two {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .live-inline-grid.bot {
+                grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 124px;
+            }
+        }
+
+        .live-stack-note {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            border: 1px solid rgb(224 231 255);
+            background: rgb(238 242 255);
+            color: rgb(67 56 202);
+            border-radius: 10px;
+            padding: 9px 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .live-scope-card {
+            border: 1px solid rgb(226 232 240);
+            border-radius: 14px;
+            background: white;
+            padding: 16px 18px;
+        }
+
+        .live-scope-stat {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+
+        .live-scope-icon {
+            display: inline-flex;
+            width: 38px;
+            height: 38px;
+            align-items: center;
+            justify-content: center;
+            border-radius: 12px;
+            background: rgb(248 250 252);
+            color: rgb(71 85 105);
+            flex-shrink: 0;
+        }
+
+        .live-bot-item + .live-bot-item {
+            border-top: 1px solid rgb(241 245 249);
+            margin-top: 12px;
+            padding-top: 12px;
+        }
+
+        .live-policy-list {
+            display: grid;
+            gap: 10px;
+        }
+
+        .live-policy-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            color: rgb(51 65 85);
+            font-size: 13px;
+            line-height: 1.55;
+        }
+
+        .live-stream-cover {
+            width: 72px;
+            height: 48px;
+            border-radius: 12px;
+            overflow: hidden;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            background: linear-gradient(135deg, rgb(241 245 249), rgb(226 232 240));
+            color: rgb(71 85 105);
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .live-stream-cover img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .live-stream-empty {
+            display: flex;
+            min-height: 240px;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            padding: 28px 18px;
+            text-align: center;
+        }
+
+        .live-stream-empty-icon {
+            display: inline-flex;
+            width: 52px;
+            height: 52px;
+            align-items: center;
+            justify-content: center;
+            border-radius: 16px;
+            background: rgb(238 242 255);
+            color: rgb(79 70 229);
+        }
+    </style>
+
+    {% include "admin/_admin_notice.html" %}
+
+    <div class="panel p-5">
+        <div class="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div class="flex items-start gap-3">
+                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50">
+                    <i data-lucide="radio-tower" class="h-4.5 w-4.5 text-brand-600"></i>
+                </div>
+                <div>
+                    <h2 class="section-title">Điều phối live stream</h2>
+                    <p class="section-note">Dựng lại flow cấu hình live của app cũ trong shell mới: giữ bot chính, bot backup, stream key, media URL và lịch live, nhưng bỏ hoàn toàn nhánh 1080/4K.</p>
+                </div>
+            </div>
+
+            <form method="get" action="/admin/live" class="grid gap-3 lg:min-w-[560px] lg:grid-cols-[1fr_auto]" data-manager-auto-submit="true">
+                {% include "admin/_manager_picker.html" %}
+                <a href="/admin/ManagerBOT/index?workspace=live" class="action-btn action-btn-brand h-11 justify-center px-4 text-[13px]">
+                    <i data-lucide="server" class="h-4 w-4"></i>
+                    Mở BOT live
+                </a>
+            </form>
+        </div>
+    </div>
+
+    {% include "admin/_summary_strip.html" %}
+
+    <div class="live-workspace-grid">
+        <div class="panel overflow-hidden">
+            <div class="border-b border-slate-200/80 px-5 py-4">
+                <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                        <h3 class="section-title">Cấu hình luồng live</h3>
+                        <p class="section-note">Màn thao tác chính bám theo app live cũ: chọn user, BOT chính, backup, key, nguồn media và lịch phát. Chất lượng luồng đi theo video đầu vào, không còn tách 1080 hay 4K.</p>
+                    </div>
+                    <span class="live-stack-note">
+                        <i data-lucide="badge-check" class="h-4 w-4"></i>
+                        {{ dashboard.live_form_defaults.platform_label }}
+                    </span>
+                </div>
+            </div>
+
+            <div class="p-5">
+                <form class="live-form-grid" onsubmit="return false;">
+                    <div class="live-inline-grid two">
+                        <label class="block">
+                            <span class="field-label">Tên luồng live</span>
+                            <input
+                                class="toolbar-input"
+                                type="text"
+                                name="stream_name"
+                                placeholder="Đặt tên để gợi nhớ cho luồng live"
+                            >
+                        </label>
+                        <label class="block">
+                            <span class="field-label">Người dùng</span>
+                            <select class="toolbar-select" name="user_id">
+                                <option value="">-- Chọn user trong scope --</option>
+                                {% for user in dashboard.live_user_options %}
+                                <option value="{{ user.id }}">{{ user.username }} • {{ user.manager_name }} • {{ user.channel_count }} kênh</option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                    </div>
+
+                    <div class="live-inline-grid bot">
+                        <label class="block">
+                            <span class="field-label">BOT chính</span>
+                            <select class="toolbar-select" name="primary_bot_id">
+                                <option value="">-- Chọn BOT live --</option>
+                                {% for bot in dashboard.live_bot_options %}
+                                <option value="{{ bot.id }}">{{ bot.name }} • {{ bot.group }} • {{ bot.thread_text }}</option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                        <label class="block">
+                            <span class="field-label">BOT backup</span>
+                            <select class="toolbar-select" name="backup_bot_id">
+                                <option value="">-- Không dùng backup --</option>
+                                {% for bot in dashboard.live_backup_bot_options %}
+                                <option value="{{ bot.id }}">{{ bot.name }} • {{ bot.group }} • {{ bot.thread_text }}</option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                        <label class="block">
+                            <span class="field-label">Delay backup</span>
+                            <input
+                                class="toolbar-input"
+                                type="number"
+                                min="0"
+                                value="{{ dashboard.live_form_defaults.backup_delay_minutes }}"
+                                name="backup_delay"
+                            >
+                        </label>
+                    </div>
+
+                    <div class="live-inline-grid two">
+                        <label class="block">
+                            <span class="field-label">Khóa luồng</span>
+                            <input
+                                class="toolbar-input"
+                                type="text"
+                                name="stream_key"
+                                placeholder="Nhập stream key YouTube RTMP"
+                            >
+                        </label>
+                        <label class="block">
+                            <span class="field-label">Nền tảng phát</span>
+                            <input
+                                class="toolbar-input bg-slate-50 text-slate-500"
+                                type="text"
+                                value="{{ dashboard.live_form_defaults.platform_label }}"
+                                readonly
+                            >
+                            <p class="mt-2 text-[11px] text-slate-500">{{ dashboard.live_form_defaults.platform_note }}</p>
+                        </label>
+                    </div>
+
+                    <div class="live-inline-grid two">
+                        <label class="block">
+                            <span class="field-label">Link video</span>
+                            <input
+                                class="toolbar-input"
+                                type="url"
+                                name="video_url"
+                                placeholder="{{ dashboard.live_form_defaults.video_placeholder }}"
+                            >
+                        </label>
+                        <label class="block">
+                            <span class="field-label">Link audio</span>
+                            <input
+                                class="toolbar-input"
+                                type="url"
+                                name="audio_url"
+                                placeholder="{{ dashboard.live_form_defaults.audio_placeholder }}"
+                            >
+                        </label>
+                    </div>
+
+                    <div class="live-inline-grid two">
+                        <label class="block">
+                            <span class="field-label">Thời gian bắt đầu</span>
+                            <input class="toolbar-input" type="datetime-local" name="start_time">
+                        </label>
+                        <label class="block">
+                            <span class="field-label">Thời gian kết thúc</span>
+                            <input class="toolbar-input" type="datetime-local" name="end_time">
+                        </label>
+                    </div>
+
+                    <div class="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                        <div class="grid gap-4 md:grid-cols-3">
+                            {% for card in dashboard.live_scope_cards %}
+                            <div class="live-scope-stat">
+                                <div class="live-scope-icon">
+                                    <i data-lucide="{{ card.icon }}" class="h-4.5 w-4.5"></i>
+                                </div>
+                                <div class="min-w-0">
+                                    <p class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">{{ card.title }}</p>
+                                    <p class="mt-1 text-[22px] font-display font-semibold text-slate-900">{{ card.value }}</p>
+                                    <p class="mt-1 text-[12px] leading-5 text-slate-500">{{ card.meta }}</p>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <div class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-5">
+                        <p class="text-[12px] leading-5 text-slate-500">UI này mới dừng ở phase cấu hình. Runtime ffmpeg, backup failover và progress live động sẽ được nối vào control-plane sau.</p>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <button type="button" class="action-btn action-btn-slate">
+                                <i data-lucide="rotate-ccw" class="h-3.5 w-3.5"></i>
+                                Reset thời gian
+                            </button>
+                            <a href="/admin/user/index?workspace=live" class="action-btn action-btn-primary">
+                                <i data-lucide="users" class="h-3.5 w-3.5"></i>
+                                Mở user live
+                            </a>
+                            <button type="button" class="action-btn action-btn-brand">
+                                <i data-lucide="radio" class="h-3.5 w-3.5"></i>
+                                Tạo luồng live
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="space-y-4">
+            <div class="panel p-5">
+                <div class="flex items-start gap-3">
+                    <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100">
+                        <i data-lucide="scan-eye" class="h-4.5 w-4.5 text-slate-700"></i>
+                    </div>
+                    <div class="min-w-0 flex-1">
+                        <h3 class="section-title">Phạm vi hiện tại</h3>
+                        <p class="section-note">Manager filter ở đầu trang sẽ quyết định user và BOT nào xuất hiện trong form cấu hình này.</p>
+                    </div>
+                </div>
+                <div class="mt-4 flex flex-wrap gap-2">
+                    {% if dashboard.selected_manager_labels %}
+                        {% for label in dashboard.selected_manager_labels %}
+                        <span class="inline-flex items-center rounded-full border border-brand-100 bg-brand-50 px-3 py-1 text-[11px] font-semibold text-brand-700">{{ label }}</span>
+                        {% endfor %}
+                    {% else %}
+                    <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold text-slate-600">Tất cả manager</span>
+                    {% endif %}
+                </div>
+                <div class="mt-4 grid gap-3 text-[12px] text-slate-600">
+                    <div class="flex items-center justify-between gap-3">
+                        <span>Manager trong scope</span>
+                        <span class="font-semibold text-slate-900">{{ dashboard.live_scope.manager_count }}</span>
+                    </div>
+                    <div class="flex items-center justify-between gap-3">
+                        <span>User trong scope</span>
+                        <span class="font-semibold text-slate-900">{{ dashboard.live_scope.user_count }}</span>
+                    </div>
+                    <div class="flex items-center justify-between gap-3">
+                        <span>BOT trong scope</span>
+                        <span class="font-semibold text-slate-900">{{ dashboard.live_scope.worker_count }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel p-5">
+                <div class="flex items-start gap-3">
+                    <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100">
+                        <i data-lucide="server-cog" class="h-4.5 w-4.5 text-slate-700"></i>
+                    </div>
+                    <div class="min-w-0 flex-1">
+                        <h3 class="section-title">BOT khả dụng</h3>
+                        <p class="section-note">Danh sách này lấy trực tiếp từ scope manager hiện tại để hỗ trợ chọn BOT chính và BOT backup ngay trong một màn.</p>
+                    </div>
+                </div>
+                <div class="mt-4">
+                    {% for bot in dashboard.live_bot_options[:4] %}
+                    <div class="live-bot-item">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <p class="text-[13px] font-semibold text-slate-900">{{ bot.name }}</p>
+                                <p class="table-meta">{{ bot.group }} • {{ bot.manager_name }}</p>
+                            </div>
+                            <span class="{{ bot.status_class }}">{{ bot.status_label }}</span>
+                        </div>
+                        <div class="mt-2 flex items-center justify-between gap-3 text-[11px] text-slate-500">
+                            <span>Luồng tối đa</span>
+                            <span class="font-mono text-slate-700">{{ bot.thread_text }}</span>
+                        </div>
+                    </div>
+                    {% else %}
+                    <p class="text-[13px] text-slate-500">Chưa có BOT nào trong scope manager hiện tại.</p>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="panel p-5">
+                <div class="flex items-start gap-3">
+                    <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100">
+                        <i data-lucide="list-checks" class="h-4.5 w-4.5 text-slate-700"></i>
+                    </div>
+                    <div class="min-w-0 flex-1">
+                        <h3 class="section-title">Nguyên tắc cấu hình</h3>
+                        <p class="section-note">Giữ nghiệp vụ cũ nhưng ép lại theo framework mới để sau này nối runtime không phải đảo bố cục lần nữa.</p>
+                    </div>
+                </div>
+                <div class="mt-4 live-policy-list">
+                    {% for note in dashboard.live_policy_notes %}
+                    <div class="live-policy-item">
+                        <i data-lucide="check" class="mt-0.5 h-4 w-4 shrink-0 text-emerald-600"></i>
+                        <span>{{ note }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel overflow-hidden">
+        <div class="border-b border-slate-200/80 px-5 py-4">
+            <div>
+                <h3 class="section-title">Danh sách stream đang live</h3>
+                <p class="section-note">Thiết kế lại theo ngôn ngữ của danh sách render: gộp các cột tản mát của app cũ thành các khối thông tin rõ ràng hơn, có sẵn slot cover/thumbnail để nối runtime sau.</p>
+            </div>
+        </div>
+
+        <div class="table-shell">
+            <table class="admin-table" data-admin-list-table="live-stream-index">
+                <thead>
+                    <tr>
+                        <th class="w-14">STT</th>
+                        <th>Thông tin stream</th>
+                        <th>Scope</th>
+                        <th>BOT</th>
+                        <th>Nguồn media</th>
+                        <th>Timeline</th>
+                        <th>Trạng thái</th>
+                        <th class="text-right">Tác vụ</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for stream in dashboard.live_stream_rows %}
+                    <tr>
+                        <td class="table-mono text-slate-500">{{ stream.index }}</td>
+                        <td>
+                            <div class="flex min-w-[280px] items-center gap-3">
+                                <div class="live-stream-cover">
+                                    {% if stream.cover_url %}
+                                    <img src="{{ stream.cover_url }}" alt="{{ stream.title }}">
+                                    {% else %}
+                                    {{ stream.cover_initials or 'LIVE' }}
+                                    {% endif %}
+                                </div>
+                                <div class="min-w-0">
+                                    <p class="truncate text-[13px] font-semibold text-slate-900">{{ stream.title }}</p>
+                                    <p class="table-meta truncate">{{ stream.stream_name or 'Luồng chưa đặt tên' }} • {{ stream.live_type_label or 'YouTube RTMP' }}</p>
+                                    <p class="table-meta table-mono truncate">Key {{ stream.stream_key or '--' }}</p>
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            <div>
+                                <p class="text-[12px] font-semibold text-slate-900">{{ stream.manager_name }}</p>
+                                <p class="table-meta">{{ stream.user_name }}</p>
+                            </div>
+                        </td>
+                        <td>
+                            <div>
+                                <p class="text-[12px] font-semibold text-slate-900">{{ stream.bot_name }}</p>
+                                <p class="table-meta">{{ stream.bot_group }}</p>
+                                <p class="table-meta">Backup: {{ stream.bot_backup_name or '--' }}</p>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="space-y-1">
+                                <p class="table-meta truncate">Video: {{ stream.video_label or '--' }}</p>
+                                <p class="table-meta truncate">Audio: {{ stream.audio_label or '--' }}</p>
+                            </div>
+                        </td>
+                        <td class="table-mono text-slate-600">
+                            <p>Bắt đầu: {{ stream.start_time_text }}</p>
+                            <p class="mt-1">Kết thúc: {{ stream.end_time_text }}</p>
+                            <p class="mt-1">Live: {{ stream.duration_text }}</p>
+                        </td>
+                        <td>
+                            <div class="space-y-2">
+                                <span class="{{ stream.status_class }}">{{ stream.status_label }}</span>
+                                <p><span class="{{ stream.render_status_class }}">{{ stream.render_status_label }}</span></p>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="flex items-center justify-end gap-2">
+                                <a href="{{ stream.detail_href }}" class="action-btn action-btn-slate">
+                                    <i data-lucide="eye" class="h-3.5 w-3.5"></i>
+                                    Chi tiết
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="8" class="px-0 py-0">
+                            <div class="live-stream-empty">
+                                <div class="live-stream-empty-icon">
+                                    <i data-lucide="film" class="h-5 w-5"></i>
+                                </div>
+                                <div class="space-y-2">
+                                    <p class="text-[15px] font-semibold text-slate-900">Chưa có dữ liệu runtime cho stream</p>
+                                    <p class="mx-auto max-w-[640px] text-[13px] leading-6 text-slate-500">Bố cục bảng đã được chuẩn bị theo style của danh sách render để sẵn sàng hiển thị cover, scope, BOT, media, timeline và trạng thái khi control-plane bắt đầu nhận runtime livestream thật từ worker.</p>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+{% endblock %}

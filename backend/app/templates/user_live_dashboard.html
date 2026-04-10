@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ dashboard.page_title | e }}</title>
+  <link rel="icon" type="image/svg+xml" href="{{ request.url_for('static', path='brand/site-favicon.svg') }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              500: '#6b74f0',
+              600: '#5d67df',
+              700: '#4b56c9',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            display: ['Be Vietnam Pro', 'sans-serif'],
+            mono: ['IBM Plex Mono', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/vn.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    .datetime-field { position: relative; }
+    .datetime-field-input { padding-left: 16px !important; padding-right: 48px !important; }
+    .datetime-field-icon {
+      position: absolute; top: 1px; right: 1px; bottom: 1px; width: 48px; display: flex; align-items: center; justify-content: center;
+      background: white; color: rgb(148 163 184); border-left: 1px solid rgb(226 232 240); border-top-right-radius: 7px; border-bottom-right-radius: 7px; pointer-events: none;
+    }
+    .flatpickr-calendar { border: 1px solid rgb(226 232 240); box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08); border-radius: 10px; }
+    .elevated-card-panel {
+      background: linear-gradient(180deg, #ffffff 0%, #fefefe 100%); border-radius: 16px; border: 1px solid rgba(203, 213, 225, 0.6);
+      box-shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.05), 0 10px 15px -3px rgba(15, 23, 42, 0.03), 0 20px 25px -5px rgba(15, 23, 42, 0.02); position: relative;
+    }
+    .elevated-card-panel::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.8), transparent); z-index: 10; border-radius: 16px 16px 0 0;
+    }
+    .elevated-card { background: white; border-radius: 16px; border: 1px solid rgba(226, 232, 240, 0.7); box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04), 0 4px 14px rgba(15, 23, 42, 0.04); }
+    .nav-item { border-radius: 8px; margin: 0 12px; padding: 10px 14px; transition: all 0.15s ease; }
+    .nav-item:hover { background: rgba(93, 103, 223, 0.06); }
+    .nav-item.active { background: linear-gradient(135deg, #5d67df 0%, #4b56c9 100%); color: white; box-shadow: 0 2px 8px rgba(93, 103, 223, 0.3); }
+    .nav-item.active i, .nav-item.active span { color: white !important; }
+    body.admin-shell .nav-item { display: flex; align-items: center; gap: 12px; margin: 0 12px; padding: 10px 14px; border-radius: 10px; color: rgb(71 85 105); transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease; }
+    body.admin-shell .nav-item:hover { background: rgb(248 250 252); color: rgb(15 23 42); }
+    body.admin-shell .nav-item.active { background: linear-gradient(135deg, #5d67df 0%, #4b56c9 100%); color: #ffffff; box-shadow: 0 8px 18px rgba(93, 103, 223, 0.18); }
+    body.admin-shell .nav-item.active i, body.admin-shell .nav-item.active span { color: #ffffff !important; }
+    .frosted-header { background: rgba(255,255,255,0.82); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid rgba(226,232,240,0.6); box-shadow: 0 1px 3px rgba(15,23,42,0.03); }
+    .kpi-card:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(15,23,42,0.08), 0 1px 4px rgba(15,23,42,0.04); }
+    .panel-input { height: 42px; }
+    .panel-action-button { min-height: 40px; align-items: center; justify-content: center; }
+    .live-config-shell {
+      background: white;
+      border: 1px solid rgba(226, 232, 240, 0.9);
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03), 0 8px 24px rgba(15, 23, 42, 0.03);
+    }
+    .live-config-flat {
+      display: grid;
+      grid-template-columns: minmax(0, 1.22fr) minmax(340px, 0.98fr);
+      background: white;
+    }
+    .live-config-column {
+      min-width: 0;
+      padding: 8px 18px 18px;
+    }
+    .live-config-column + .live-config-column {
+      border-left: 1px solid rgba(226, 232, 240, 0.9);
+    }
+    .live-config-title {
+      margin-bottom: 14px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgb(100 116 139);
+    }
+    .live-config-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .live-select {
+      position: relative;
+      z-index: 1;
+    }
+    .live-select[data-open="true"] {
+      z-index: 40;
+    }
+    .live-select[data-open="true"] .live-select-trigger {
+      border-color: rgb(93 103 223 / 0.72);
+      box-shadow: 0 0 0 2px rgba(93, 103, 223, 0.08);
+    }
+    .live-select[data-open="true"] .live-select-icon {
+      transform: rotate(180deg);
+      color: rgb(93 103 223);
+    }
+    .live-select-trigger {
+      position: relative;
+      width: 100%;
+      min-height: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 0 14px;
+      border: 1px solid rgb(203 213 225);
+      border-radius: 10px;
+      background: white;
+      color: rgb(15 23 42);
+      font-size: 13px;
+      font-weight: 600;
+      text-align: left;
+      transition: border-color 120ms ease, box-shadow 120ms ease;
+    }
+    .live-select-display {
+      min-width: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      flex: 1;
+    }
+    .live-select-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      flex-shrink: 0;
+      background: linear-gradient(135deg, rgb(238 242 255) 0%, rgb(224 231 255) 100%);
+      color: rgb(75 85 99);
+    }
+    .live-select-copy {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+    .live-select-value {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .live-select-value.is-placeholder {
+      color: rgb(100 116 139);
+      font-weight: 500;
+    }
+    .live-select-meta {
+      font-size: 10px;
+      color: rgb(100 116 139);
+      line-height: 1.2;
+      font-family: 'IBM Plex Mono', monospace;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .live-select-meta.is-hidden,
+    .live-select-avatar.is-hidden {
+      display: none;
+    }
+    .live-select-menu {
+      position: absolute;
+      top: calc(100% + 8px);
+      left: 0;
+      right: 0;
+      z-index: 50;
+      display: none;
+      overflow: hidden;
+      border: 1px solid rgb(226 232 240);
+      border-radius: 10px;
+      background: white;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+    }
+    .live-select[data-open="true"] .live-select-menu {
+      display: block;
+    }
+    .live-select-search-shell {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-bottom: 1px solid rgb(241 245 249);
+      background: rgb(248 250 252);
+    }
+    .live-select-search-input {
+      width: 100%;
+      border: 0;
+      background: transparent;
+      color: rgb(15 23 42);
+      font-size: 13px;
+      outline: none;
+    }
+    .live-select-list {
+      max-height: 220px;
+      overflow-y: auto;
+    }
+    .live-select-option {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 11px 14px;
+      background: transparent;
+      border: 0;
+      color: rgb(15 23 42);
+      font-size: 13px;
+      font-weight: 500;
+      text-align: left;
+      transition: background-color 120ms ease, color 120ms ease;
+      cursor: pointer;
+    }
+    .live-select-option + .live-select-option {
+      border-top: 1px solid rgb(241 245 249);
+    }
+    .live-select-option:hover {
+      background: rgb(248 250 252);
+    }
+    .live-select-option.is-active {
+      background: rgba(93, 103, 223, 0.05);
+    }
+    .live-select-option-copy {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .live-select-option-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: rgb(15 23 42);
+      line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .live-select-option-meta {
+      font-size: 10px;
+      color: rgb(100 116 139);
+      line-height: 1.2;
+      font-family: 'IBM Plex Mono', monospace;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .live-select-check {
+      opacity: 0;
+      color: rgb(93 103 223);
+      flex-shrink: 0;
+      transition: opacity 120ms ease;
+    }
+    .live-select-option.is-active .live-select-check {
+      opacity: 1;
+    }
+    .live-select-empty {
+      display: none;
+      padding: 12px 14px;
+      border-top: 1px solid rgb(241 245 249);
+      color: rgb(100 116 139);
+      font-size: 12px;
+    }
+    .live-select-empty[data-visible="true"] {
+      display: block;
+    }
+    @media (max-width: 1180px) {
+      .live-config-flat { grid-template-columns: 1fr; }
+      .live-config-column + .live-config-column { border-left: 0; border-top: 1px solid rgba(226, 232, 240, 0.9); }
+    }
+    .render-table thead th { position: relative; }
+    .render-table tbody td { vertical-align: middle; }
+    .render-table thead th:not(:last-child)::after { content: ''; position: absolute; right: 0; top: 50%; width: 1px; height: 20px; background: rgb(226 232 240); transform: translateY(-50%); }
+    .sortable-button { width: 100%; display: inline-flex; align-items: center; gap: 4px; color: rgb(71 85 105); font-size: 11px; font-weight: 600; letter-spacing: 0.02em; background: transparent; border: 0; padding: 0; }
+    .sortable-button.center { justify-content: center; }
+    .sortable-button.end { justify-content: flex-end; }
+    .sort-arrows { display: inline-flex; align-items: center; gap: 0; color: rgb(148 163 184); line-height: 1; }
+    .live-cover { width: 88px; aspect-ratio: 4 / 3; border-radius: 14px; overflow: hidden; border: 1px solid rgb(226 232 240); background: linear-gradient(135deg, rgb(15 23 42) 0%, rgb(30 41 59) 100%); position: relative; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+    .live-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .live-cover::after { content: ''; position: absolute; inset-inline: 0; bottom: 0; height: 2px; background: rgb(93 103 223); }
+    .live-cover-empty { font-size: 10px; font-weight: 700; letter-spacing: 0.16em; color: rgba(255,255,255,0.84); }
+    .table-meta { font-size: 11px; line-height: 1.4; color: rgb(100 116 139); }
+    .live-stream-title {
+      display: -webkit-box;
+      overflow: hidden;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+    }
+    .live-table-two-line {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+    }
+    .live-table-line {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .live-table-line-wrap {
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      white-space: normal;
+      line-height: 1.45;
+    }
+    .live-table-chip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid;
+      font-size: 10px;
+      font-weight: 700;
+      line-height: 1;
+      white-space: nowrap;
+    }
+    .live-table-action-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      width: 156px;
+    }
+    .live-table-action-btn {
+      min-width: 0;
+      justify-content: center;
+    }
+  </style>
+</head>
+<body class="font-sans antialiased text-slate-800 bg-[#f3f5f9] min-h-screen flex overflow-hidden{% if dashboard.admin_shell %} admin-shell{% endif %}">
+  <aside class="w-64 {% if dashboard.admin_shell %}bg-white border-r border-slate-200{% else %}bg-gradient-to-b from-white to-slate-50/80 border-r border-slate-200/70{% endif %} flex flex-col shrink-0 z-10 hidden md:flex">
+    <div class="h-16 flex items-center px-6 border-b border-slate-200">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 text-[#ff5528] flex items-center justify-center shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" class="w-10 h-10" aria-hidden="true">
+            <g fill="currentColor">
+              <path d="M58 22c-7 0-12 5-12 12v116c0 56 45 102 101 102h54c7 0 12-5 12-12s-5-12-12-12h-54c-43 0-77-35-77-78V34c0-7-5-12-12-12z"/>
+              <path d="M106 66c0-5 3-9 8-11 5-2 10-1 14 3l34 35 34-35c3-4 9-5 14-3 5 2 8 6 8 11v109c0 7-5 12-12 12s-12-5-12-12V95l-24 24c-5 5-12 5-17 0l-24-24v80c0 7-5 12-12 12s-12-5-12-12V66z"/>
+              <rect x="181" y="119" width="14" height="78" rx="7"/>
+              <circle cx="188" cy="205" r="28"/>
+            </g>
+          </svg>
+        </div>
+        <div>
+          <p class="font-display font-bold text-[17px] text-slate-900 tracking-tight leading-none">{{ dashboard.app_name | e }}</p>
+          <p class="text-[11px] text-slate-500 mt-1">{{ dashboard.workspace_label | e }}</p>
+        </div>
+      </div>
+    </div>
+
+    <nav class="flex-1 py-4 overflow-y-auto">
+      {% if dashboard.admin_shell %}
+      <div class="mb-2 px-6"><p class="text-[11px] font-medium text-slate-400">Điều hướng</p></div>
+      <div class="space-y-0.5">
+      {% else %}
+      <div class="space-y-0.5 px-3">
+      {% endif %}
+        {% for item in dashboard.nav_items %}
+        <a href="{{ item.href | e }}" class="nav-item {% if dashboard.active_page == item.key %}active{% endif %}{% if not dashboard.admin_shell %} flex items-center gap-3{% endif %}">
+          <i data-lucide="{{ item.icon | e }}" class="{% if dashboard.admin_shell %}h-4 w-4{% else %}w-4 h-4{% endif %}"></i>
+          <span class="text-[13px] {% if dashboard.active_page == item.key %}font-semibold{% else %}font-medium{% endif %}">{{ item.label | e }}</span>
+        </a>
+        {% endfor %}
+      </div>
+    </nav>
+
+    <div class="border-t border-slate-200 p-4">
+      <div class="flex items-center gap-3 {% if dashboard.admin_shell %}rounded-xl{% else %}rounded-md hover:bg-slate-50 cursor-pointer transition-colors{% endif %} px-2 py-2">
+        <div class="{% if dashboard.admin_shell %}flex h-10 w-10{% else %}w-9 h-9{% endif %} rounded-full bg-slate-100 flex items-center justify-center shrink-0">
+          <i data-lucide="{% if dashboard.admin_shell %}shield{% else %}user{% endif %}" class="w-4 h-4 text-slate-500"></i>
+        </div>
+        <div class="{% if dashboard.admin_shell %}min-w-0{% else %}overflow-hidden{% endif %}">
+          <p class="text-[13px] font-semibold text-slate-900 truncate">{{ dashboard.user_name | e }}</p>
+          <p class="text-[11px] text-slate-500 truncate">{% if dashboard.admin_shell %}{{ dashboard.user_role | capitalize | e }}{% else %}{{ dashboard.user_role | e }}{% endif %}</p>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="min-w-0 flex-1 flex flex-col h-screen relative overflow-x-hidden">
+    <header class="frosted-header h-16 flex items-center justify-between px-8 shrink-0 relative z-10">
+      <div class="flex items-center gap-2 text-[13px]">
+        <i data-lucide="panel-top-open" class="w-4 h-4 text-brand-600"></i>
+        <span class="font-medium text-slate-900">Điều phối live</span>
+      </div>
+      <form method="post" action="{{ dashboard.logout_path | default('/logout') }}">
+        <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 text-[13px] font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-slate-300 hover:shadow-sm transition-all">
+          <i data-lucide="log-out" class="w-4 h-4 text-slate-500"></i>
+          Đăng xuất
+        </button>
+      </form>
+    </header>
+
+    <div class="min-w-0 flex-1 overflow-y-auto w-full pb-16">
+      <div class="min-w-0 w-full px-8 py-6 space-y-6">
+        {% if dashboard.notice %}
+        <div class="elevated-card px-5 py-4 border transition-all duration-200 {% if dashboard.notice_level == 'error' %}border-rose-200 bg-rose-50/80{% else %}border-emerald-200 bg-emerald-50/80{% endif %}">
+          <div class="flex items-start gap-3">
+            <div class="mt-0.5 {% if dashboard.notice_level == 'error' %}text-rose-600{% else %}text-emerald-600{% endif %}">
+              <i data-lucide="{% if dashboard.notice_level == 'error' %}shield-alert{% else %}circle-check{% endif %}" class="w-4 h-4"></i>
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="text-[13px] font-semibold {% if dashboard.notice_level == 'error' %}text-rose-700{% else %}text-emerald-700{% endif %}">{{ dashboard.notice | e }}</p>
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
+        <div class="elevated-card grid grid-cols-5 divide-x divide-slate-200/70 overflow-hidden">
+          {% for kpi in dashboard.kpis %}
+          <div class="kpi-card relative px-6 py-5 text-center">
+            <div class="flex items-center justify-center gap-2 mb-3">
+              <p class="text-slate-500 text-[12px] font-medium">{{ kpi.label | e }}</p>
+              <i data-lucide="{{ kpi.icon | e }}" class="w-3.5 h-3.5 {{ kpi.icon_class | e }}"></i>
+            </div>
+            <p class="text-[28px] font-display font-bold {{ (kpi.value_class or kpi.accent_class) | e }} leading-none tracking-tight">{{ kpi.value }}</p>
+            <p class="text-[11px] font-semibold {{ (kpi.accent_class or kpi.value_class) | e }} mt-2.5">{{ kpi.accent | e }}</p>
+            <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-12 h-[3px] rounded-full {{ kpi.bar_class | e }}"></div>
+          </div>
+          {% endfor %}
+        </div>
+        <form class="elevated-card-panel live-config-shell overflow-visible" onsubmit="return false;">
+          <div class="p-6 flex flex-col relative bg-white rounded-2xl">
+            <div class="absolute top-0 left-6 h-1 w-16 bg-brand-500 rounded-b-full"></div>
+            <div class="flex items-start gap-3 pb-4 border-b border-slate-100/80 mb-6">
+              <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-50 to-white border border-brand-100/50 shadow-sm flex items-center justify-center shrink-0">
+                <i data-lucide="radio" class="w-5 h-5 text-brand-600"></i>
+              </div>
+              <div>
+                <h3 class="font-display font-bold text-[16px] text-slate-900 tracking-tight">{{ dashboard.live_config.title | e }}</h3>
+                <p class="text-[11px] text-slate-500 mt-0.5">{{ dashboard.live_config.description | e }}</p>
+              </div>
+            </div>
+
+            <div class="live-config-flat flex-1">
+              <div class="live-config-column">
+                <p class="live-config-title">Ngu&#7891;n ph&aacute;t</p>
+                <div class="live-config-stack">
+                  <div>
+                    <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">T&ecirc;n lu&#7891;ng live</label>
+                    <input type="text" value="{{ dashboard.live_form.stream_name | e }}" placeholder="Nh&#7853;p t&ecirc;n lu&#7891;ng..." class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-4 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 placeholder:text-slate-400 text-[13px] transition-all shadow-sm shadow-slate-100/50">
+                  </div>
+                  <div>
+                    <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">Link video ngu&#7891;n</label>
+                    <input type="text" value="{{ dashboard.live_form.video_url | e }}" placeholder="D&aacute;n link video live..." class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-4 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 placeholder:text-slate-400 text-[13px] transition-all shadow-sm shadow-slate-100/50">
+                  </div>
+                  <div>
+                    <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">Link audio</label>
+                    <input type="text" value="{{ dashboard.live_form.audio_url | e }}" placeholder="T&ugrave;y ch&#7885;n: nh&#7841;c n&#7873;n ho&#7863;c audio ri&ecirc;ng..." class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-4 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 placeholder:text-slate-400 text-[13px] transition-all shadow-sm shadow-slate-100/50">
+                  </div>
+                </div>
+              </div>
+
+              <div class="live-config-column">
+                <p class="live-config-title">BOT v&agrave; l&ecirc;n l&#7883;ch</p>
+                <div class="live-config-stack">
+                  <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div>
+                      <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">BOT ch&iacute;nh</label>
+                      <div class="live-select" data-live-select data-placeholder="-- Ch&#7885;n BOT live --">
+                        <select class="hidden" name="manager_bot_id">
+                          <option value="">-- Ch&#7885;n BOT live --</option>
+                          {% for worker in dashboard.live_workers %}
+                          <option value="{{ worker.id | e }}">{{ worker.name | e }}</option>
+                          {% endfor %}
+                        </select>
+                        <button type="button" class="live-select-trigger" aria-haspopup="listbox" aria-expanded="false">
+                          <span class="live-select-display">
+                            <span class="live-select-avatar is-hidden" data-live-select-avatar></span>
+                            <span class="live-select-copy">
+                              <span class="live-select-value is-placeholder" data-live-select-value>-- Ch&#7885;n BOT live --</span>
+                              <span class="live-select-meta is-hidden" data-live-select-meta></span>
+                            </span>
+                          </span>
+                          <i data-lucide="chevron-down" class="live-select-icon w-4 h-4 text-slate-400 transition-all shrink-0"></i>
+                        </button>
+                        <div class="live-select-menu" role="listbox" aria-label="Ch?n BOT ch&iacute;nh">
+                          <div class="live-select-search-shell">
+                            <i data-lucide="search" class="w-4 h-4 text-slate-400"></i>
+                            <input type="search" class="live-select-search-input" data-live-select-search placeholder="T&igrave;m BOT..." autocomplete="off">
+                          </div>
+                          <div class="live-select-list">
+                            <button type="button" class="live-select-option is-active" data-value="" data-label="-- Ch&#7885;n BOT live --" data-meta="" data-avatar="">
+                              <span class="live-select-option-copy">
+                                <span class="live-select-option-label">-- Ch&#7885;n BOT live --</span>
+                              </span>
+                              <i data-lucide="check" class="live-select-check w-4 h-4"></i>
+                            </button>
+                            {% for worker in dashboard.live_workers %}
+                            <button type="button" class="live-select-option" data-value="{{ worker.id | e }}" data-label="{{ worker.name | e }}" data-meta="{{ worker.manager_name | e }}" data-avatar="{{ worker.name[:2] | upper | e }}">
+                              <span class="inline-flex items-center gap-3 min-w-0">
+                                <span class="live-select-avatar">{{ worker.name[:2] | upper | e }}</span>
+                                <span class="live-select-option-copy">
+                                  <span class="live-select-option-label">{{ worker.name | e }}</span>
+                                  <span class="live-select-option-meta">{{ worker.manager_name | e }}</span>
+                                </span>
+                              </span>
+                              <i data-lucide="check" class="live-select-check w-4 h-4"></i>
+                            </button>
+                            {% endfor %}
+                          </div>
+                          <div class="live-select-empty" data-live-select-empty>Kh&#244;ng t&igrave;m th&#7845;y BOT ph&ugrave; h&#7907;p.</div>
+                        </div>
+                      </div>
+                    </div>
+                    <div>
+                      <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">BOT backup <span class="text-rose-500 font-medium">* &#272;&#7875; tr&#7889;ng n&#7871;u kh&#244;ng Backup</span></label>
+                      <div class="live-select" data-live-select data-placeholder="-- T&ugrave;y ch&#7885;n --">
+                        <select class="hidden" name="manager_bot_backup_id">
+                          <option value="">-- T&ugrave;y ch&#7885;n --</option>
+                          {% for worker in dashboard.live_workers %}
+                          <option value="{{ worker.id | e }}">{{ worker.name | e }}</option>
+                          {% endfor %}
+                        </select>
+                        <button type="button" class="live-select-trigger" aria-haspopup="listbox" aria-expanded="false">
+                          <span class="live-select-display">
+                            <span class="live-select-avatar is-hidden" data-live-select-avatar></span>
+                            <span class="live-select-copy">
+                              <span class="live-select-value is-placeholder" data-live-select-value>-- T&ugrave;y ch&#7885;n --</span>
+                              <span class="live-select-meta is-hidden" data-live-select-meta></span>
+                            </span>
+                          </span>
+                          <i data-lucide="chevron-down" class="live-select-icon w-4 h-4 text-slate-400 transition-all shrink-0"></i>
+                        </button>
+                        <div class="live-select-menu" role="listbox" aria-label="Ch&#7885;n BOT backup">
+                          <div class="live-select-search-shell">
+                            <i data-lucide="search" class="w-4 h-4 text-slate-400"></i>
+                            <input type="search" class="live-select-search-input" data-live-select-search placeholder="T&igrave;m BOT..." autocomplete="off">
+                          </div>
+                          <div class="live-select-list">
+                            <button type="button" class="live-select-option is-active" data-value="" data-label="-- T&ugrave;y ch&#7885;n --" data-meta="" data-avatar="">
+                              <span class="live-select-option-copy">
+                                <span class="live-select-option-label">-- T&ugrave;y ch&#7885;n --</span>
+                              </span>
+                              <i data-lucide="check" class="live-select-check w-4 h-4"></i>
+                            </button>
+                            {% for worker in dashboard.live_workers %}
+                            <button type="button" class="live-select-option" data-value="{{ worker.id | e }}" data-label="{{ worker.name | e }}" data-meta="{{ worker.manager_name | e }}" data-avatar="{{ worker.name[:2] | upper | e }}">
+                              <span class="inline-flex items-center gap-3 min-w-0">
+                                <span class="live-select-avatar">{{ worker.name[:2] | upper | e }}</span>
+                                <span class="live-select-option-copy">
+                                  <span class="live-select-option-label">{{ worker.name | e }}</span>
+                                  <span class="live-select-option-meta">{{ worker.manager_name | e }}</span>
+                                </span>
+                              </span>
+                              <i data-lucide="check" class="live-select-check w-4 h-4"></i>
+                            </button>
+                            {% endfor %}
+                          </div>
+                          <div class="live-select-empty" data-live-select-empty>Kh&#244;ng t&igrave;m th&#7845;y BOT ph&ugrave; h&#7907;p.</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div>
+                      <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">Delay backup (ph&uacute;t)</label>
+                      <input type="number" min="0" value="{{ dashboard.live_form.backup_delay_minutes }}" class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-4 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 text-[13px] transition-all shadow-sm shadow-slate-100/50">
+                    </div>
+                    <div>
+                      <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">Stream key</label>
+                      <input type="text" value="{{ dashboard.live_form.stream_key | e }}" placeholder="Nh&#7853;p stream key YouTube..." class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-4 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 placeholder:text-slate-400 text-[13px] transition-all shadow-sm shadow-slate-100/50">
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div>
+                      <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">Th&#7901;i gian b&#7855;t &#273;&#7847;u <span class="text-rose-500">*</span> <span class="text-rose-500 font-medium">B&#7855;t bu&#7897;c</span></label>
+                      <div class="datetime-field">
+                        <input type="text" value="" data-live-datetime placeholder="dd/mm/yyyy --:--" class="datetime-field-input panel-input w-full bg-white border border-slate-200 text-slate-700 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 shadow-sm shadow-slate-100/50 text-[12px] transition-all text-center font-mono">
+                        <span class="datetime-field-icon"><i data-lucide="calendar-days" class="w-[15px] h-[15px]"></i></span>
+                      </div>
+                    </div>
+                    <div>
+                      <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">K&#7871;t th&uacute;c live <span class="text-rose-500 font-medium">* Kh&#244;ng ch&#7885;n n&#7871;u live 24/7</span></label>
+                      <div class="datetime-field">
+                        <input type="text" value="" data-live-datetime placeholder="dd/mm/yyyy --:--" class="datetime-field-input panel-input w-full bg-white border border-slate-200 text-slate-700 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 shadow-sm shadow-slate-100/50 text-[12px] transition-all text-center font-mono">
+                        <span class="datetime-field-icon"><i data-lucide="calendar-days" class="w-[15px] h-[15px]"></i></span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="mt-auto border-t border-slate-100/80 pt-4">
+              <div class="flex items-center justify-end gap-2">
+                <button type="reset" class="panel-action-button inline-flex min-w-[108px] px-4 bg-white hover:bg-slate-50 text-slate-600 font-semibold transition-all border border-slate-200 rounded-lg text-[13px] hover:shadow-sm">Đặt lại</button>
+                <button type="submit" class="panel-action-button inline-flex min-w-[132px] bg-gradient-to-tr from-brand-600 to-brand-500 hover:from-brand-700 hover:to-brand-600 text-white font-semibold px-6 rounded-lg transition-transform text-[13px] whitespace-nowrap shadow-[0_8px_16px_rgba(93,103,223,0.18)] hover:shadow-[0_10px_18px_rgba(93,103,223,0.24)]">Tạo luồng live</button>
+              </div>
+            </div>
+          </div>
+        </form>
+
+        <div class="elevated-card mt-3 flex flex-col overflow-hidden">
+          <div class="px-5 border-b border-slate-200/80 flex items-center justify-between gap-5">
+            <div class="flex items-center gap-6 overflow-x-auto">
+              {% for tab in dashboard.live_tabs %}
+              <button type="button" class="px-1 py-4 text-[14px] {% if tab.active %}font-semibold text-brand-700 border-b-2 border-brand-600{% else %}font-medium text-slate-500 hover:text-slate-900 border-b-2 border-transparent{% endif %} whitespace-nowrap transition-colors">{{ tab.label | e }} ({{ tab.count }})</button>
+              {% endfor %}
+            </div>
+            <div class="relative w-full max-w-[320px] shrink-0 hidden md:block">
+              <i data-lucide="search" class="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"></i>
+              <input id="liveJobSearchInput" type="text" placeholder="Tìm kiếm nhanh..." class="w-full bg-slate-50 border border-slate-200 text-slate-900 pl-10 pr-4 py-2 rounded-lg outline-none focus:bg-white focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 text-[13px] transition-all">
+            </div>
+          </div>
+
+          <div class="min-w-0 overflow-x-auto w-full">
+            <table class="render-table w-full text-left text-sm">
+              <thead class="text-slate-600 text-[11px] font-semibold tracking-wide bg-slate-50/70">
+                <tr>
+                  <th class="px-4 py-4 border-b border-slate-200 w-16 text-center"><button type="button" class="sortable-button center">STT <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
+                  <th class="px-4 py-4 border-b border-slate-200 w-[174px]"><button type="button" class="sortable-button">Tác vụ <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
+                  <th class="px-6 py-4 border-b border-slate-200 min-w-[160px]"><button type="button" class="sortable-button">BOT live <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
+                  <th class="px-5 py-4 border-b border-slate-200 min-w-[128px]"><button type="button" class="sortable-button">Group <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
+                  <th class="px-6 py-4 border-b border-slate-200 min-w-[280px]"><button type="button" class="sortable-button">Tên luồng <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
+                  <th class="px-5 py-4 border-b border-slate-200 min-w-[180px]"><button type="button" class="sortable-button">Khóa luồng <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
+                  <th class="px-5 py-4 border-b border-slate-200 min-w-[180px]"><button type="button" class="sortable-button">BOT backup <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
+                  <th class="px-5 py-4 border-b border-slate-200 min-w-[112px]"><button type="button" class="sortable-button">Kiểu live <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
+                  <th class="px-5 py-4 border-b border-slate-200 min-w-[146px]"><button type="button" class="sortable-button">Thời gian<br>bắt đầu <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
+                  <th class="px-5 py-4 border-b border-slate-200 min-w-[146px]"><button type="button" class="sortable-button">Thời gian<br>kết thúc <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
+                  <th class="px-5 py-4 border-b border-slate-200 min-w-[124px]"><button type="button" class="sortable-button">Thời gian<br>live <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
+                  <th class="px-5 py-4 border-b border-slate-200 min-w-[100px]"><button type="button" class="sortable-button">Log <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
+                  <th class="px-5 py-4 border-b border-slate-200 min-w-[112px]"><button type="button" class="sortable-button">Trạng thái <span class="sort-arrows"><i data-lucide="arrow-up" class="w-2.5 h-2.5"></i><i data-lucide="arrow-down" class="w-2.5 h-2.5 -ml-[1px]"></i></span></button></th>
+                </tr>
+              </thead>
+              <tbody id="liveStreamTableBody" class="divide-y divide-slate-200/70 text-slate-700">
+                {% if dashboard.live_stream_rows %}
+                {% for stream in dashboard.live_stream_rows %}
+                <tr class="hover:bg-slate-50 transition-colors" data-stream-search="{{ ((stream.title | default('', true)) ~ ' ' ~ (stream.stream_name | default('', true)) ~ ' ' ~ (stream.bot_name | default('', true)) ~ ' ' ~ (stream.group_name | default('', true))) | lower | e }}">
+                  <td class="px-4 py-5 text-center font-mono text-[13px] text-slate-500">{{ stream.index }}</td>
+                  <td class="px-4 py-5 align-top">
+                    <div class="live-table-action-grid">
+                      <button type="button" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 rounded-lg hover:bg-emerald-100 hover:text-emerald-900 hover:shadow-sm transition-all"><i data-lucide="play" class="w-3 h-3"></i> Chạy</button>
+                      <button type="button" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-brand-700 bg-brand-50 border border-brand-200 rounded-lg hover:bg-brand-100 hover:text-brand-800 hover:shadow-sm transition-all"><i data-lucide="edit-2" class="w-3 h-3"></i> Sửa</button>
+                      <button type="button" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 hover:text-rose-800 hover:shadow-sm transition-all"><i data-lucide="trash" class="w-3 h-3"></i> Xóa</button>
+                      <button type="button" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 hover:text-slate-800 hover:shadow-sm transition-all"><i data-lucide="eye" class="w-3 h-3"></i> Chi tiết</button>
+                    </div>
+                  </td>
+                  <td class="px-6 py-5 align-top">
+                    <div class="live-table-two-line max-w-[168px]">
+                      <p class="live-table-line text-[12px] font-bold text-slate-900">{{ stream.bot_name | default('-', true) | e }}</p>
+                      <p class="live-table-line text-[10px] text-brand-600 font-mono">{{ stream.bot_meta | default(stream.bot_host | default('', true), true) | e }}</p>
+                    </div>
+                  </td>
+                  <td class="px-5 py-5 align-top">
+                    <div class="live-table-two-line max-w-[136px]">
+                      <p class="live-table-line text-[12px] font-semibold text-slate-900">{{ stream.group_name | default(stream.group_label | default('-', true), true) | e }}</p>
+                      <p class="live-table-line text-[10px] text-slate-500">{{ stream.group_meta | default(stream.manager_name | default('', true), true) | e }}</p>
+                    </div>
+                  </td>
+                  <td class="px-6 py-5 align-top">
+                    <div class="live-table-two-line min-w-0 max-w-[360px]">
+                      <p class="live-stream-title text-[13px] font-bold text-brand-700 leading-[1.4]" title="{{ stream.title | default(stream.stream_name, true) | e }}">{{ stream.title | default(stream.stream_name | default('-', true), true) | e }}</p>
+                      <p class="live-table-line text-[11px] text-slate-500">{{ stream.stream_name | default(stream.video_label | default('', true), true) | e }}</p>
+                    </div>
+                  </td>
+                  <td class="px-5 py-5 align-top">
+                    <div class="live-table-two-line max-w-[180px]">
+                      <p class="live-table-line-wrap text-[12px] font-semibold text-slate-800 font-mono">{{ stream.stream_key_masked | default(stream.stream_key | default('-', true), true) | e }}</p>
+                      <p class="live-table-line text-[10px] text-slate-500">{{ stream.key_meta | default('RTMP key', true) | e }}</p>
+                    </div>
+                  </td>
+                  <td class="px-5 py-5 align-top">
+                    <div class="live-table-two-line max-w-[180px]">
+                      <p class="live-table-line text-[12px] font-semibold text-slate-900">{{ stream.bot_backup_name | default('Không dùng backup', true) | e }}</p>
+                      <p class="live-table-line text-[10px] text-slate-500">{{ stream.bot_backup_meta | default('', true) | e }}</p>
+                    </div>
+                  </td>
+                  <td class="px-5 py-5 align-top">
+                    <span class="live-table-chip border-emerald-200 bg-emerald-50 text-emerald-700">{{ stream.live_type_label | default(stream.duration_text | default('Live thường', true), true) | e }}</span>
+                  </td>
+                  <td class="px-5 py-5 align-top">
+                    <div class="live-table-two-line text-[11px] font-mono">
+                      <p class="live-table-line text-slate-800">{{ stream.start_date_text | default(stream.start_time_text | default('-', true), true) | e }}</p>
+                      <p class="live-table-line text-slate-500">{{ stream.start_clock_text | default('', true) | e }}</p>
+                    </div>
+                  </td>
+                  <td class="px-5 py-5 align-top">
+                    <div class="live-table-two-line text-[11px] font-mono">
+                      <p class="live-table-line text-slate-800">{{ stream.end_date_text | default(stream.end_time_text | default('-', true), true) | e }}</p>
+                      <p class="live-table-line text-slate-500">{{ stream.end_clock_text | default('', true) | e }}</p>
+                    </div>
+                  </td>
+                  <td class="px-5 py-5 align-top">
+                    <div class="live-table-two-line text-[11px] font-mono">
+                      <p class="live-table-line text-slate-800">{{ stream.duration_text | default('-', true) | e }}</p>
+                      <p class="live-table-line text-slate-500">{{ stream.duration_meta | default('', true) | e }}</p>
+                    </div>
+                  </td>
+                  <td class="px-5 py-5 align-top">
+                    <span class="live-table-chip border-rose-200 bg-rose-50 text-rose-700">{{ stream.log_label | default('Kết thúc', true) | e }}</span>
+                  </td>
+                  <td class="px-5 py-5 align-top">
+                    <span class="{{ stream.status_class | default('border-rose-200 bg-rose-50 text-rose-700', true) | e }} live-table-chip">{{ stream.status_label | default('Đã dừng', true) | e }}</span>
+                  </td>
+                </tr>
+                {% endfor %}
+                {% else %}
+                <tr data-live-empty-row>
+                  <td colspan="13" class="px-6 py-10 text-center text-[13px] text-slate-500">Ch&#432;a c&oacute; lu&#7891;ng live n&agrave;o trong danh s&aacute;ch</td>
+                </tr>
+                {% endif %}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="px-5 py-4 border-t border-slate-200 flex items-center justify-between gap-4">
+            <p class="text-[13px] text-slate-500">{{ dashboard.live_summary | e }}</p>
+            <div class="flex items-center gap-2">
+              <button type="button" disabled class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-400"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
+              <button type="button" class="inline-flex h-9 min-w-[38px] items-center justify-center rounded-lg bg-brand-600 px-3 text-[12px] font-semibold text-white">1</button>
+              <button type="button" disabled class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-400"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    if (window.lucide) window.lucide.createIcons();
+    if (window.flatpickr) {
+      document.querySelectorAll('[data-live-datetime]').forEach((node) => {
+        window.flatpickr(node, { enableTime: true, dateFormat: 'd/m/Y H:i', time_24hr: true, locale: window.flatpickr?.l10ns?.vn || 'vn' });
+      });
+    }
+    const liveSelectNodes = Array.from(document.querySelectorAll('[data-live-select]'));
+    const closeLiveSelects = (exceptNode) => {
+      liveSelectNodes.forEach((node) => {
+        if (node !== exceptNode) {
+          node.dataset.open = 'false';
+          const trigger = node.querySelector('.live-select-trigger');
+          if (trigger) trigger.setAttribute('aria-expanded', 'false');
+        }
+      });
+    };
+    liveSelectNodes.forEach((node) => {
+      const nativeSelect = node.querySelector('select');
+      const trigger = node.querySelector('.live-select-trigger');
+      const valueNode = node.querySelector('[data-live-select-value]');
+      const metaNode = node.querySelector('[data-live-select-meta]');
+      const avatarNode = node.querySelector('[data-live-select-avatar]');
+      const searchInput = node.querySelector('[data-live-select-search]');
+      const emptyNode = node.querySelector('[data-live-select-empty]');
+      const options = Array.from(node.querySelectorAll('.live-select-option'));
+      const placeholder = node.dataset.placeholder || '-- Chọn --';
+
+      const applyValue = (value) => {
+        let activeOption = null;
+        options.forEach((option) => {
+          const isActive = option.dataset.value === value;
+          option.classList.toggle('is-active', isActive);
+          if (isActive) activeOption = option;
+        });
+        if (!activeOption) activeOption = options[0] || null;
+        if (nativeSelect) nativeSelect.value = activeOption ? activeOption.dataset.value || '' : '';
+        const label = activeOption ? activeOption.dataset.label || placeholder : placeholder;
+        const meta = activeOption ? activeOption.dataset.meta || '' : '';
+        const avatar = activeOption ? activeOption.dataset.avatar || '' : '';
+        valueNode.textContent = label;
+        valueNode.classList.toggle('is-placeholder', !meta && !avatar && (!activeOption || !activeOption.dataset.value));
+        metaNode.textContent = meta;
+        metaNode.classList.toggle('is-hidden', !meta);
+        avatarNode.textContent = avatar;
+        avatarNode.classList.toggle('is-hidden', !avatar);
+      };
+
+      const filterOptions = (query) => {
+        let visibleCount = 0;
+        options.forEach((option) => {
+          const haystack = `${option.dataset.label || ''} ${option.dataset.meta || ''}`.toLowerCase();
+          const visible = !query || haystack.includes(query);
+          option.classList.toggle('hidden', !visible);
+          if (visible) visibleCount += 1;
+        });
+        if (emptyNode) emptyNode.dataset.visible = visibleCount === 0 ? 'true' : 'false';
+      };
+
+      applyValue(nativeSelect ? nativeSelect.value : '');
+      node.dataset.open = 'false';
+
+      if (trigger) {
+        trigger.addEventListener('click', () => {
+          const willOpen = node.dataset.open !== 'true';
+          closeLiveSelects(willOpen ? node : null);
+          node.dataset.open = willOpen ? 'true' : 'false';
+          trigger.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+          if (willOpen && searchInput) {
+            searchInput.value = '';
+            filterOptions('');
+            searchInput.focus();
+          }
+        });
+      }
+
+      options.forEach((option) => {
+        option.addEventListener('click', () => {
+          applyValue(option.dataset.value || '');
+          node.dataset.open = 'false';
+          if (trigger) trigger.setAttribute('aria-expanded', 'false');
+        });
+      });
+
+      if (searchInput) {
+        searchInput.addEventListener('input', () => {
+          filterOptions(searchInput.value.trim().toLowerCase());
+        });
+      }
+    });
+
+    document.addEventListener('click', (event) => {
+      if (!event.target.closest('[data-live-select]')) {
+        closeLiveSelects(null);
+      }
+    });
+
+    const liveJobSearchInput = document.getElementById('liveJobSearchInput');
+    const liveStreamTableBody = document.getElementById('liveStreamTableBody');
+    if (liveJobSearchInput && liveStreamTableBody) {
+      liveJobSearchInput.addEventListener('input', () => {
+        const query = liveJobSearchInput.value.trim().toLowerCase();
+        liveStreamTableBody.querySelectorAll('tr[data-stream-search]').forEach((row) => {
+          const haystack = String(row.getAttribute('data-stream-search') || '').toLowerCase();
+          row.classList.toggle('hidden', Boolean(query) && !haystack.includes(query));
+        });
+      });
+    }
+  </script>
+</body>
+</html>

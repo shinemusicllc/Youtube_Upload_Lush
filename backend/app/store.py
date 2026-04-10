@@ -3601,25 +3601,109 @@ class AppStore:
             },
         )
 
-    def _admin_nav_items(self) -> list[dict[str, str]]:
+    def _admin_workspace_href(self, href: str, workspace_mode: str = "upload") -> str:
+        if workspace_mode != "live":
+            return href
+        separator = "&" if "?" in href else "?"
+        return f"{href}{separator}workspace=live"
+
+    def _admin_workspace_target_href(
+        self,
+        *,
+        target_workspace: str,
+        active_page: str,
+        user_section: str | None = None,
+    ) -> str:
+        if target_workspace == "live":
+            if active_page == "users":
+                if user_section == "create":
+                    return "/admin/user/create?workspace=live"
+                if user_section == "managers":
+                    return "/admin/user/manager?workspace=live"
+                if user_section == "admins":
+                    return "/admin/user/admins?workspace=live"
+                return "/admin/user/index?workspace=live"
+            if active_page == "workers":
+                return "/admin/ManagerBOT/index?workspace=live"
+            if active_page == "channels":
+                return "/admin/channel/index?workspace=live"
+            if active_page == "renders":
+                return "/admin/render/index?workspace=live"
+            return "/admin/live"
+
+        if active_page == "users":
+            if user_section == "create":
+                return "/admin/user/create"
+            if user_section == "managers":
+                return "/admin/user/manager"
+            if user_section == "admins":
+                return "/admin/user/admins"
+            return "/admin/user/index"
+        if active_page == "workers":
+            return "/admin/ManagerBOT/index"
+        if active_page == "channels":
+            return "/admin/channel/index"
+        if active_page == "renders":
+            return "/admin/render/index"
+        if active_page in {"live_workspace", "render_workspace"}:
+            return "/app"
+        return "/admin/user/index"
+
+    def _admin_workspace_tabs(
+        self,
+        workspace_mode: str = "upload",
+        *,
+        active_page: str = "users",
+        user_section: str | None = None,
+    ) -> list[dict[str, str | bool]]:
+        if active_page == "channels":
+            return []
         return [
-            {"key": "users", "label": "Người dùng", "href": "/admin/user/index", "icon": "users"},
-            {"key": "workers", "label": "Danh sách BOT", "href": "/admin/ManagerBOT/index", "icon": "server"},
-            {"key": "channels", "label": "Danh sách Kênh", "href": "/admin/channel/index", "icon": "link"},
-            {"key": "renders", "label": "Danh sách Render", "href": "/admin/render/index", "icon": "video"},
-            {"key": "render_workspace", "label": "Điều phối Render", "href": "/app", "icon": "clapperboard"},
+            {
+                "label": "Upload",
+                "href": self._admin_workspace_target_href(
+                    target_workspace="upload",
+                    active_page=active_page,
+                    user_section=user_section,
+                ),
+                "active": workspace_mode != "live",
+            },
+            {
+                "label": "Live Stream",
+                "href": self._admin_workspace_target_href(
+                    target_workspace="live",
+                    active_page=active_page,
+                    user_section=user_section,
+                ),
+                "active": workspace_mode == "live",
+            },
         ]
 
-    def _user_section_tabs(self, active_key: str, viewer_role: str = "admin") -> list[dict[str, str | bool]]:
+    def _admin_nav_items(self, workspace_mode: str = "upload") -> list[dict[str, str]]:
+        return [
+            {"key": "users", "label": "Người dùng", "href": self._admin_workspace_href("/admin/user/index", workspace_mode), "icon": "users"},
+            {"key": "workers", "label": "Danh sách BOT", "href": self._admin_workspace_href("/admin/ManagerBOT/index", workspace_mode), "icon": "server"},
+            {"key": "channels", "label": "Danh sách Kênh", "href": self._admin_workspace_href("/admin/channel/index", workspace_mode), "icon": "link"},
+            {"key": "renders", "label": "Danh sách Render", "href": self._admin_workspace_href("/admin/render/index", workspace_mode), "icon": "video"},
+            {"key": "render_workspace", "label": "Điều phối Render", "href": "/app", "icon": "clapperboard"},
+            {"key": "live_workspace", "label": "Điều phối live stream", "href": "/admin/live", "icon": "radio-tower"},
+        ]
+
+    def _user_section_tabs(
+        self,
+        active_key: str,
+        viewer_role: str = "admin",
+        workspace_mode: str = "upload",
+    ) -> list[dict[str, str | bool]]:
         tabs = [
-            {"key": "users", "label": "Danh sách user", "href": "/admin/user/index"},
-            {"key": "create", "label": "Tạo user", "href": "/admin/user/create"},
+            {"key": "users", "label": "Danh sách user", "href": self._admin_workspace_href("/admin/user/index", workspace_mode)},
+            {"key": "create", "label": "Tạo user", "href": self._admin_workspace_href("/admin/user/create", workspace_mode)},
         ]
         if viewer_role != "manager":
             tabs.extend(
                 [
-                    {"key": "managers", "label": "Manager", "href": "/admin/user/manager"},
-                    {"key": "admins", "label": "Admin", "href": "/admin/user/admins"},
+                    {"key": "managers", "label": "Manager", "href": self._admin_workspace_href("/admin/user/manager", workspace_mode)},
+                    {"key": "admins", "label": "Admin", "href": self._admin_workspace_href("/admin/user/admins", workspace_mode)},
                 ]
             )
         for item in tabs:
@@ -3740,6 +3824,7 @@ class AppStore:
         page_title: str,
         active_page: str,
         user_section: str | None = None,
+        workspace_mode: str = "upload",
         viewer_role: str = "admin",
         viewer_id: str | None = None,
         manager_ids: list[str] | None = None,
@@ -3760,7 +3845,14 @@ class AppStore:
         context = {
             "page_title": page_title,
             "active_page": active_page,
-            "nav_items": self._admin_nav_items(),
+            "workspace_mode": workspace_mode,
+            "workspace_heading": "Live Stream" if workspace_mode == "live" else "Upload",
+            "workspace_tabs": self._admin_workspace_tabs(
+                workspace_mode,
+                active_page=active_page,
+                user_section=user_section,
+            ),
+            "nav_items": self._admin_nav_items(workspace_mode),
             "summary_strip": self._summary_strip(
                 viewer_role=viewer_role,
                 viewer_id=viewer_id,
@@ -3775,7 +3867,11 @@ class AppStore:
             "notice_level": notice_level,
         }
         if user_section:
-            context["user_tabs"] = self._user_section_tabs(user_section, viewer_role=viewer_role)
+            context["user_tabs"] = self._user_section_tabs(
+                user_section,
+                viewer_role=viewer_role,
+                workspace_mode=workspace_mode,
+            )
             context["user_section"] = user_section
         return context
 
@@ -4352,7 +4448,13 @@ class AppStore:
                         "label": "Điều phối Render",
                         "href": "/app",
                         "icon": "layers",
-                    }
+                    },
+                    {
+                        "key": "live_workspace",
+                        "label": "Điều phối Live",
+                        "href": "/app/live",
+                        "icon": "radio-tower",
+                    },
                 ]
             ),
             "workspace_label": {
@@ -4410,6 +4512,79 @@ class AppStore:
             ],
             "render_jobs": render_jobs,
             "render_summary": f"Hiển thị 1 đến {len(render_jobs)} trong số {len(render_jobs)} kết quả" if render_jobs else "Chưa có job nào trong hàng đợi",
+        }
+
+    def get_user_live_workspace_view(
+        self,
+        *,
+        user_id: str,
+        notice: str | None = None,
+        notice_level: str = "success",
+    ) -> dict[str, Any]:
+        bootstrap = self.get_user_bootstrap(user_id)
+        user = bootstrap.user
+        assigned_workers = self._workspace_workers_for_user(user)
+        live_ready = len([worker for worker in assigned_workers if worker.status in {"online", "busy"}])
+        total_workers = len(assigned_workers)
+        live_workers = [
+            {
+                "id": worker.id,
+                "name": self._resolve_worker_display_name(worker.id),
+                "manager_name": worker.manager_name or "-",
+            }
+            for worker in assigned_workers
+        ]
+
+        return {
+            "page_title": "Điều phối live",
+            "app_name": "Upload Youtube",
+            "admin_shell": False,
+            "active_page": "live_workspace",
+            "nav_items": [
+                {
+                    "key": "render_workspace",
+                    "label": "Điều phối Render",
+                    "href": "/app",
+                    "icon": "layers",
+                },
+                {
+                    "key": "live_workspace",
+                    "label": "Điều phối Live",
+                    "href": "/app/live",
+                    "icon": "radio-tower",
+                },
+            ],
+            "workspace_label": "User workspace",
+            "user_name": user.display_name,
+            "user_role": user.manager_name or user.role,
+            "logout_path": "/logout",
+            "notice": notice,
+            "notice_level": notice_level,
+            "kpis": [
+                {"label": "BOT được cấp", "icon": "server", "icon_class": "text-emerald-500", "value": total_workers, "accent": "Live + Backup", "accent_class": "text-emerald-600", "value_class": "text-emerald-600", "bar_class": "bg-emerald-400"},
+                {"label": "BOT live sẵn sàng", "icon": "server-cog", "icon_class": "text-brand-500", "value": live_ready, "accent": f"{live_ready}/{total_workers} BOT", "accent_class": "text-brand-600", "value_class": "text-brand-600", "bar_class": "bg-brand-500"},
+                {"label": "Đang live", "icon": "radio", "icon_class": "text-rose-500", "value": 0, "accent": "Live", "accent_class": "text-rose-500", "value_class": "text-slate-900", "bar_class": "bg-rose-400"},
+                {"label": "Chờ lên lịch", "icon": "clock-3", "icon_class": "text-amber-500", "value": 0, "accent": "Lịch", "accent_class": "text-amber-600", "value_class": "text-slate-900", "bar_class": "bg-amber-400"},
+                {"label": "BOT backup", "icon": "shield-check", "icon_class": "text-sky-500", "value": 0, "accent": "Fallback", "accent_class": "text-sky-500", "value_class": "text-slate-900", "bar_class": "bg-sky-400"},
+            ],
+            "live_config": {
+                "title": "Live Config",
+                "description": "Thiết lập BOT chính, BOT backup, media nguồn và lịch live.",
+            },
+            "live_form": {
+                "stream_name": "",
+                "video_url": "",
+                "audio_url": "",
+                "stream_key": "",
+                "backup_delay_minutes": 3,
+            },
+            "live_workers": live_workers,
+            "live_tabs": [
+                {"label": "Danh sách live", "count": 0, "active": True},
+                {"label": "Chờ lên lịch", "count": 0, "active": False},
+            ],
+            "live_stream_rows": [],
+            "live_summary": "Chưa có luồng live nào trong danh sách",
         }
 
     def get_user_bootstrap(self, user_id: str) -> UserBootstrapResponse:
@@ -4756,6 +4931,9 @@ class AppStore:
         self,
         *,
         role_kind: str,
+        viewer_role: str = "admin",
+        viewer_id: str | None = None,
+        workspace_mode: str = "upload",
         notice: str | None = None,
         notice_level: str = "success",
     ) -> dict[str, Any]:
@@ -4781,6 +4959,9 @@ class AppStore:
             page_title="Danh sách manager" if is_manager else "Danh sách admin",
             active_page="users",
             user_section="managers" if is_manager else "admins",
+            workspace_mode=workspace_mode,
+            viewer_role=viewer_role,
+            viewer_id=viewer_id,
             notice=notice,
             notice_level=notice_level,
         )
@@ -5184,6 +5365,7 @@ class AppStore:
         self,
         *,
         manager_ids: list[str] | None = None,
+        workspace_mode: str = "upload",
         viewer_role: str = "admin",
         viewer_id: str | None = None,
         notice: str | None = None,
@@ -5193,6 +5375,7 @@ class AppStore:
             page_title="Danh sách người dùng",
             active_page="users",
             user_section="users",
+            workspace_mode=workspace_mode,
             viewer_role=viewer_role,
             viewer_id=viewer_id,
             manager_ids=manager_ids,
@@ -5217,6 +5400,7 @@ class AppStore:
     def get_admin_user_create_context(
         self,
         *,
+        workspace_mode: str = "upload",
         viewer_role: str = "admin",
         viewer_id: str | None = None,
         notice: str | None = None,
@@ -5228,6 +5412,7 @@ class AppStore:
             page_title="Tạo user",
             active_page="users",
             user_section="create",
+            workspace_mode=workspace_mode,
             viewer_role=viewer_role,
             viewer_id=viewer_id,
             notice=notice,
@@ -5251,6 +5436,7 @@ class AppStore:
         self,
         *,
         user_id: str,
+        workspace_mode: str = "upload",
         viewer_role: str = "admin",
         viewer_id: str | None = None,
         notice: str | None = None,
@@ -5264,6 +5450,7 @@ class AppStore:
             page_title="Cáº­p nháº­t user",
             active_page="users",
             user_section="users",
+            workspace_mode=workspace_mode,
             viewer_role=viewer_role,
             viewer_id=viewer_id,
             notice=notice,
@@ -5287,16 +5474,47 @@ class AppStore:
         )
         return context
 
-    def get_admin_manager_page_context(self, *, notice: str | None = None, notice_level: str = "success") -> dict[str, Any]:
-        return self._build_role_page_context(role_kind="manager", notice=notice, notice_level=notice_level)
+    def get_admin_manager_page_context(
+        self,
+        *,
+        viewer_role: str = "admin",
+        viewer_id: str | None = None,
+        workspace_mode: str = "upload",
+        notice: str | None = None,
+        notice_level: str = "success",
+    ) -> dict[str, Any]:
+        return self._build_role_page_context(
+            role_kind="manager",
+            viewer_role=viewer_role,
+            viewer_id=viewer_id,
+            workspace_mode=workspace_mode,
+            notice=notice,
+            notice_level=notice_level,
+        )
 
-    def get_admin_admin_page_context(self, *, notice: str | None = None, notice_level: str = "success") -> dict[str, Any]:
-        return self._build_role_page_context(role_kind="admin", notice=notice, notice_level=notice_level)
+    def get_admin_admin_page_context(
+        self,
+        *,
+        viewer_role: str = "admin",
+        viewer_id: str | None = None,
+        workspace_mode: str = "upload",
+        notice: str | None = None,
+        notice_level: str = "success",
+    ) -> dict[str, Any]:
+        return self._build_role_page_context(
+            role_kind="admin",
+            viewer_role=viewer_role,
+            viewer_id=viewer_id,
+            workspace_mode=workspace_mode,
+            notice=notice,
+            notice_level=notice_level,
+        )
 
     def get_admin_user_bot_context(
         self,
         *,
         user_id: str,
+        workspace_mode: str = "upload",
         viewer_role: str = "admin",
         viewer_id: str | None = None,
         notice: str | None = None,
@@ -5310,6 +5528,7 @@ class AppStore:
             page_title=f"BOT của {user.username}",
             active_page="users",
             user_section="users",
+            workspace_mode=workspace_mode,
             viewer_role=viewer_role,
             viewer_id=viewer_id,
             notice=notice,
@@ -5510,6 +5729,7 @@ class AppStore:
         self,
         *,
         manager_ids: list[str] | None = None,
+        workspace_mode: str = "upload",
         viewer_role: str = "admin",
         viewer_id: str | None = None,
         focus_user_id: str | None = None,
@@ -5520,6 +5740,7 @@ class AppStore:
         context = self._admin_shell_context(
             page_title="Danh sách BOT",
             active_page="workers",
+            workspace_mode=workspace_mode,
             viewer_role=viewer_role,
             viewer_id=viewer_id,
             manager_ids=manager_ids,
@@ -5567,6 +5788,7 @@ class AppStore:
         self,
         *,
         user_id: str,
+        workspace_mode: str = "upload",
         viewer_role: str = "admin",
         viewer_id: str | None = None,
         notice: str | None = None,
@@ -5604,6 +5826,7 @@ class AppStore:
         context = self._admin_shell_context(
             page_title=f"Danh sách BOT của {user.username}",
             active_page="workers",
+            workspace_mode=workspace_mode,
             viewer_role=viewer_role,
             viewer_id=viewer_id,
             notice=notice,
@@ -5626,6 +5849,7 @@ class AppStore:
         self,
         *,
         worker_id: str,
+        workspace_mode: str = "upload",
         viewer_role: str = "admin",
         viewer_id: str | None = None,
         notice: str | None = None,
@@ -5650,6 +5874,7 @@ class AppStore:
         context = self._admin_shell_context(
             page_title=f"Danh sách user của {self._resolve_worker_display_name(worker.id)}",
             active_page="workers",
+            workspace_mode=workspace_mode,
             viewer_role=viewer_role,
             viewer_id=viewer_id,
             notice=notice,
@@ -5666,6 +5891,202 @@ class AppStore:
             }
         )
         return context
+
+    def _live_summary_strip(
+        self,
+        *,
+        viewer_role: str = "admin",
+        viewer_id: str | None = None,
+        manager_ids: list[str] | None = None,
+    ) -> list[dict[str, str]]:
+        selected_manager_ids = self._effective_manager_scope_ids(
+            viewer_role=viewer_role,
+            viewer_id=viewer_id,
+            manager_ids=manager_ids,
+        )
+        scoped_workers = [worker for worker in self.workers if not selected_manager_ids or worker.manager_id in selected_manager_ids]
+        scoped_users = [
+            user
+            for user in self.users
+            if user.role == "user" and (not selected_manager_ids or self._resolved_user_manager_id(user) in selected_manager_ids)
+        ]
+        total_managers = len(selected_manager_ids) if selected_manager_ids else len([user for user in self.users if user.role == "manager"])
+        live_ready = len([worker for worker in scoped_workers if worker.status in {"online", "busy"}])
+        return [
+            {
+                "value": str(total_managers),
+                "label": "Manager Trong Scope",
+                "icon": "users",
+                "icon_class": "text-emerald-500",
+                "accent": "Scope",
+                "accent_badge_class": "border-emerald-200 bg-emerald-50 text-emerald-700",
+                "value_class": "text-emerald-600",
+                "bar_color": "#10b981",
+            },
+            {
+                "value": f"{live_ready}/{len(scoped_workers)}",
+                "label": "BOT Đang Chạy",
+                "icon": "server",
+                "icon_class": "text-brand-500",
+                "accent": "Active",
+                "accent_badge_class": "border-brand-100 bg-brand-50 text-brand-700",
+                "value_class": "text-brand-600",
+                "bar_color": "#6366f1",
+            },
+            {
+                "value": str(len(scoped_users)),
+                "label": "Tổng User",
+                "icon": "users",
+                "icon_class": "text-rose-500",
+                "accent": "Accounts",
+                "accent_badge_class": "border-rose-200 bg-rose-50 text-rose-700",
+                "value_class": "text-slate-900",
+                "bar_color": "#f43f5e",
+            },
+            {
+                "value": "0",
+                "label": "Đang Live",
+                "icon": "radio",
+                "icon_class": "text-brand-500",
+                "accent": "Live",
+                "accent_badge_class": "border-indigo-200 bg-indigo-50 text-indigo-700",
+                "value_class": "text-brand-600",
+                "bar_color": "#5d67df",
+            },
+            {
+                "value": "0",
+                "label": "Chờ Lên Lịch",
+                "icon": "clock-3",
+                "icon_class": "text-sky-500",
+                "accent": "Queue",
+                "accent_badge_class": "border-sky-200 bg-sky-50 text-sky-700",
+                "value_class": "text-slate-900",
+                "bar_color": "#0284c7",
+            },
+            {
+                "value": "0",
+                "label": "BOT Backup",
+                "icon": "shield-check",
+                "icon_class": "text-amber-500",
+                "accent": "Fallback",
+                "accent_badge_class": "border-amber-200 bg-amber-50 text-amber-700",
+                "value_class": "text-amber-600",
+                "bar_color": "#f59e0b",
+            },
+        ]
+
+    def get_admin_live_workspace_context(
+        self,
+        *,
+        manager_ids: list[str] | None = None,
+        viewer_role: str = "admin",
+        viewer_id: str | None = None,
+        notice: str | None = None,
+        notice_level: str = "success",
+    ) -> dict[str, Any]:
+        effective_manager_ids = self._effective_manager_scope_ids(
+            viewer_role=viewer_role,
+            viewer_id=viewer_id,
+            manager_ids=manager_ids,
+        )
+        scoped_workers = [worker for worker in self.workers if not effective_manager_ids or worker.manager_id in effective_manager_ids]
+        live_workers: list[dict[str, Any]] = []
+        for worker in scoped_workers:
+            live_workers.append(
+                {
+                    "id": worker.id,
+                    "name": self._resolve_worker_display_name(worker.id),
+                    "manager_name": worker.manager_name or "-",
+                }
+            )
+        live_ready = len([worker for worker in scoped_workers if worker.status in {"online", "busy"}])
+        total_workers = len(scoped_workers)
+        assigned_bot_count = total_workers
+        kpis = [
+            {
+                "label": "BOT được cấp",
+                "icon": "server",
+                "icon_class": "text-emerald-500",
+                "value": assigned_bot_count,
+                "accent": "Live + Backup",
+                "accent_class": "text-emerald-600",
+                "value_class": "text-emerald-600",
+                "bar_class": "bg-emerald-400",
+            },
+            {
+                "label": "BOT live sẵn sàng",
+                "icon": "server-cog",
+                "icon_class": "text-brand-500",
+                "value": live_ready,
+                "accent": f"{live_ready}/{total_workers} BOT",
+                "accent_class": "text-brand-600",
+                "value_class": "text-brand-600",
+                "bar_class": "bg-brand-500",
+            },
+            {
+                "label": "Đang live",
+                "icon": "radio",
+                "icon_class": "text-rose-500",
+                "value": 0,
+                "accent": "Live",
+                "accent_class": "text-rose-500",
+                "value_class": "text-slate-900",
+                "bar_class": "bg-rose-400",
+            },
+            {
+                "label": "Chờ lên lịch",
+                "icon": "clock-3",
+                "icon_class": "text-amber-500",
+                "value": 0,
+                "accent": "Lịch",
+                "accent_class": "text-amber-600",
+                "value_class": "text-slate-900",
+                "bar_class": "bg-amber-400",
+            },
+            {
+                "label": "BOT backup",
+                "icon": "shield-check",
+                "icon_class": "text-sky-500",
+                "value": 0,
+                "accent": "Fallback",
+                "accent_class": "text-sky-500",
+                "value_class": "text-slate-900",
+                "bar_class": "bg-sky-400",
+            },
+        ]
+        return {
+            "template": "user_live_dashboard.html",
+            "page_title": "Điều phối live",
+            "admin_shell": True,
+            "app_name": "Youtube Upload",
+            "workspace_label": "Admin workspace",
+            "active_page": "live_workspace",
+            "nav_items": self._admin_nav_items("live"),
+            "user_name": "admin" if viewer_role == "admin" else "manager",
+            "user_role": "Control plane",
+            "logout_path": "/admin/logout",
+            "notice": notice,
+            "notice_level": notice_level,
+            "kpis": kpis,
+            "live_config": {
+                "title": "Live Config",
+                "description": "Thiết lập BOT chính, BOT backup, media nguồn và lịch live.",
+            },
+            "live_form": {
+                "stream_name": "",
+                "video_url": "",
+                "audio_url": "",
+                "stream_key": "",
+                "backup_delay_minutes": 3,
+            },
+            "live_workers": live_workers,
+            "live_tabs": [
+                {"label": "Danh sách live", "count": 0, "active": True},
+                {"label": "Chờ lên lịch", "count": 0, "active": False},
+            ],
+            "live_stream_rows": [],
+            "live_summary": "Chưa có luồng live nào trong danh sách",
+        }
 
     def create_admin_user(
         self,
@@ -6482,6 +6903,7 @@ class AppStore:
         manager_ids: list[str] | None = None,
         user_id: str | None = None,
         bot_id: str | None = None,
+        workspace_mode: str = "upload",
         viewer_role: str = "admin",
         viewer_id: str | None = None,
         notice: str | None = None,
@@ -6495,6 +6917,7 @@ class AppStore:
         context = self._admin_shell_context(
             page_title="Danh sách Kênh",
             active_page="channels",
+            workspace_mode=workspace_mode,
             viewer_role=viewer_role,
             viewer_id=viewer_id,
             manager_ids=manager_ids,
@@ -6515,6 +6938,7 @@ class AppStore:
         self,
         *,
         user_id: str,
+        workspace_mode: str = "upload",
         viewer_role: str = "admin",
         viewer_id: str | None = None,
         notice: str | None = None,
@@ -6545,6 +6969,7 @@ class AppStore:
         context = self._admin_shell_context(
             page_title=f"Thêm kênh cho người dùng {user.username}",
             active_page="channels",
+            workspace_mode=workspace_mode,
             viewer_role=viewer_role,
             viewer_id=viewer_id,
             notice=notice,
@@ -6567,6 +6992,7 @@ class AppStore:
         self,
         *,
         channel_id: str,
+        workspace_mode: str = "upload",
         viewer_role: str = "admin",
         viewer_id: str | None = None,
         notice: str | None = None,
@@ -6597,6 +7023,7 @@ class AppStore:
         context = self._admin_shell_context(
             page_title=f"Danh sách người dùng của kênh {channel.name}",
             active_page="channels",
+            workspace_mode=workspace_mode,
             viewer_role=viewer_role,
             viewer_id=viewer_id,
             notice=notice,
@@ -6794,6 +7221,7 @@ class AppStore:
         *,
         manager_ids: list[str] | None = None,
         channel_id: str | None = None,
+        workspace_mode: str = "upload",
         viewer_role: str = "admin",
         viewer_id: str | None = None,
         notice: str | None = None,
@@ -6802,6 +7230,7 @@ class AppStore:
         context = self._admin_shell_context(
             page_title="Danh sách Render",
             active_page="renders",
+            workspace_mode=workspace_mode,
             viewer_role=viewer_role,
             viewer_id=viewer_id,
             manager_ids=manager_ids,

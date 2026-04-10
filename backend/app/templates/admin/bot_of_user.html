@@ -2,6 +2,7 @@
 
 {% block content %}
 <section class="space-y-6">
+    {% set is_live_workspace = dashboard.workspace_mode == 'live' %}
     {% include "admin/_admin_notice.html" %}
 
     <div class="panel p-5">
@@ -10,16 +11,22 @@
                 <i data-lucide="server" class="h-4.5 w-4.5 text-brand-600"></i>
             </div>
             <div>
-                <h2 class="section-title">Danh sách VPS của {{ dashboard.target_user.username }}</h2>
-                <p class="section-note">Xem nhanh toàn bộ VPS đang được cấp cho user này và số kênh đang bám trên từng máy.</p>
+                <h2 class="section-title">Danh s&#225;ch VPS c&#7911;a {{ dashboard.target_user.username }}</h2>
+                <p class="section-note">
+                    {% if is_live_workspace %}
+                    Xem nhanh BOT live hi&#7879;n &#273;ang n&#7857;m trong scope c&#7911;a user n&#224;y, gi&#7919; chung shell qu&#7843;n tr&#7883; v&#7899;i workspace Live Stream.
+                    {% else %}
+                    Xem nhanh to&#224;n b&#7897; VPS &#273;ang &#273;&#432;&#7907;c c&#7845;p cho user n&#224;y v&#224; s&#7889; k&#234;nh &#273;ang b&#225;m tr&#234;n t&#7915;ng m&#225;y.
+                    {% endif %}
+                </p>
             </div>
         </div>
     </div>
 
     <div class="panel overflow-hidden">
         <div class="border-b border-slate-200/80 px-5 py-4">
-            <h3 class="section-title">VPS đang được cấp</h3>
-            <p class="section-note">Danh sách bên dưới phản ánh toàn bộ VPS hiện tại của user. Production vẫn khóa cố định 1 job active / VPS.</p>
+            <h3 class="section-title">VPS &#273;ang &#273;&#432;&#7907;c c&#7845;p</h3>
+            <p class="section-note">Danh s&#225;ch b&#234;n d&#432;&#7899;i ph&#7843;n &#225;nh to&#224;n b&#7897; VPS hi&#7879;n t&#7841;i c&#7911;a user. Production v&#7851;n kh&#243;a c&#7889; &#273;&#7883;nh 1 job active / VPS.</p>
         </div>
 
         <div class="table-shell">
@@ -29,14 +36,14 @@
                         <th class="w-14">STT</th>
                         <th>VPS</th>
                         <th>Group</th>
-                        <th>Trạng thái</th>
-                        <th>Tạo lúc</th>
-                        <th>Số kênh</th>
-                        <th>Số user</th>
-                        <th>Luồng</th>
+                        <th>Tr&#7841;ng th&#225;i</th>
+                        <th>T&#7841;o l&#250;c</th>
+                        <th>S&#7889; k&#234;nh</th>
+                        <th>S&#7889; user</th>
+                        <th>Lu&#7891;ng</th>
                         <th>Disk</th>
-                        <th>Băng thông</th>
-                        <th class="text-right">Tác vụ</th>
+                        <th>B&#259;ng th&#244;ng</th>
+                        <th class="text-right">T&#225;c v&#7909;</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -56,20 +63,27 @@
                         <td class="table-mono text-slate-700">{{ worker.bandwidth_text }}</td>
                         <td>
                             <div class="flex items-center justify-end gap-2">
+                                {% if is_live_workspace %}
+                                <a href="/admin/bot/userofbot?botId={{ worker.id }}&botName={{ worker.name }}&workspace=live" class="action-btn action-btn-primary">
+                                    <i data-lucide="users" class="h-3.5 w-3.5"></i>
+                                    DS user
+                                </a>
+                                {% else %}
                                 <a href="/admin/channel/bot?botId={{ worker.id }}&botName={{ worker.name }}" class="action-btn action-btn-sky">
                                     <i data-lucide="link-2" class="h-3.5 w-3.5"></i>
-                                    DS kênh
+                                    DS k&#234;nh
                                 </a>
                                 <a href="/admin/bot/userofbot?botId={{ worker.id }}&botName={{ worker.name }}" class="action-btn action-btn-primary">
                                     <i data-lucide="users" class="h-3.5 w-3.5"></i>
                                     DS user
                                 </a>
+                                {% endif %}
                             </div>
                         </td>
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="11" class="px-6 py-10 text-center text-[13px] text-slate-500">User này chưa được cấp VPS nào.</td>
+                        <td colspan="11" class="px-6 py-10 text-center text-[13px] text-slate-500">User n&#224;y ch&#432;a &#273;&#432;&#7907;c c&#7845;p VPS n&#224;o.</td>
                     </tr>
                     {% endfor %}
                 </tbody>
