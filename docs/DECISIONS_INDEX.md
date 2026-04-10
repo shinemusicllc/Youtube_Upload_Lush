@@ -25,6 +25,9 @@
 | DEC-020 | `admin` va `manager` duoc xem nhu account workspace rieng tren cung VPS, nhung `ChannelRecord` van global theo `channel_id` nen `confirm_browser_session` phai chan viec link them mot kenh da thuoc account khac | Active | admin workspace + shared VPS isolation | High |
 | DEC-021 | Neu worker phai dung snap-backed `chromium-browser`, runtime phai override `SNAP_USER_COMMON`, `SNAP_USER_DATA`, `SNAP_REAL_HOME` va `XDG_*` theo tung `browser_profile_path`; bootstrap BOT moi van uu tien browser non-snap, nhung login va upload phai dung cung mot env builder de profile isolation hoat dong ca voi snap | Active | worker runtime + browser profile isolation | High |
 | DEC-022 | Production worker browser canonical chuyen sang native `google-chrome-stable`; login noVNC va upload phai dung chung `profile_path + _build_browser_env()` voi `HOME`, `DBUS`, `XDG_*`, `password-store=basic`, shutdown graceful, va khong pin `chromedriver` co dinh trong bootstrap | Active | worker runtime + browser profile | High |
+| DEC-023 | Live stream admin/manager se reuse chung admin shell hien tai qua workspace tabs `Upload` / `Live Stream`; cac bang list live phai giu du schema app cu, chi gop cot khi da co equivalent visual/logic trong app moi | Active | admin live workspace + parity management | High |
+| DEC-024 | Live workspace bo phan loai `1080/4K`; quan tri BOT/user chi theo doi mot `Luồng live stream` chinh va `Backup` rieng | Active | admin live workspace + live capacity model | Medium |
+| DEC-025 | Worker service bootstrap khong duoc phu thuoc `network-online.target`; unit worker chi can `After=network.target` va worker tu retry/re-register control-plane sau khi start | Active | worker bootstrap + systemd unit | Medium |
 
 ## Notes
 - `docs/DECISIONS.md` van giu full history va ly do chi tiet.
