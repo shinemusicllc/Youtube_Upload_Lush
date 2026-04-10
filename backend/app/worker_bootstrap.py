@@ -113,6 +113,15 @@ def _worker_decommission_command_timeout_seconds() -> int:
     return max(180, value)
 
 
+def _worker_install_max_concurrency() -> int:
+    raw_value = str(os.getenv("WORKER_INSTALL_MAX_CONCURRENCY", "2")).strip()
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        value = 2
+    return max(1, value)
+
+
 def suggest_next_worker_id(existing_worker_ids: list[str] | tuple[str, ...] | set[str]) -> str:
     max_suffix = 0
     for raw_value in existing_worker_ids:
@@ -630,6 +639,31 @@ def is_worker_operation_thread_active(operation_id: str) -> bool:
         return current is not None and current.is_alive()
 
 
+def _active_install_thread_operation_ids(store) -> set[str]:
+    active_ids: set[str] = set()
+    operation_map = {
+        str(task.get("id") or "").strip(): task
+        for task in store.get_worker_operation_snapshots()
+    }
+    with _OPERATION_THREADS_LOCK:
+        active_threads = {
+            operation_id
+            for operation_id, thread in _OPERATION_THREADS.items()
+            if thread.is_alive()
+        }
+    for operation_id in active_threads:
+        task = operation_map.get(operation_id)
+        if task is None:
+            continue
+        if str(task.get("kind") or "").strip() != "install":
+            continue
+        status = str(task.get("status") or "").strip()
+        if status in {"completed", "failed", "awaiting_registration"}:
+            continue
+        active_ids.add(operation_id)
+    return active_ids
+
+
 def start_worker_install_operation(
     *,
     store,
@@ -658,12 +692,7 @@ def start_worker_install_operation(
         requested_by=requested_by,
         requested_role=requested_role,
     )
-    _start_operation_thread(
-        str(task.get("id") or ""),
-        name=f"worker-install-{request.worker_id}",
-        target=_run_worker_install_operation,
-        args=(store, str(task.get("id") or ""), request),
-    )
+    ensure_worker_operation_threads(store)
     return task
 
 
@@ -726,7 +755,12 @@ def _decommission_request_from_task(store, task: dict[str, str]) -> WorkerDecomm
 
 
 def ensure_worker_operation_threads(store) -> None:
-    for task in store.get_worker_operation_snapshots():
+    snapshots = store.get_worker_operation_snapshots()
+    install_limit = _worker_install_max_concurrency()
+    active_install_ids = _active_install_thread_operation_ids(store)
+    available_install_slots = max(0, install_limit - len(active_install_ids))
+
+    for task in snapshots:
         operation_id = str(task.get("id") or "").strip()
         kind = str(task.get("kind") or "").strip()
         status = str(task.get("status") or "").strip()
@@ -734,6 +768,10 @@ def ensure_worker_operation_threads(store) -> None:
             continue
         try:
             if kind == "install":
+                if operation_id in active_install_ids:
+                    continue
+                if available_install_slots <= 0:
+                    continue
                 request = _install_request_from_task(store, task)
                 _start_operation_thread(
                     operation_id,
@@ -741,6 +779,8 @@ def ensure_worker_operation_threads(store) -> None:
                     target=_run_worker_install_operation,
                     args=(store, operation_id, request),
                 )
+                active_install_ids.add(operation_id)
+                available_install_slots -= 1
             elif kind == "decommission" and str(task.get("transport") or "ssh").strip() == "ssh":
                 request = _decommission_request_from_task(store, task)
                 worker_id = str(task.get("worker_id") or "").strip()
