@@ -13,13 +13,13 @@
                     <p class="section-note">Sửa tên đăng nhập, pass và manager của user.</p>
                 </div>
             </div>
-            {% include "admin/_user_tabs.html" %}
         </div>
     </div>
 
     <div class="panel max-w-3xl p-6">
         <form method="post" action="/admin/user/updatetelegram" class="space-y-5">
             <input type="hidden" name="user_id" value="{{ dashboard.user_record.id }}">
+            <input type="hidden" name="workspace" value="{{ dashboard.workspace_mode }}">
 
             {% if dashboard.error %}
             <div class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] font-medium text-rose-700">{{ dashboard.error }}</div>
@@ -94,7 +94,7 @@
                     Lấy Telegram ID
                 </button>
                 <div class="flex items-center gap-3">
-                    <a href="/admin/user/index" class="action-btn action-btn-slate px-4 py-2 text-[13px]">Quay lại</a>
+                    <a href="/admin/user/index?workspace={{ dashboard.workspace_mode }}" class="action-btn action-btn-slate px-4 py-2 text-[13px]">Quay lại</a>
                     <button type="submit" class="action-btn action-btn-emerald px-4 py-2 text-[13px]">
                         <i data-lucide="save" class="h-4 w-4"></i>
                         Cập nhật

@@ -15,12 +15,12 @@
                     <p class="section-note">Nhập user có sẵn trong hệ thống để cấp quyền nhanh và quản lý danh sách tài khoản đang có role {{ dashboard.role_label }}.</p>
                 </div>
             </div>
-            {% include "admin/_user_tabs.html" %}
         </div>
     </div>
 
     <div class="panel p-6">
         <form method="post" action="{{ dashboard.action_route }}" class="grid gap-3 md:grid-cols-[1fr_auto]">
+            <input type="hidden" name="workspace" value="{{ dashboard.workspace_mode }}">
             <select
                 class="toolbar-select"
                 name="userId"
@@ -73,6 +73,7 @@
                         <td>
                             <div class="flex items-center justify-end gap-2">
                                 <form method="post" action="{{ dashboard.action_route }}" data-bulk-delete-form onsubmit="return confirm('Gỡ role {{ dashboard.role_label }} khỏi user này?');">
+                                    <input type="hidden" name="workspace" value="{{ dashboard.workspace_mode }}">
                                     <input type="hidden" name="username" value="{{ row.username }}">
                                     <button type="submit" class="action-btn action-btn-rose">
                                         <i data-lucide="shield-off" class="h-3.5 w-3.5"></i>

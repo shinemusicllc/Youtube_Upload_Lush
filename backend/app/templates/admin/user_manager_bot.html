@@ -13,7 +13,6 @@
                     <p class="section-note">Trang này dùng để theo dõi danh sách VPS đang gán cho user. Mọi thao tác đổi user hoặc quản lý BOT được thực hiện trực tiếp tại Danh sách BOT.</p>
                 </div>
             </div>
-            {% include "admin/_user_tabs.html" %}
         </div>
     </div>
 
@@ -44,11 +43,11 @@
                 </div>
 
                 <div class="flex flex-wrap gap-3 border-t border-slate-200 pt-4">
-                    <a href="/admin/ManagerBOT/index?userId={{ dashboard.user_record.id }}" class="action-btn action-btn-emerald px-4 py-2 text-[13px]">
+                    <a href="/admin/ManagerBOT/index?userId={{ dashboard.user_record.id }}&workspace={{ dashboard.workspace_mode }}" class="action-btn action-btn-emerald px-4 py-2 text-[13px]">
                         <i data-lucide="server" class="h-4 w-4"></i>
                         Mở Danh sách BOT
                     </a>
-                    <a href="/admin/user/index" class="action-btn action-btn-slate px-4 py-2 text-[13px]">
+                    <a href="/admin/user/index?workspace={{ dashboard.workspace_mode }}" class="action-btn action-btn-slate px-4 py-2 text-[13px]">
                         Quay lại user
                     </a>
                 </div>
