@@ -5,9 +5,10 @@ import logging
 import os
 import re
 import shlex
+import time
 from dataclasses import dataclass
 from pathlib import Path
-from threading import Thread
+from threading import Lock, Thread, current_thread
 from typing import Callable
 
 try:
@@ -26,6 +27,8 @@ DEFAULT_BRANCH = "main"
 DEFAULT_APP_DIR = "/opt/youtube-upload-lush"
 DEFAULT_RUNTIME_DIR = "/opt/youtube-upload-lush-runtime"
 logger = logging.getLogger(__name__)
+_OPERATION_THREADS: dict[str, Thread] = {}
+_OPERATION_THREADS_LOCK = Lock()
 
 
 class WorkerBootstrapError(RuntimeError):
@@ -81,6 +84,33 @@ class WorkerDecommissionResult:
     vps_ip: str
     service_enabled: str
     service_active: str
+
+
+def _worker_ssh_short_timeout_seconds() -> int:
+    raw_value = str(os.getenv("WORKER_SSH_SHORT_TIMEOUT_SECONDS", "60")).strip()
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        value = 60
+    return max(15, value)
+
+
+def _worker_bootstrap_command_timeout_seconds() -> int:
+    raw_value = str(os.getenv("WORKER_BOOTSTRAP_COMMAND_TIMEOUT_SECONDS", "1800")).strip()
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        value = 1800
+    return max(300, value)
+
+
+def _worker_decommission_command_timeout_seconds() -> int:
+    raw_value = str(os.getenv("WORKER_DECOMMISSION_COMMAND_TIMEOUT_SECONDS", "900")).strip()
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        value = 900
+    return max(180, value)
 
 
 def suggest_next_worker_id(existing_worker_ids: list[str] | tuple[str, ...] | set[str]) -> str:
@@ -195,7 +225,7 @@ def _load_private_key(raw_key: str):
     raise WorkerBootstrapError(f"SSH key không hợp lệ: {last_error or 'unknown error'}")
 
 
-def _connect_client(request: WorkerBootstrapRequest):
+def _connect_client(request: WorkerBootstrapRequest | WorkerDecommissionRequest):
     _ensure_runtime_dependency()
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -223,10 +253,59 @@ def _connect_client(request: WorkerBootstrapRequest):
         raise WorkerBootstrapError(f"Không kết nối được VPS {request.vps_ip}: {exc}") from exc
 
 
-def _run_remote_command(client, command: str) -> tuple[int, str, str]:
+def _tail_text(value: str, *, max_lines: int = 24, max_chars: int = 2400) -> str:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return ""
+    lines = normalized.splitlines()
+    if len(lines) > max_lines:
+        lines = lines[-max_lines:]
+    clipped = "\n".join(lines).strip()
+    if len(clipped) > max_chars:
+        clipped = clipped[-max_chars:].strip()
+    return clipped
+
+
+def _remote_command_error_message(command: str, stdout_text: str, stderr_text: str) -> str:
+    snippet = _tail_text(stderr_text) or _tail_text(stdout_text)
+    if snippet:
+        return snippet
+    return f"Remote command failed: {command}"
+
+
+def _run_remote_command(
+    client,
+    command: str,
+    *,
+    timeout_seconds: int | None = None,
+) -> tuple[int, str, str]:
+    effective_timeout = int(timeout_seconds or _worker_ssh_short_timeout_seconds())
     stdin, stdout, stderr = client.exec_command(command)
-    exit_code = stdout.channel.recv_exit_status()
-    return exit_code, stdout.read().decode("utf-8", errors="replace"), stderr.read().decode("utf-8", errors="replace")
+    channel = stdout.channel
+    stdout_chunks = bytearray()
+    stderr_chunks = bytearray()
+    deadline = time.monotonic() + effective_timeout if effective_timeout > 0 else None
+
+    while True:
+        while channel.recv_ready():
+            stdout_chunks.extend(channel.recv(4096))
+        while channel.recv_stderr_ready():
+            stderr_chunks.extend(channel.recv_stderr(4096))
+        if channel.exit_status_ready() and not channel.recv_ready() and not channel.recv_stderr_ready():
+            break
+        if deadline is not None and time.monotonic() >= deadline:
+            channel.close()
+            stdout_text = stdout_chunks.decode("utf-8", errors="replace")
+            stderr_text = stderr_chunks.decode("utf-8", errors="replace")
+            raise WorkerBootstrapError(
+                f"Lệnh từ xa chạy quá {effective_timeout}s.\n{_remote_command_error_message(command, stdout_text, stderr_text)}"
+            )
+        time.sleep(0.2)
+
+    exit_code = channel.recv_exit_status()
+    stdout_text = stdout_chunks.decode("utf-8", errors="replace")
+    stderr_text = stderr_chunks.decode("utf-8", errors="replace")
+    return exit_code, stdout_text, stderr_text
 
 
 def _upload_remote_script(sftp, local_path: Path, remote_path: str) -> None:
@@ -285,7 +364,11 @@ def bootstrap_worker_via_ssh(
     try:
         if progress:
             progress(f"Đang kết nối SSH tới VPS {request.vps_ip}...")
-        exit_code, stdout, stderr = _run_remote_command(client, "mktemp -d /tmp/youtube-worker-bootstrap-XXXXXX")
+        exit_code, stdout, stderr = _run_remote_command(
+            client,
+            "mktemp -d /tmp/youtube-worker-bootstrap-XXXXXX",
+            timeout_seconds=_worker_ssh_short_timeout_seconds(),
+        )
         if exit_code != 0:
             raise WorkerBootstrapError(stderr.strip() or stdout.strip() or "Không tạo được thư mục tạm trên VPS.")
         temp_dir = stdout.strip()
@@ -327,27 +410,28 @@ def bootstrap_worker_via_ssh(
             script=shlex.quote(remote_bootstrap_script),
         )
         steps = (
-            (chmod_command, "Đang chuẩn hóa quyền thực thi script trên VPS..."),
-            (install_env_command, "Đang ghi file cấu hình worker vào hệ thống..."),
-            (bootstrap_command, "Đang clone repo, cài dependency và bật worker service..."),
+            (chmod_command, "Đang chuẩn hóa quyền thực thi script trên VPS...", _worker_ssh_short_timeout_seconds()),
+            (install_env_command, "Đang ghi file cấu hình worker vào hệ thống...", _worker_ssh_short_timeout_seconds()),
+            (bootstrap_command, "Đang clone repo, cài dependency và bật worker service...", _worker_bootstrap_command_timeout_seconds()),
         )
-        for command, step_message in steps:
+        for command, step_message, timeout_seconds in steps:
             if progress:
                 progress(step_message)
-            exit_code, stdout, stderr = _run_remote_command(client, command)
+            exit_code, stdout, stderr = _run_remote_command(client, command, timeout_seconds=timeout_seconds)
             if exit_code != 0:
-                message = stderr.strip() or stdout.strip() or f"Remote command failed: {command}"
-                raise WorkerBootstrapError(message)
+                raise WorkerBootstrapError(_remote_command_error_message(command, stdout, stderr))
 
         if progress:
             progress("Đang kiểm tra trạng thái systemd của worker...")
         _, enabled_stdout, _ = _run_remote_command(
             client,
             f"{sudo_prefix}systemctl is-enabled youtube-upload-worker.service",
+            timeout_seconds=_worker_ssh_short_timeout_seconds(),
         )
         _, active_stdout, active_stderr = _run_remote_command(
             client,
             f"{sudo_prefix}systemctl is-active youtube-upload-worker.service",
+            timeout_seconds=_worker_ssh_short_timeout_seconds(),
         )
         service_enabled = enabled_stdout.strip() or "unknown"
         service_active = active_stdout.strip() or active_stderr.strip() or "unknown"
@@ -355,9 +439,10 @@ def bootstrap_worker_via_ssh(
             _, status_stdout, status_stderr = _run_remote_command(
                 client,
                 f"{sudo_prefix}systemctl status youtube-upload-worker.service --no-pager -n 40",
+                timeout_seconds=_worker_ssh_short_timeout_seconds(),
             )
             raise WorkerBootstrapError(
-                (status_stderr.strip() or status_stdout.strip() or "Worker service không active sau bootstrap.")
+                status_stderr.strip() or status_stdout.strip() or "Worker service không active sau bootstrap."
             )
         return WorkerBootstrapResult(
             worker_id=request.worker_id,
@@ -368,7 +453,10 @@ def bootstrap_worker_via_ssh(
         )
     finally:
         if temp_dir:
-            _run_remote_command(client, f"rm -rf {shlex.quote(temp_dir)}")
+            try:
+                _run_remote_command(client, f"rm -rf {shlex.quote(temp_dir)}", timeout_seconds=_worker_ssh_short_timeout_seconds())
+            except Exception:
+                logger.debug("bootstrap_tempdir_cleanup_failed vps_ip=%s temp_dir=%s", request.vps_ip, temp_dir, exc_info=True)
         client.close()
 
 
@@ -382,7 +470,11 @@ def decommission_worker_via_ssh(
     try:
         if progress:
             progress(f"Đang kết nối SSH tới VPS {request.vps_ip}...")
-        exit_code, stdout, stderr = _run_remote_command(client, "mktemp -d /tmp/youtube-worker-decommission-XXXXXX")
+        exit_code, stdout, stderr = _run_remote_command(
+            client,
+            "mktemp -d /tmp/youtube-worker-decommission-XXXXXX",
+            timeout_seconds=_worker_ssh_short_timeout_seconds(),
+        )
         if exit_code != 0:
             raise WorkerBootstrapError(stderr.strip() or stdout.strip() or "Không tạo được thư mục tạm trên VPS.")
         temp_dir = stdout.strip()
@@ -400,35 +492,34 @@ def decommission_worker_via_ssh(
 
         sudo_prefix = "" if request.ssh_user == "root" else "sudo "
         chmod_command = f"chmod 755 {shlex.quote(remote_script)}"
-        decommission_command = (
-            "{sudo}env APP_DIR={app_dir} RUNTIME_DIR={runtime_dir} bash {script}"
-        ).format(
+        decommission_command = "{sudo}env APP_DIR={app_dir} RUNTIME_DIR={runtime_dir} bash {script}".format(
             sudo=sudo_prefix,
             app_dir=shlex.quote(request.app_dir),
             runtime_dir=shlex.quote(request.runtime_dir),
             script=shlex.quote(remote_script),
         )
         steps = (
-            (chmod_command, "Đang chuẩn hóa quyền thực thi script gỡ BOT..."),
-            (decommission_command, "Đang dừng service và dọn app worker khỏi VPS..."),
+            (chmod_command, "Đang chuẩn hóa quyền thực thi script gỡ BOT...", _worker_ssh_short_timeout_seconds()),
+            (decommission_command, "Đang dừng service và dọn app worker khỏi VPS...", _worker_decommission_command_timeout_seconds()),
         )
-        for command, step_message in steps:
+        for command, step_message, timeout_seconds in steps:
             if progress:
                 progress(step_message)
-            exit_code, stdout, stderr = _run_remote_command(client, command)
+            exit_code, stdout, stderr = _run_remote_command(client, command, timeout_seconds=timeout_seconds)
             if exit_code != 0:
-                message = stderr.strip() or stdout.strip() or f"Remote command failed: {command}"
-                raise WorkerBootstrapError(message)
+                raise WorkerBootstrapError(_remote_command_error_message(command, stdout, stderr))
 
         if progress:
             progress("Đang xác nhận worker service đã được gỡ khỏi hệ thống...")
         enabled_code, enabled_stdout, enabled_stderr = _run_remote_command(
             client,
             f"{sudo_prefix}systemctl is-enabled youtube-upload-worker.service",
+            timeout_seconds=_worker_ssh_short_timeout_seconds(),
         )
         active_code, active_stdout, active_stderr = _run_remote_command(
             client,
             f"{sudo_prefix}systemctl is-active youtube-upload-worker.service",
+            timeout_seconds=_worker_ssh_short_timeout_seconds(),
         )
         service_enabled = (enabled_stdout.strip() or enabled_stderr.strip() or "not-found") if enabled_code != 0 else (
             enabled_stdout.strip() or "unknown"
@@ -443,7 +534,10 @@ def decommission_worker_via_ssh(
         )
     finally:
         if temp_dir:
-            _run_remote_command(client, f"rm -rf {shlex.quote(temp_dir)}")
+            try:
+                _run_remote_command(client, f"rm -rf {shlex.quote(temp_dir)}", timeout_seconds=_worker_ssh_short_timeout_seconds())
+            except Exception:
+                logger.debug("decommission_tempdir_cleanup_failed vps_ip=%s temp_dir=%s", request.vps_ip, temp_dir, exc_info=True)
         client.close()
 
 
@@ -470,6 +564,70 @@ def _run_worker_install_operation(store, operation_id: str, request: WorkerBoots
             str(request.vps_ip or "").strip(),
         )
         store.fail_worker_operation(operation_id, message=str(exc))
+
+
+def _run_worker_decommission_operation(
+    store,
+    operation_id: str,
+    worker_id: str,
+    request: WorkerDecommissionRequest,
+) -> None:
+    try:
+        def report(message: str) -> None:
+            store.update_worker_operation(operation_id, status="running", message=message)
+
+        report(f"Đang kết nối SSH tới {request.vps_ip} và chuẩn bị gỡ BOT...")
+        decommission_worker_via_ssh(request, progress=report)
+        store.finalize_decommissioned_bot(worker_id, operation_id)
+    except Exception as exc:
+        logger.exception(
+            "worker_decommission_operation_failed operation_id=%s worker_id=%s vps_ip=%s",
+            str(operation_id or "").strip(),
+            str(worker_id or "").strip(),
+            str(request.vps_ip or "").strip(),
+        )
+        store.fail_worker_operation(operation_id, message=str(exc))
+
+
+def _run_tracked_operation(operation_id: str, target: Callable[..., None], *args) -> None:
+    try:
+        target(*args)
+    finally:
+        with _OPERATION_THREADS_LOCK:
+            current = _OPERATION_THREADS.get(operation_id)
+            if current is current_thread():
+                _OPERATION_THREADS.pop(operation_id, None)
+
+
+def _start_operation_thread(
+    operation_id: str,
+    *,
+    name: str,
+    target: Callable[..., None],
+    args: tuple,
+) -> Thread:
+    with _OPERATION_THREADS_LOCK:
+        current = _OPERATION_THREADS.get(operation_id)
+        if current is not None and current.is_alive():
+            return current
+        thread = Thread(
+            target=_run_tracked_operation,
+            args=(operation_id, target, *args),
+            name=name,
+            daemon=True,
+        )
+        _OPERATION_THREADS[operation_id] = thread
+        thread.start()
+        return thread
+
+
+def is_worker_operation_thread_active(operation_id: str) -> bool:
+    normalized_id = str(operation_id or "").strip()
+    if not normalized_id:
+        return False
+    with _OPERATION_THREADS_LOCK:
+        current = _OPERATION_THREADS.get(normalized_id)
+        return current is not None and current.is_alive()
 
 
 def start_worker_install_operation(
@@ -500,36 +658,13 @@ def start_worker_install_operation(
         requested_by=requested_by,
         requested_role=requested_role,
     )
-    Thread(
+    _start_operation_thread(
+        str(task.get("id") or ""),
+        name=f"worker-install-{request.worker_id}",
         target=_run_worker_install_operation,
         args=(store, str(task.get("id") or ""), request),
-        name=f"worker-install-{request.worker_id}",
-        daemon=True,
-    ).start()
+    )
     return task
-
-
-def _run_worker_decommission_operation(
-    store,
-    operation_id: str,
-    worker_id: str,
-    request: WorkerDecommissionRequest,
-) -> None:
-    try:
-        def report(message: str) -> None:
-            store.update_worker_operation(operation_id, status="running", message=message)
-
-        report(f"Đang kết nối SSH tới {request.vps_ip} và chuẩn bị gỡ BOT...")
-        decommission_worker_via_ssh(request, progress=report)
-        store.finalize_decommissioned_bot(worker_id, operation_id)
-    except Exception as exc:
-        logger.exception(
-            "worker_decommission_operation_failed operation_id=%s worker_id=%s vps_ip=%s",
-            str(operation_id or "").strip(),
-            str(worker_id or "").strip(),
-            str(request.vps_ip or "").strip(),
-        )
-        store.fail_worker_operation(operation_id, message=str(exc))
 
 
 def start_worker_decommission_operation(
@@ -551,10 +686,75 @@ def start_worker_decommission_operation(
         requested_by=requested_by,
         requested_role=requested_role,
     )
-    Thread(
+    _start_operation_thread(
+        str(task.get("id") or ""),
+        name=f"worker-decommission-{worker_id}",
         target=_run_worker_decommission_operation,
         args=(store, str(task.get("id") or ""), worker_id, request),
-        name=f"worker-decommission-{worker_id}",
-        daemon=True,
-    ).start()
+    )
     return task
+
+
+def _install_request_from_task(store, task: dict[str, str]) -> WorkerBootstrapRequest:
+    worker_id = str(task.get("worker_id") or "").strip()
+    profile = store.get_worker_connection_profile(worker_id)
+    auth_mode = str(profile.get("auth_mode") or "password").strip().lower() or "password"
+    return build_worker_bootstrap_request(
+        vps_ip=str(profile.get("vps_ip") or task.get("vps_ip") or "").strip(),
+        ssh_user=str(profile.get("ssh_user") or "root").strip() or "root",
+        password=(str(profile.get("password") or "").strip() or None) if auth_mode != "ssh_key" else None,
+        ssh_private_key=(str(profile.get("ssh_private_key") or "").strip() or None) if auth_mode == "ssh_key" else None,
+        shared_secret=store.get_worker_shared_secret(),
+        control_plane_url=build_worker_bootstrap_control_plane_url(None),
+        worker_id=worker_id,
+        manager_name=str(task.get("manager_name") or "").strip() or "system",
+        repo_url=DEFAULT_REPO_URL,
+        branch=DEFAULT_BRANCH,
+    )
+
+
+def _decommission_request_from_task(store, task: dict[str, str]) -> WorkerDecommissionRequest:
+    worker_id = str(task.get("worker_id") or "").strip()
+    profile = store.get_worker_connection_profile(worker_id)
+    auth_mode = str(profile.get("auth_mode") or "password").strip().lower() or "password"
+    return build_worker_decommission_request(
+        vps_ip=str(profile.get("vps_ip") or task.get("vps_ip") or "").strip(),
+        ssh_user=str(profile.get("ssh_user") or "root").strip() or "root",
+        password=(str(profile.get("password") or "").strip() or None) if auth_mode != "ssh_key" else None,
+        ssh_private_key=(str(profile.get("ssh_private_key") or "").strip() or None) if auth_mode == "ssh_key" else None,
+    )
+
+
+def ensure_worker_operation_threads(store) -> None:
+    for task in store.get_worker_operation_snapshots():
+        operation_id = str(task.get("id") or "").strip()
+        kind = str(task.get("kind") or "").strip()
+        status = str(task.get("status") or "").strip()
+        if not operation_id or status in {"completed", "failed", "awaiting_registration"}:
+            continue
+        try:
+            if kind == "install":
+                request = _install_request_from_task(store, task)
+                _start_operation_thread(
+                    operation_id,
+                    name=f"worker-install-{request.worker_id}",
+                    target=_run_worker_install_operation,
+                    args=(store, operation_id, request),
+                )
+            elif kind == "decommission" and str(task.get("transport") or "ssh").strip() == "ssh":
+                request = _decommission_request_from_task(store, task)
+                worker_id = str(task.get("worker_id") or "").strip()
+                _start_operation_thread(
+                    operation_id,
+                    name=f"worker-decommission-{worker_id}",
+                    target=_run_worker_decommission_operation,
+                    args=(store, operation_id, worker_id, request),
+                )
+        except Exception as exc:
+            logger.exception(
+                "worker_operation_resume_failed operation_id=%s worker_id=%s kind=%s",
+                operation_id,
+                str(task.get("worker_id") or "").strip(),
+                kind or "unknown",
+            )
+            store.fail_worker_operation(operation_id, message=str(exc))

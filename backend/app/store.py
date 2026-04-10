@@ -51,7 +51,7 @@ from .schemas import (
     WorkerRecord,
     WorkerYouTubeUploadTarget,
 )
-from .worker_bootstrap import suggest_next_worker_id
+from .worker_bootstrap import ensure_worker_operation_threads, is_worker_operation_thread_active, suggest_next_worker_id
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
@@ -118,6 +118,33 @@ class AppStore:
         except (TypeError, ValueError):
             value = 30
         return max(10, value)
+
+    @staticmethod
+    def _worker_install_timeout_seconds() -> int:
+        raw_value = str(os.getenv("WORKER_INSTALL_TIMEOUT_SECONDS", "1800")).strip()
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            value = 1800
+        return max(300, value)
+
+    @staticmethod
+    def _worker_install_registration_timeout_seconds() -> int:
+        raw_value = str(os.getenv("WORKER_INSTALL_REGISTRATION_TIMEOUT_SECONDS", "300")).strip()
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            value = 300
+        return max(60, value)
+
+    @staticmethod
+    def _worker_decommission_timeout_seconds() -> int:
+        raw_value = str(os.getenv("WORKER_DECOMMISSION_TIMEOUT_SECONDS", "900")).strip()
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            value = 900
+        return max(180, value)
 
     @staticmethod
     def _worker_job_lease_seconds() -> int:
@@ -986,6 +1013,14 @@ class AppStore:
             return task
         raise KeyError(operation_id)
 
+    def get_worker_operation_snapshots(self) -> list[dict[str, Any]]:
+        with self._worker_state_lock:
+            return [
+                deepcopy(task)
+                for task in self.worker_operation_tasks
+                if not self._worker_operation_is_finished(task)
+            ]
+
     def _worker_operation_badge(self, task: dict[str, Any]) -> tuple[str, str]:
         kind = str(task.get("kind") or "").strip()
         status = str(task.get("status") or "").strip()
@@ -1470,6 +1505,63 @@ class AppStore:
                 ),
             )
 
+    def reconcile_worker_operation_timeouts(self, *, now: datetime | None = None) -> bool:
+        current_time = now or self._now(trim=False)
+        failures: list[tuple[str, str]] = []
+
+        with self._worker_state_lock:
+            for task in self.worker_operation_tasks:
+                status = str(task.get("status") or "").strip()
+                if status in {"completed", "failed"}:
+                    continue
+                kind = str(task.get("kind") or "").strip()
+                updated_at = self._parse_datetime(task.get("updated_at")) or self._parse_datetime(task.get("created_at")) or current_time
+                age_seconds = max(0, int((current_time - updated_at).total_seconds()))
+                operation_id = str(task.get("id") or "").strip()
+                worker_name = str(task.get("worker_name") or task.get("vps_ip") or task.get("worker_id") or "BOT").strip() or "BOT"
+                thread_active = is_worker_operation_thread_active(operation_id)
+
+                if kind == "install" and status == "awaiting_registration":
+                    timeout_seconds = self._worker_install_registration_timeout_seconds()
+                    if age_seconds >= timeout_seconds:
+                        failures.append(
+                            (
+                                operation_id,
+                                (
+                                    f"BOT {worker_name} đã cài xong service nhưng quá {timeout_seconds}s "
+                                    "vẫn chưa đăng ký lại với control-plane."
+                                ),
+                            )
+                        )
+                    continue
+
+                if kind == "install":
+                    timeout_seconds = self._worker_install_timeout_seconds()
+                    if not thread_active and age_seconds >= timeout_seconds:
+                        failures.append(
+                            (
+                                operation_id,
+                                f"Quá thời gian cài đặt BOT {worker_name} ({timeout_seconds}s) mà chưa hoàn tất.",
+                            )
+                        )
+                    continue
+
+                if kind == "decommission":
+                    timeout_seconds = self._worker_decommission_timeout_seconds()
+                    if not thread_active and age_seconds >= timeout_seconds:
+                        failures.append(
+                            (
+                                operation_id,
+                                f"Quá thời gian gỡ BOT {worker_name} ({timeout_seconds}s) mà chưa hoàn tất.",
+                            )
+                        )
+
+        changed = False
+        for operation_id, message in failures:
+            self.fail_worker_operation(operation_id, message=message)
+            changed = True
+        return changed
+
     def start_background_services(self) -> None:
         with self._worker_state_lock:
             if self._monitor_thread and self._monitor_thread.is_alive():
@@ -1482,6 +1574,7 @@ class AppStore:
                 daemon=True,
             )
             self._monitor_thread.start()
+        ensure_worker_operation_threads(self)
 
     def stop_background_services(self) -> None:
         self._monitor_stop_event.set()
@@ -1494,10 +1587,12 @@ class AppStore:
         interval_seconds = self._worker_monitor_interval_seconds()
         while not self._monitor_stop_event.wait(interval_seconds):
             try:
+                now = self._now(trim=False)
+                self.reconcile_worker_operation_timeouts(now=now)
                 with self._worker_state_lock:
-                    now = self._now(trim=False)
                     self._reconcile_worker_connectivity(now=now)
                     self._reconcile_expired_worker_jobs(now=now)
+                ensure_worker_operation_threads(self)
             except Exception as exc:
                 print(f"[worker_monitor] reconcile failed: {exc}", flush=True)
 

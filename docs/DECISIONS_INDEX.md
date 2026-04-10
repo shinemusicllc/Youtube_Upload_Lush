@@ -28,6 +28,7 @@
 | DEC-023 | Live stream admin/manager se reuse chung admin shell hien tai qua workspace tabs `Upload` / `Live Stream`; cac bang list live phai giu du schema app cu, chi gop cot khi da co equivalent visual/logic trong app moi | Active | admin live workspace + parity management | High |
 | DEC-024 | Live workspace bo phan loai `1080/4K`; quan tri BOT/user chi theo doi mot `Luồng live stream` chinh va `Backup` rieng | Active | admin live workspace + live capacity model | Medium |
 | DEC-025 | Worker service bootstrap khong duoc phu thuoc `network-online.target`; unit worker chi can `After=network.target` va worker tu retry/re-register control-plane sau khi start | Active | worker bootstrap + systemd unit | Medium |
+| DEC-026 | Bootstrap/decommission BOT phai duoc persist qua app restart: task SSH dang do se duoc resume tu `worker_operation_tasks`, task `awaiting_registration` co timeout ro rang, va remote command phai co timeout/log excerpt de debug | Active | worker bootstrap + control-plane ops | High |
 
 ## Notes
 - `docs/DECISIONS.md` van giu full history va ly do chi tiet.
