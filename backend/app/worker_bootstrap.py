@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import logging
 import os
 import re
 import shlex
@@ -24,6 +25,7 @@ DEFAULT_REPO_URL = "https://github.com/shinemusicllc/Youtube_Upload_Lush.git"
 DEFAULT_BRANCH = "main"
 DEFAULT_APP_DIR = "/opt/youtube-upload-lush"
 DEFAULT_RUNTIME_DIR = "/opt/youtube-upload-lush-runtime"
+logger = logging.getLogger(__name__)
 
 
 class WorkerBootstrapError(RuntimeError):
@@ -262,7 +264,7 @@ def _build_worker_env_file(request: WorkerBootstrapRequest) -> str:
             "BROWSER_SESSION_BIND_HOST=0.0.0.0",
             "BROWSER_SESSION_START_URL=https://studio.youtube.com",
             "BROWSER_SESSION_NOVNC_WEB_DIR=/usr/share/novnc",
-            "BROWSER_SESSION_CHROMIUM_BIN=chromium-browser",
+            "BROWSER_SESSION_CHROMIUM_BIN=google-chrome-stable",
             "WORKER_NETWORK_RETRY_BASE_SECONDS=3",
             "WORKER_NETWORK_RETRY_MAX_SECONDS=30",
             "WORKER_PROGRESS_RETRY_ATTEMPTS=3",
@@ -461,6 +463,12 @@ def _run_worker_install_operation(store, operation_id: str, request: WorkerBoots
             ),
         )
     except Exception as exc:
+        logger.exception(
+            "worker_install_operation_failed operation_id=%s worker_id=%s vps_ip=%s",
+            str(operation_id or "").strip(),
+            str(request.worker_id or "").strip(),
+            str(request.vps_ip or "").strip(),
+        )
         store.fail_worker_operation(operation_id, message=str(exc))
 
 
@@ -515,6 +523,12 @@ def _run_worker_decommission_operation(
         decommission_worker_via_ssh(request, progress=report)
         store.finalize_decommissioned_bot(worker_id, operation_id)
     except Exception as exc:
+        logger.exception(
+            "worker_decommission_operation_failed operation_id=%s worker_id=%s vps_ip=%s",
+            str(operation_id or "").strip(),
+            str(worker_id or "").strip(),
+            str(request.vps_ip or "").strip(),
+        )
         store.fail_worker_operation(operation_id, message=str(exc))
 
 

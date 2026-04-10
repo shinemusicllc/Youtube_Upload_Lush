@@ -1,8 +1,9 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import hashlib
 import hmac
 import html
+import logging
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone, tzinfo
 import json
@@ -53,6 +54,8 @@ from .schemas import (
 from .worker_bootstrap import suggest_next_worker_id
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+
+logger = logging.getLogger(__name__)
 
 
 class AppStore:
@@ -501,7 +504,7 @@ class AppStore:
     def _hash_password(cls, password: str) -> str:
         normalized = password.strip()
         if not normalized:
-            raise ValueError("Password khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.")
+            raise ValueError("Password khÃ´ng ÄÆ°á»£c Äá» trá»ng.")
         salt = secrets.token_hex(16)
         iterations = cls._password_iterations()
         digest = hashlib.pbkdf2_hmac(
@@ -729,6 +732,9 @@ class AppStore:
             worker_id = str(task.get("worker_id") or "").strip()
             if not task_id or not worker_id:
                 continue
+            status = str(task.get("status") or "queued").strip()
+            if status in {"completed", "failed"}:
+                continue
             tasks.append(
                 {
                     "id": task_id,
@@ -740,7 +746,7 @@ class AppStore:
                     "group": str(task.get("group") or "").strip(),
                     "kind": str(task.get("kind") or "install").strip(),
                     "transport": str(task.get("transport") or "").strip() or ("ssh" if str(task.get("kind") or "").strip() == "decommission" else ""),
-                    "status": str(task.get("status") or "queued").strip(),
+                    "status": status,
                     "message": str(task.get("message") or "").strip(),
                     "ssh_user": str(task.get("ssh_user") or "").strip() or "root",
                     "app_dir": str(task.get("app_dir") or "").strip() or "/opt/youtube-upload-lush",
@@ -931,7 +937,7 @@ class AppStore:
         deleted_meta = self.deleted_workers.get(normalized_worker_id)
         if not deleted_meta:
             return
-        raise ValueError("BOT này đã bị xoá khỏi hệ thống. Hãy thêm BOT lại nếu muốn kết nối lại VPS này.")
+        raise ValueError("BOT này dã b? xoá kh?i h? th?ng. Hãy thêm BOT l?i n?u mu?n k?t n?i l?i VPS này.")
 
     def get_worker_connection_profile(self, worker_id: str) -> dict[str, Any]:
         normalized_worker_id = str(worker_id or "").strip()
@@ -950,7 +956,7 @@ class AppStore:
                 }
         normalized_ip = str(profile.get("vps_ip") or "").strip()
         if not normalized_ip:
-            raise ValueError("BOT này chưa có thông tin VPS IP để gỡ worker từ xa.")
+            raise ValueError("BOT này chua có thông tin VPS IP d? g? worker t? xa.")
         return {
             "worker_id": normalized_worker_id,
             "vps_ip": normalized_ip,
@@ -963,13 +969,21 @@ class AppStore:
 
     @staticmethod
     def _worker_operation_is_finished(task: dict[str, Any]) -> bool:
-        return str(task.get("status") or "").strip() == "completed"
+        return str(task.get("status") or "").strip() in {"completed", "failed"}
 
-    def _find_worker_operation(self, operation_id: str) -> dict[str, Any]:
+    def _find_worker_operation_optional(self, operation_id: str) -> dict[str, Any] | None:
         normalized_id = str(operation_id or "").strip()
+        if not normalized_id:
+            return None
         for task in self.worker_operation_tasks:
             if str(task.get("id") or "").strip() == normalized_id:
                 return task
+        return None
+
+    def _find_worker_operation(self, operation_id: str) -> dict[str, Any]:
+        task = self._find_worker_operation_optional(operation_id)
+        if task is not None:
+            return task
         raise KeyError(operation_id)
 
     def _worker_operation_badge(self, task: dict[str, Any]) -> tuple[str, str]:
@@ -977,38 +991,38 @@ class AppStore:
         status = str(task.get("status") or "").strip()
         mapping = {
             ("install", "queued"): (
-                "Đang xếp hàng cài đặt...",
+                "Ðang x?p hàng cài d?t...",
                 "inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[10px] font-semibold text-indigo-700",
             ),
             ("install", "running"): (
-                "Đang cài đặt...",
+                "Ðang cài d?t...",
                 "inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[10px] font-semibold text-indigo-700",
             ),
             ("install", "awaiting_registration"): (
-                "Chờ BOT kết nối",
+                "Ch? BOT k?t n?i",
                 "inline-flex items-center rounded-full border border-brand-100 bg-brand-50 px-2.5 py-1 text-[10px] font-semibold text-brand-700",
             ),
             ("install", "failed"): (
-                "Cài đặt lỗi",
+                "Cài d?t l?i",
                 "inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[10px] font-semibold text-rose-700",
             ),
             ("decommission", "queued"): (
-                "Đang xếp hàng gỡ BOT...",
+                "Ðang x?p hàng g? BOT...",
                 "inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[10px] font-semibold text-rose-700",
             ),
             ("decommission", "running"): (
-                "Đang gỡ BOT...",
+                "Ðang g? BOT...",
                 "inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[10px] font-semibold text-rose-700",
             ),
             ("decommission", "failed"): (
-                "Gỡ BOT lỗi",
+                "G? BOT l?i",
                 "inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[10px] font-semibold text-rose-700",
             ),
         }
         return mapping.get(
             (kind, status),
             (
-                "Đang xử lý",
+                "Ðang x? lý",
                 "inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-700",
             ),
         )
@@ -1096,11 +1110,20 @@ class AppStore:
         level: str = "error",
     ) -> None:
         with self._worker_state_lock:
-            task = self._find_worker_operation(operation_id)
+            task = self._find_worker_operation_optional(operation_id)
             task_message = str(message or "").strip() or "Không thể hoàn tất thao tác BOT."
-            kind = str(task.get("kind") or "").strip()
-            worker_name = str(task.get("worker_name") or task.get("vps_ip") or task.get("worker_id") or "").strip()
-            manager_id = str(task.get("manager_id") or "").strip() or None
+            kind = str(task.get("kind") or "").strip() if task is not None else ""
+            worker_id = str(task.get("worker_id") or "").strip() if task is not None else ""
+            vps_ip = str(task.get("vps_ip") or "").strip() if task is not None else ""
+            worker_name = (
+                str(task.get("worker_name") or task.get("vps_ip") or task.get("worker_id") or "").strip()
+                if task is not None
+                else str(operation_id or "").strip()
+            )
+            manager_id = str(task.get("manager_id") or "").strip() or None if task is not None else None
+            manager_name = str(task.get("manager_name") or "").strip() if task is not None else ""
+            requested_by = str(task.get("requested_by") or "").strip() if task is not None else ""
+            requested_role = str(task.get("requested_role") or "").strip() if task is not None else ""
             notice_prefix = "Cài đặt BOT" if kind == "install" else "Gỡ BOT"
             notice_message = f"{notice_prefix} {worker_name} thất bại: {task_message}"
             duplicated_notice = next(
@@ -1119,12 +1142,28 @@ class AppStore:
                     level=level,
                     manager_id=manager_id,
                 )
-            self.worker_operation_tasks = [
-                existing
-                for existing in self.worker_operation_tasks
-                if str(existing.get("id") or "").strip() != str(operation_id or "").strip()
-            ]
+            if task is not None:
+                self.worker_operation_tasks = [
+                    item
+                    for item in self.worker_operation_tasks
+                    if str(item.get("id") or "").strip() != str(operation_id or "").strip()
+                ]
+                if kind == "install" and worker_id and not any(str(worker.id or "").strip() == worker_id for worker in self.workers):
+                    self.worker_connection_profiles.pop(worker_id, None)
             self._save_state()
+        logger.error(
+            "worker_operation_failed kind=%s operation_id=%s worker_id=%s worker_name=%s vps_ip=%s manager_id=%s manager_name=%s requested_by=%s requested_role=%s message=%s",
+            kind or "unknown",
+            str(operation_id or "").strip(),
+            worker_id or "-",
+            worker_name or "-",
+            vps_ip or "-",
+            manager_id or "-",
+            manager_name or "-",
+            requested_by or "-",
+            requested_role or "-",
+            task_message,
+        )
 
     def enqueue_worker_install_operation(
         self,
@@ -1146,12 +1185,12 @@ class AppStore:
             normalized_worker_id = str(worker_id or "").strip()
             normalized_ip = str(vps_ip or "").strip()
             if not normalized_worker_id or not normalized_ip:
-                raise ValueError("Worker bootstrap task thiếu worker_id hoặc VPS IP.")
+                raise ValueError("Worker bootstrap task thi?u worker_id ho?c VPS IP.")
             self._clear_deleted_worker(normalized_worker_id)
             if any(str(worker.id or "").strip() == normalized_worker_id for worker in self.workers):
-                raise ValueError("Worker ID này đã tồn tại trong control-plane.")
+                raise ValueError("Worker ID này dã t?n t?i trong control-plane.")
             if any(str(self._resolve_worker_display_name(worker.id) or "").strip() == normalized_ip for worker in self.workers):
-                raise ValueError("VPS này đã tồn tại trong danh sách BOT.")
+                raise ValueError("VPS này dã t?n t?i trong danh sách BOT.")
             removed_failed_worker_ids: set[str] = set()
             remaining_tasks: list[dict[str, Any]] = []
             for task in self.worker_operation_tasks:
@@ -1180,7 +1219,7 @@ class AppStore:
                     str(task.get("worker_id") or "").strip() == normalized_worker_id
                     or str(task.get("vps_ip") or "").strip() == normalized_ip
                 ):
-                    raise ValueError("BOT này đang có một tiến trình cài đặt hoặc gỡ BOT khác chưa xong.")
+                    raise ValueError("BOT này dang có m?t ti?n trình cài d?t ho?c g? BOT khác chua xong.")
             now = self._now(trim=False)
             task = {
                 "id": f"worker-op-{uuid4().hex[:10]}",
@@ -1192,7 +1231,7 @@ class AppStore:
                 "group": str(group or "").strip(),
                 "kind": "install",
                 "status": "queued",
-                "message": "Đang chờ control-plane kết nối SSH vào VPS...",
+                "message": "Ðang ch? control-plane k?t n?i SSH vào VPS...",
                 "requested_by": str(requested_by or "").strip() or "system",
                 "requested_role": str(requested_role or "").strip() or "system",
                 "created_at": now,
@@ -1228,12 +1267,12 @@ class AppStore:
             normalized_worker_id = str(worker.id or "").strip()
             normalized_ip = str(vps_ip or "").strip()
             if not normalized_ip:
-                raise ValueError("BOT này chưa có VPS IP để gỡ worker từ xa.")
+                raise ValueError("BOT này chua có VPS IP d? g? worker t? xa.")
             for task in self.worker_operation_tasks:
                 if self._worker_operation_is_finished(task):
                     continue
                 if str(task.get("worker_id") or "").strip() == normalized_worker_id:
-                    raise ValueError("BOT này đang có một tiến trình cài đặt hoặc gỡ BOT khác chưa xong.")
+                    raise ValueError("BOT này dang có m?t ti?n trình cài d?t ho?c g? BOT khác chua xong.")
             now = self._now(trim=False)
             task = {
                 "id": f"worker-op-{uuid4().hex[:10]}",
@@ -1247,9 +1286,9 @@ class AppStore:
                 "transport": str(transport or "ssh").strip() or "ssh",
                 "status": "queued",
                 "message": (
-                    "Đang chờ control-plane kết nối SSH để gỡ worker khỏi VPS..."
+                    "Ðang ch? control-plane k?t n?i SSH d? g? worker kh?i VPS..."
                     if str(transport or "ssh").strip() != "self"
-                    else "Đang chờ BOT tự gỡ khỏi VPS..."
+                    else "Ðang ch? BOT t? g? kh?i VPS..."
                 ),
                 "ssh_user": str(ssh_user or "").strip() or "root",
                 "app_dir": str(app_dir or "").strip() or "/opt/youtube-upload-lush",
@@ -1287,7 +1326,7 @@ class AppStore:
             if dispatched_at and now - dispatched_at < timedelta(seconds=20):
                 return None
             task["status"] = "running"
-            task["message"] = "BOT đang tự gỡ service và dữ liệu khỏi VPS..."
+            task["message"] = "BOT dang t? g? service và d? li?u kh?i VPS..."
             task["updated_at"] = now
             task["dispatched_at"] = now
             self._save_state()
@@ -1307,9 +1346,9 @@ class AppStore:
             worker = self._authenticate_worker(worker_id, shared_secret)
             task = self._find_worker_operation(operation_id)
             if str(task.get("kind") or "").strip() != "decommission":
-                raise ValueError("Task gỡ BOT không hợp lệ.")
+                raise ValueError("Task g? BOT không h?p l?.")
             if str(task.get("worker_id") or "").strip() != worker.id:
-                raise ValueError("Task gỡ BOT không thuộc worker hiện tại.")
+                raise ValueError("Task g? BOT không thu?c worker hi?n t?i.")
             task_message = str(message or "").strip()
             if cleaned_status == "completed":
                 worker_name = self._resolve_worker_display_name(worker.id)
@@ -1326,7 +1365,7 @@ class AppStore:
                 return
         if cleaned_status == "completed":
             return
-        self.fail_worker_operation(operation_id, message=task_message or "BOT tự gỡ khỏi VPS thất bại.")
+        self.fail_worker_operation(operation_id, message=task_message or "BOT t? g? kh?i VPS th?t b?i.")
 
     def update_worker_operation(
         self,
@@ -1638,16 +1677,16 @@ class AppStore:
 
     def _telegram_linked_confirmation_message(self, user: UserSummary) -> str:
         return (
-            "Tài khoản Telegram này đã được thêm để nhận thông báo từ app YouTube Upload.\n"
-            f"Tài khoản app: {user.username}\n"
-            "Nếu muốn ngắt thông báo, hãy xóa Telegram ID trong mục Cập nhật user rồi lưu lại."
+            "Tài kho?n Telegram này dã du?c thêm d? nh?n thông báo t? app YouTube Upload.\n"
+            f"Tài kho?n app: {user.username}\n"
+            "N?u mu?n ng?t thông báo, hãy xóa Telegram ID trong m?c C?p nh?t user r?i luu l?i."
         )
 
     def _telegram_unlinked_confirmation_message(self, user: UserSummary) -> str:
         return (
-            "Tài khoản Telegram này đã được ngắt khỏi hệ thống thông báo của app YouTube Upload.\n"
-            f"Tài khoản app: {user.username}\n"
-            "Từ bây giờ tài khoản này sẽ không nhận thông báo mới từ app nữa."
+            "Tài kho?n Telegram này dã du?c ng?t kh?i h? th?ng thông báo c?a app YouTube Upload.\n"
+            f"Tài kho?n app: {user.username}\n"
+            "T? bây gi? tài kho?n này s? không nh?n thông báo m?i t? app n?a."
         )
 
     @staticmethod
@@ -1660,11 +1699,11 @@ class AppStore:
         manager_name = str(task.get("manager_name") or "").strip() or "system"
         return (
             "[BOT] Thêm BOT thành công\n"
-            f"Người thao tác: {actor_label}\n"
+            f"Ngu?i thao tác: {actor_label}\n"
             f"BOT: {worker_name}\n"
             f"BOT ID: {worker_id}\n"
             f"VPS: {vps_ip}\n"
-            f"Manager sở hữu: {manager_name}"
+            f"Manager s? h?u: {manager_name}"
         )
 
     def _bot_decommission_completed_message(self, task: dict[str, Any], *, worker_name: str, worker_id: str, vps_ip: str) -> str:
@@ -1672,11 +1711,11 @@ class AppStore:
         manager_name = str(task.get("manager_name") or "").strip() or "system"
         return (
             "[BOT] Xóa BOT thành công\n"
-            f"Người thao tác: {actor_label}\n"
+            f"Ngu?i thao tác: {actor_label}\n"
             f"BOT: {worker_name}\n"
             f"BOT ID: {worker_id}\n"
             f"VPS: {vps_ip}\n"
-            f"Manager trước khi xóa: {manager_name}"
+            f"Manager tru?c khi xóa: {manager_name}"
         )
 
     def _user_telegram_chat_id(self, user_id: str) -> str:
@@ -1765,11 +1804,11 @@ class AppStore:
         worker_name = worker.name or worker.id
         manager_name = worker.manager_name or "không rõ"
         return (
-            "[CẢNH BÁO] BOT mất kết nối quá 3 phút\n"
+            "[C?NH BÁO] BOT m?t k?t n?i quá 3 phút\n"
             f"BOT: {worker_name}\n"
             f"BOT ID: {worker.id}\n"
             f"Manager: {manager_name}\n"
-            "Trạng thái: BOT chưa tự kết nối lại với control-plane"
+            "Tr?ng thái: BOT chua t? k?t n?i l?i v?i control-plane"
         )
 
     def _reconcile_worker_connectivity(self, *, now: datetime) -> bool:
@@ -2000,16 +2039,16 @@ class AppStore:
         normalized_username = username.strip().lower()
         normalized_password = password.strip()
         if not normalized_username or not normalized_password:
-            raise ValueError("Tên đăng nhập và mật khẩu là bắt buộc.")
+            raise ValueError("Tên dang nh?p và m?t kh?u là b?t bu?c.")
 
         user = self._find_user_by_username(normalized_username)
         if not user:
-            raise ValueError("Thông tin đăng nhập không hợp lệ.")
+            raise ValueError("Thông tin dang nh?p không h?p l?.")
         if user.role not in {"admin", "manager"}:
-            raise ValueError("Tài khoản này không được phép vào trang quản trị.")
+            raise ValueError("Tài kho?n này không du?c phép vào trang qu?n tr?.")
 
         if not self._verify_user_password(user.id, normalized_password):
-            raise ValueError("Thông tin đăng nhập không hợp lệ.")
+            raise ValueError("Thông tin dang nh?p không h?p l?.")
 
         return self._build_session_payload(user)
 
@@ -2017,15 +2056,15 @@ class AppStore:
         normalized_username = username.strip().lower()
         normalized_password = password.strip()
         if not normalized_username or not normalized_password:
-            raise ValueError("Tên đăng nhập và mật khẩu là bắt buộc.")
+            raise ValueError("Tên dang nh?p và m?t kh?u là b?t bu?c.")
 
         user = self._find_user_by_username(normalized_username)
         if not user:
-            raise ValueError("Thông tin đăng nhập không hợp lệ.")
+            raise ValueError("Thông tin dang nh?p không h?p l?.")
         if user.role != "user":
-            raise ValueError("Tài khoản này không được phép vào workspace user.")
+            raise ValueError("Tài kho?n này không du?c phép vào workspace user.")
         if not self._verify_user_password(user.id, normalized_password):
-            raise ValueError("Thông tin đăng nhập không hợp lệ.")
+            raise ValueError("Thông tin dang nh?p không h?p l?.")
 
         return self._build_session_payload(user)
 
@@ -2033,19 +2072,19 @@ class AppStore:
         normalized_username = username.strip().lower()
         normalized_password = password.strip()
         if not normalized_username or not normalized_password:
-            raise ValueError("Tên đăng nhập và mật khẩu là bắt buộc.")
+            raise ValueError("Tên dang nh?p và m?t kh?u là b?t bu?c.")
 
         user = self._find_user_by_username(normalized_username)
         if not user:
-            raise ValueError("Thông tin đăng nhập không hợp lệ.")
+            raise ValueError("Thông tin dang nh?p không h?p l?.")
         if not self._verify_user_password(user.id, normalized_password):
-            raise ValueError("Thông tin đăng nhập không hợp lệ.")
+            raise ValueError("Thông tin dang nh?p không h?p l?.")
         return self._build_session_payload(user)
 
     def assert_admin_session_user(self, user_id: str, role: str) -> None:
         user = self._find_user(user_id)
         if user.role not in {"admin", "manager"}:
-            raise ValueError("TÃ i khoáº£n khÃ´ng Ä‘Æ°á»£c phÃ©p vÃ o trang quáº£n trá»‹.")
+            raise ValueError("TÃ i khoáº£n khÃ´ng ÄÆ°á»£c phÃ©p vÃ o trang quáº£n trá».")
         if user.role != role:
             raise ValueError("Role session khong con hop le.")
 
@@ -2324,14 +2363,14 @@ class AppStore:
     @staticmethod
     def _job_status_label(status: str) -> str:
         mapping = {
-            "pending": "Chờ tạo hàng đợi",
-            "queueing": "Đang xếp hàng",
-            "downloading": "Đang tải nguồn",
-            "rendering": "Đang render",
-            "uploading": "Đang upload",
-            "completed": "Hoàn tất",
-            "cancelled": "Đã hủy",
-            "error": "Lỗi",
+            "pending": "Ch? t?o hàng d?i",
+            "queueing": "Ðang x?p hàng",
+            "downloading": "Ðang t?i ngu?n",
+            "rendering": "Ðang render",
+            "uploading": "Ðang upload",
+            "completed": "Hoàn t?t",
+            "cancelled": "Ðã h?y",
+            "error": "L?i",
         }
         return mapping.get(status, status)
 
@@ -2353,7 +2392,7 @@ class AppStore:
         if job.status == "completed":
             if job.upload_started_at:
                 return {
-                    "label": "Đã upload YouTube",
+                    "label": "Ðã upload YouTube",
                     "class": "inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[10px] font-semibold text-sky-700",
                     "progress_text_class": "text-sky-600",
                     "progress_bar_class": "bg-sky-500",
@@ -2361,7 +2400,7 @@ class AppStore:
                     "upload_at": self._format_datetime(job.completed_at),
                 }
             return {
-                "label": "Render hoàn tất",
+                "label": "Render hoàn t?t",
                 "class": "inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[10px] font-semibold text-indigo-700",
                 "progress_text_class": "text-indigo-600",
                 "progress_bar_class": "bg-indigo-500",
@@ -2461,7 +2500,7 @@ class AppStore:
 
     def _authenticate_worker(self, worker_id: str, shared_secret: str) -> WorkerRecord:
         if shared_secret != self.get_worker_shared_secret():
-            raise ValueError("Worker shared secret khÃ´ng há»£p lá»‡.")
+            raise ValueError("Worker shared secret khÃ´ng há»£p lá».")
         self._ensure_worker_not_deleted(worker_id)
         return self._find_worker(worker_id)
 
@@ -2591,7 +2630,7 @@ class AppStore:
         vps_ip = ""
         with self._worker_state_lock:
             if payload.shared_secret != self.get_worker_shared_secret():
-                raise ValueError("Worker shared secret khÃ´ng há»£p lá»‡.")
+                raise ValueError("Worker shared secret khÃ´ng há»£p lá».")
             self._ensure_worker_not_deleted(payload.worker_id)
 
             now = self._now(trim=False)
@@ -2812,7 +2851,7 @@ class AppStore:
         for job in self.jobs:
             if job.id == job_id:
                 if job.claimed_by_worker_id not in {None, worker_id} and job.status not in {"completed", "cancelled", "error"}:
-                    raise ValueError("Job đang thuộc worker khác.")
+                    raise ValueError("Job dang thu?c worker khác.")
                 return job
         raise KeyError(job_id)
 
@@ -3265,7 +3304,7 @@ class AppStore:
         if not normalized_name:
             return True
         if normalized_name in {
-            "trang tổng quan của kênh",
+            "trang t?ng quan c?a kênh",
             "trang tong quan cua kenh",
             "youtube studio",
             "dashboard",
@@ -3329,8 +3368,8 @@ class AppStore:
             }
             if linked_user_ids and str(user.id or "").strip() not in linked_user_ids:
                 raise ValueError(
-                    "Kênh này đang gắn với tài khoản khác trên hệ thống. "
-                    "Hãy đăng xuất hoặc chọn đúng kênh trước khi xác nhận."
+                    "Kênh này dang g?n v?i tài kho?n khác trên h? th?ng. "
+                    "Hãy dang xu?t ho?c ch?n dúng kênh tru?c khi xác nh?n."
                 )
             channel = existing_channel
         else:
@@ -3386,9 +3425,9 @@ class AppStore:
             existing.status = "closed"
             existing.expires_at = self._now(trim=False)
             if existing.target_worker_id != worker.id:
-                existing.last_error = "Session cũ đã đóng do VPS được cấp đã thay đổi."
+                existing.last_error = "Session cu dã dóng do VPS du?c c?p dã thay d?i."
             else:
-                existing.last_error = "Session cũ đã đóng để mở phiên thêm kênh mới."
+                existing.last_error = "Session cu dã dóng d? m? phiên thêm kênh m?i."
             self._queue_browser_profile_cleanup_if_orphan(
                 worker_id=existing.target_worker_id,
                 profile_key=existing.profile_key,
@@ -3435,18 +3474,18 @@ class AppStore:
         self._cleanup_stale_browser_sessions()
         session = self._find_user_browser_session(user.id, session_id)
         if session.status not in {"awaiting_confirmation", "confirmed"}:
-            raise ValueError("Browser session không còn ở trạng thái xác nhận hợp lệ.")
+            raise ValueError("Browser session không còn ? tr?ng thái xác nh?n h?p l?.")
 
         self._sync_browser_session_details(session)
         session_channel_id = self._extract_browser_session_channel_identity(session.current_url)
         channel_id = str(session_channel_id or session.detected_channel_id or "").strip()
         channel_name = str(session.detected_channel_name or "").strip() or channel_id
         if not channel_id:
-            raise ValueError("Chưa nhận diện được channel. Hãy mở YouTube Studio đúng kênh rồi thử lại.")
+            raise ValueError("Chua nh?n di?n du?c channel. Hãy m? YouTube Studio dúng kênh r?i th? l?i.")
         if not session_channel_id:
             raise ValueError(
-                "Phiên đăng nhập chưa đứng tại YouTube Studio của kênh cần thêm. "
-                "Hãy mở đúng YouTube Studio rồi thử xác nhận lại."
+                "Phiên dang nh?p chua d?ng t?i YouTube Studio c?a kênh c?n thêm. "
+                "Hãy m? dúng YouTube Studio r?i th? xác nh?n l?i."
             )
 
         session.detected_channel_id = channel_id
@@ -3601,25 +3640,83 @@ class AppStore:
             },
         )
 
-    def _admin_nav_items(self) -> list[dict[str, str]]:
+    @staticmethod
+    def _normalize_admin_workspace(workspace_mode: str | None) -> str:
+        normalized = str(workspace_mode or "").strip().lower()
+        return "live" if normalized == "live" else "upload"
+
+    @staticmethod
+    def _with_query(path: str, **query: str | None) -> str:
+        params = [(key, value) for key, value in query.items() if value]
+        if not params:
+            return path
+        separator = "&" if "?" in path else "?"
+        return f"{path}{separator}{urlencode(params)}"
+
+    def _admin_workspace_href(self, active_page: str, workspace_mode: str) -> str:
+        normalized_workspace = self._normalize_admin_workspace(workspace_mode)
+        if active_page == "users":
+            return self._with_query("/admin/user/index", workspace=normalized_workspace)
+        if active_page == "workers":
+            return self._with_query("/admin/ManagerBOT/index", workspace=normalized_workspace)
+        if active_page == "channels":
+            return self._with_query("/admin/channel/index", workspace=normalized_workspace)
+        if active_page == "renders":
+            return self._with_query("/admin/render/index", workspace=normalized_workspace)
+        if active_page == "live_workspace":
+            if normalized_workspace == "live":
+                return "/admin/live/index"
+            return self._with_query("/admin/ManagerBOT/index", workspace="upload")
+        if normalized_workspace == "live":
+            return "/admin/live/index"
+        return "/admin/user/index"
+
+    def _admin_workspace_tabs(self, active_page: str, workspace_mode: str) -> list[dict[str, str | bool]]:
+        normalized_workspace = self._normalize_admin_workspace(workspace_mode)
+        tabs = [
+            {
+                "key": "upload",
+                "label": "Upload",
+                "href": self._admin_workspace_href(active_page, "upload"),
+            },
+            {
+                "key": "live",
+                "label": "Live Stream",
+                "href": self._admin_workspace_href(active_page, "live"),
+            },
+        ]
+        for item in tabs:
+            item["active"] = item["key"] == normalized_workspace
+        return tabs
+
+    def _admin_nav_items(self, workspace_mode: str = "upload") -> list[dict[str, str]]:
+        normalized_workspace = self._normalize_admin_workspace(workspace_mode)
+        shared_workspace = {"workspace": normalized_workspace}
         return [
-            {"key": "users", "label": "Người dùng", "href": "/admin/user/index", "icon": "users"},
-            {"key": "workers", "label": "Danh sách BOT", "href": "/admin/ManagerBOT/index", "icon": "server"},
-            {"key": "channels", "label": "Danh sách Kênh", "href": "/admin/channel/index", "icon": "link"},
-            {"key": "renders", "label": "Danh sách Render", "href": "/admin/render/index", "icon": "video"},
-            {"key": "render_workspace", "label": "Điều phối Render", "href": "/app", "icon": "clapperboard"},
+            {"key": "users", "label": "Ngu?i dùng", "href": self._with_query("/admin/user/index", **shared_workspace), "icon": "users"},
+            {"key": "workers", "label": "Danh sách BOT", "href": self._with_query("/admin/ManagerBOT/index", **shared_workspace), "icon": "server"},
+            {"key": "channels", "label": "Danh sách Kênh", "href": self._with_query("/admin/channel/index", **shared_workspace), "icon": "link"},
+            {"key": "renders", "label": "Danh sách Render", "href": self._with_query("/admin/render/index", **shared_workspace), "icon": "video"},
+            {"key": "render_workspace", "label": "Ði?u ph?i Render", "href": "/app", "icon": "clapperboard"},
+            {"key": "live_workspace", "label": "Ði?u ph?i live stream", "href": "/admin/live/index", "icon": "radio-tower"},
         ]
 
-    def _user_section_tabs(self, active_key: str, viewer_role: str = "admin") -> list[dict[str, str | bool]]:
+    def _user_section_tabs(
+        self,
+        active_key: str,
+        viewer_role: str = "admin",
+        workspace_mode: str = "upload",
+    ) -> list[dict[str, str | bool]]:
+        normalized_workspace = self._normalize_admin_workspace(workspace_mode)
         tabs = [
-            {"key": "users", "label": "Danh sách user", "href": "/admin/user/index"},
-            {"key": "create", "label": "Tạo user", "href": "/admin/user/create"},
+            {"key": "users", "label": "Danh sách user", "href": self._with_query("/admin/user/index", workspace=normalized_workspace)},
+            {"key": "create", "label": "T?o user", "href": self._with_query("/admin/user/create", workspace=normalized_workspace)},
         ]
         if viewer_role != "manager":
             tabs.extend(
                 [
-                    {"key": "managers", "label": "Manager", "href": "/admin/user/manager"},
-                    {"key": "admins", "label": "Admin", "href": "/admin/user/admins"},
+                    {"key": "managers", "label": "Manager", "href": self._with_query("/admin/user/manager", workspace=normalized_workspace)},
+                    {"key": "admins", "label": "Admin", "href": self._with_query("/admin/user/admins", workspace=normalized_workspace)},
                 ]
             )
         for item in tabs:
@@ -3745,7 +3842,9 @@ class AppStore:
         manager_ids: list[str] | None = None,
         notice: str | None = None,
         notice_level: str = "success",
+        workspace_mode: str = "upload",
     ) -> dict[str, Any]:
+        normalized_workspace = self._normalize_admin_workspace(workspace_mode)
         effective_manager_ids = self._effective_manager_scope_ids(
             viewer_role=viewer_role,
             viewer_id=viewer_id,
@@ -3760,14 +3859,19 @@ class AppStore:
         context = {
             "page_title": page_title,
             "active_page": active_page,
-            "nav_items": self._admin_nav_items(),
+            "nav_items": self._admin_nav_items(normalized_workspace),
+            "workspace_mode": normalized_workspace,
+            "workspace_tabs": self._admin_workspace_tabs(active_page, normalized_workspace),
+            "workspace_heading": "Live Stream" if normalized_workspace == "live" else "Upload",
+            "workspace_caption": "Admin workspace",
             "summary_strip": self._summary_strip(
                 viewer_role=viewer_role,
                 viewer_id=viewer_id,
                 manager_ids=selected_manager_ids,
+                workspace_mode=normalized_workspace,
             ),
             "summary": scoped_summary,
-            "current_user": {"name": "Admin", "avatar": "/admin-themes/assets/img/avatar/avatar-1.png"},
+            "current_user": {"name": "Admin", "avatar": "/static/admin-themes/assets/img/avatar/avatar-1.png"},
             "manager_options": self._manager_options(selected_manager_ids),
             "selected_manager_ids": selected_manager_ids,
             "manager_filter_locked": viewer_role == "manager",
@@ -3775,7 +3879,11 @@ class AppStore:
             "notice_level": notice_level,
         }
         if user_section:
-            context["user_tabs"] = self._user_section_tabs(user_section, viewer_role=viewer_role)
+            context["user_tabs"] = self._user_section_tabs(
+                user_section,
+                viewer_role=viewer_role,
+                workspace_mode=normalized_workspace,
+            )
             context["user_section"] = user_section
         return context
 
@@ -3832,7 +3940,9 @@ class AppStore:
         viewer_role: str = "admin",
         viewer_id: str | None = None,
         manager_ids: list[str] | None = None,
+        workspace_mode: str = "upload",
     ) -> list[dict[str, str]]:
+        normalized_workspace = self._normalize_admin_workspace(workspace_mode)
         summary = self._scoped_admin_summary(
             viewer_role=viewer_role,
             viewer_id=viewer_id,
@@ -3847,10 +3957,80 @@ class AppStore:
         if selected_manager_ids:
             upload_jobs = [job for job in upload_jobs if self._resolve_job_manager_id(job) in selected_manager_ids]
         uploading_count = len([job for job in upload_jobs if job.status == "uploading"])
+        if normalized_workspace == "live":
+            scope_count = len(selected_manager_ids) or summary.total_managers
+            return [
+                {
+                    "value": str(scope_count),
+                    "label": "Manager Trong Scope",
+                    "icon": "users",
+                    "icon_class": "text-emerald-500",
+                    "accent": "Scope",
+                    "accent_class": "text-emerald-600",
+                    "accent_badge_class": "border-emerald-200 bg-emerald-50 text-emerald-700",
+                    "value_class": "text-emerald-600",
+                    "bar_color": "#10b981",
+                },
+                {
+                    "value": f"{summary.workers_online}/{summary.total_workers}",
+                    "label": "BOT Ðang Ch?y",
+                    "icon": "server",
+                    "icon_class": "text-brand-500",
+                    "accent": "Active",
+                    "accent_class": "text-brand-600",
+                    "accent_badge_class": "border-brand-100 bg-brand-50 text-brand-700",
+                    "value_class": "text-brand-600",
+                    "bar_color": "#6366f1",
+                },
+                {
+                    "value": str(summary.total_users),
+                    "label": "T?ng User",
+                    "icon": "users",
+                    "icon_class": "text-rose-500",
+                    "accent": "Accounts",
+                    "accent_class": "text-rose-500",
+                    "accent_badge_class": "border-rose-200 bg-rose-50 text-rose-700",
+                    "value_class": "text-slate-900",
+                    "bar_color": "#f43f5e",
+                },
+                {
+                    "value": "0",
+                    "label": "Ðang Live",
+                    "icon": "radio-tower",
+                    "icon_class": "text-brand-500",
+                    "accent": "Live",
+                    "accent_class": "text-brand-600",
+                    "accent_badge_class": "border-indigo-200 bg-indigo-50 text-indigo-700",
+                    "value_class": "text-brand-600",
+                    "bar_color": "#5d67df",
+                },
+                {
+                    "value": "0",
+                    "label": "Ch? Lên L?ch",
+                    "icon": "clock-3",
+                    "icon_class": "text-sky-500",
+                    "accent": "Queue",
+                    "accent_class": "text-sky-500",
+                    "accent_badge_class": "border-sky-200 bg-sky-50 text-sky-700",
+                    "value_class": "text-slate-900",
+                    "bar_color": "#0284c7",
+                },
+                {
+                    "value": "0",
+                    "label": "BOT Backup",
+                    "icon": "shield-check",
+                    "icon_class": "text-amber-500",
+                    "accent": "Fallback",
+                    "accent_class": "text-amber-600",
+                    "accent_badge_class": "border-amber-200 bg-amber-50 text-amber-700",
+                    "value_class": "text-amber-600",
+                    "bar_color": "#f59e0b",
+                },
+            ]
         return [
             {
                 "value": str(summary.channels_connected),
-                "label": "Tổng Số Kênh",
+                "label": "T?ng S? Kênh",
                 "icon": "radio",
                 "icon_class": "text-emerald-500",
                 "accent": "Online",
@@ -3861,7 +4041,7 @@ class AppStore:
             },
             {
                 "value": f"{summary.workers_online}/{summary.total_workers}",
-                "label": "BOT Đang Chạy",
+                "label": "BOT Ðang Ch?y",
                 "icon": "server",
                 "icon_class": "text-brand-500",
                 "accent": "Active",
@@ -3872,7 +4052,7 @@ class AppStore:
             },
             {
                 "value": str(summary.total_users),
-                "label": "Tổng User",
+                "label": "T?ng User",
                 "icon": "users",
                 "icon_class": "text-rose-500",
                 "accent": "Accounts",
@@ -3883,7 +4063,7 @@ class AppStore:
             },
             {
                 "value": str(summary.running_jobs),
-                "label": "Đang Render",
+                "label": "Ðang Render",
                 "icon": "loader",
                 "icon_class": "text-brand-500",
                 "accent": "Render",
@@ -3894,7 +4074,7 @@ class AppStore:
             },
             {
                 "value": str(uploading_count),
-                "label": "Đang Upload",
+                "label": "Ðang Upload",
                 "icon": "cloud-upload",
                 "icon_class": "text-sky-500",
                 "accent": "Upload",
@@ -3905,7 +4085,7 @@ class AppStore:
             },
             {
                 "value": str(summary.queued_jobs),
-                "label": "Job Đang Chờ",
+                "label": "Job Ðang Ch?",
                 "icon": "layers",
                 "icon_class": "text-amber-500",
                 "accent": "Queue",
@@ -4060,12 +4240,12 @@ class AppStore:
         committed_markers = (
             "processing",
             "dang xu ly",
-            "đang xử lý",
+            "dang x? lý",
             "da luu",
-            "đã lưu",
+            "dã luu",
             "saved as",
             "uploaded",
-            "đã tải",
+            "dã t?i",
         )
         return not any(marker in status_message for marker in committed_markers)
 
@@ -4156,6 +4336,22 @@ class AppStore:
                 pass
         return "demo-user"
 
+    def _user_workspace_nav_items(self) -> list[dict[str, str]]:
+        return [
+            {
+                "key": "render_workspace",
+                "label": "\u0110i\u1ec1u ph\u1ed1i Render",
+                "href": "/app",
+                "icon": "layers",
+            },
+            {
+                "key": "live_workspace",
+                "label": "\u0110i\u1ec1u ph\u1ed1i Live",
+                "href": "/app/live",
+                "icon": "radio",
+            },
+        ]
+
     def get_user_dashboard_view(
         self,
         *,
@@ -4203,9 +4399,9 @@ class AppStore:
                     "name": self._resolve_worker_display_name(worker_id),
                     "label": f"VPS-{index:03d}",
                     "channel_count": channel_count,
-                    "channel_text": f"{channel_count} kênh",
+                    "channel_text": f"{channel_count} k\u00eanh",
                     "status_key": "busy" if is_busy else ("online" if is_online else str(worker.status or "offline")),
-                    "status_text": "Đang xử lý" if is_busy else ("Sẵn sàng" if is_browser_ready else ("Offline" if not is_online else "Chưa sẵn sàng")),
+                    "status_text": "\u0110ang x\u1eed l\u00fd" if is_busy else ("S\u1eb5n s\u00e0ng" if is_browser_ready else ("Offline" if not is_online else "Ch\u01b0a s\u1eb5n s\u00e0ng")),
                     "status_dot_class": self._worker_status_dot_class("busy" if is_busy else ("online" if is_browser_ready else worker.status)),
                     "disabled": not is_browser_ready,
                 }
@@ -4217,7 +4413,7 @@ class AppStore:
         failed_jobs = [job for job in jobs_response.jobs if job.status == "error"]
 
         channels = [
-            {"value": "", "label": "-- Chọn kênh --", "meta": "", "avatar": "", "avatar_class": "", "is_active": True, "is_placeholder": True}
+            {"value": "", "label": "-- Ch\u1ecdn k\u00eanh --", "meta": "", "avatar": "", "avatar_class": "", "is_active": True, "is_placeholder": True}
         ]
         for channel in bootstrap.channels:
             channels.append(
@@ -4272,7 +4468,7 @@ class AppStore:
                             str(channel.name or "").strip(),
                             str(channel.channel_id or "").strip(),
                             str(worker_label or "").strip(),
-                            f"{worker_channel_count} kênh" if worker_channel_count else "",
+                            f"{worker_channel_count} k\u00eanh" if worker_channel_count else "",
                         ]
                         if part
                     ).lower(),
@@ -4301,7 +4497,7 @@ class AppStore:
                     "kind": "Drive" if is_drive else "Upload",
                     "kind_class": "text-sky-600" if is_drive else "text-violet-600",
                     "title": job.title,
-                    "meta": f"{job.source_label} • render {self._format_render_duration(job.time_render_string)} • ",
+                    "meta": f"{job.source_label} \u2022 render {self._format_render_duration(job.time_render_string)} \u2022 ",
                     "job_id": job.id,
                     "description": (job.description or "").strip(),
                     "channel_avatar": self._initials(job.channel_name),
@@ -4346,14 +4542,7 @@ class AppStore:
             "nav_items": (
                 self._admin_nav_items()
                 if is_admin_shell
-                else [
-                    {
-                        "key": "render_workspace",
-                        "label": "Điều phối Render",
-                        "href": "/app",
-                        "icon": "layers",
-                    }
-                ]
+                else self._user_workspace_nav_items()
             ),
             "workspace_label": {
                 "admin": "Admin workspace",
@@ -4368,13 +4557,13 @@ class AppStore:
             "upload_capabilities": bootstrap.upload_capabilities.model_dump(mode="json"),
             "channel_connect_mode": "browser_session",
             "channel_connect_blocked_message": (
-                "Bạn chưa được manager cấp VPS. Hãy liên hệ manager trước khi thêm kênh."
+                "B\u1ea1n ch\u01b0a \u0111\u01b0\u1ee3c manager c\u1ea5p VPS. H\u00e3y li\u00ean h\u1ec7 manager tr\u01b0\u1edbc khi th\u00eam k\u00eanh."
                 if bootstrap.user.role == "user" and not has_assigned_worker
                 else (
-                    "Bạn chưa có VPS nào trong scope quản lý để mở phiên thêm kênh."
+                    "B\u1ea1n ch\u01b0a c\u00f3 VPS n\u00e0o trong scope qu\u1ea3n l\u00fd \u0111\u1ec3 m\u1edf phi\u00ean th\u00eam k\u00eanh."
                     if bootstrap.user.role == "manager" and not has_assigned_worker
                     else (
-                        "Bạn chưa tự cấp VPS cho tài khoản admin này. Hãy vào Danh sách BOT rồi gán VPS cho chính mình."
+                        "B\u1ea1n ch\u01b0a t\u1ef1 c\u1ea5p VPS cho t\u00e0i kho\u1ea3n admin n\u00e0y. H\u00e3y v\u00e0o Danh s\u00e1ch BOT r\u1ed3i g\u00e1n VPS cho ch\u00ednh m\u00ecnh."
                         if bootstrap.user.role == "admin" and not has_assigned_worker
                         else None
                     )
@@ -4394,22 +4583,22 @@ class AppStore:
             "notice": notice,
             "notice_level": notice_level,
             "kpis": [
-                {"label": "Kênh đã thêm", "icon": "radio", "icon_class": "text-emerald-500", "value": bootstrap.oauth.connected_count, "accent": "Online", "accent_class": "text-emerald-600", "accent_badge_class": "border-emerald-200 bg-emerald-50 text-emerald-700", "value_class": "text-emerald-600", "bar_class": "bg-emerald-500"},
-                {"label": "Đang chờ xử lý", "icon": "layers", "icon_class": "text-amber-500", "value": len(queued_jobs), "accent": "Chờ", "accent_class": "text-amber-600", "accent_badge_class": "border-amber-200 bg-amber-50 text-amber-700", "value_class": "text-amber-600", "bar_class": "bg-amber-500"},
-                {"label": "Đang render", "icon": "loader", "icon_class": "text-brand-500", "value": len(rendering_jobs), "accent": "Render", "accent_class": "text-brand-600", "accent_badge_class": "border-indigo-200 bg-indigo-50 text-indigo-700", "value_class": "text-brand-600", "bar_class": "bg-brand-500"},
-                {"label": "Đang upload", "icon": "cloud-upload", "icon_class": "text-sky-500", "value": len(uploading_jobs), "accent": "Upload", "accent_class": "text-sky-500", "accent_badge_class": "border-sky-200 bg-sky-50 text-sky-700", "value_class": "text-slate-900" if len(uploading_jobs) == 0 else "text-sky-500", "bar_class": "bg-sky-400"},
-                {"label": "Xử lý lỗi", "icon": "shield-alert", "icon_class": "text-rose-500", "value": len(failed_jobs), "accent": "Lỗi", "accent_class": "text-rose-500", "accent_badge_class": "border-rose-200 bg-rose-50 text-rose-700", "value_class": "text-slate-900" if len(failed_jobs) == 0 else "text-rose-500", "bar_class": "bg-rose-400"},
+                {"label": "K\u00eanh \u0111\u00e3 th\u00eam", "icon": "radio", "icon_class": "text-emerald-500", "value": bootstrap.oauth.connected_count, "accent": "Online", "accent_class": "text-emerald-600", "accent_badge_class": "border-emerald-200 bg-emerald-50 text-emerald-700", "value_class": "text-emerald-600", "bar_class": "bg-emerald-500"},
+                {"label": "\u0110ang ch\u1edd x\u1eed l\u00fd", "icon": "layers", "icon_class": "text-amber-500", "value": len(queued_jobs), "accent": "Ch\u1edd", "accent_class": "text-amber-600", "accent_badge_class": "border-amber-200 bg-amber-50 text-amber-700", "value_class": "text-amber-600", "bar_class": "bg-amber-500"},
+                {"label": "\u0110ang render", "icon": "loader", "icon_class": "text-brand-500", "value": len(rendering_jobs), "accent": "Render", "accent_class": "text-brand-600", "accent_badge_class": "border-indigo-200 bg-indigo-50 text-indigo-700", "value_class": "text-brand-600", "bar_class": "bg-brand-500"},
+                {"label": "\u0110ang upload", "icon": "cloud-upload", "icon_class": "text-sky-500", "value": len(uploading_jobs), "accent": "Upload", "accent_class": "text-sky-500", "accent_badge_class": "border-sky-200 bg-sky-50 text-sky-700", "value_class": "text-slate-900" if len(uploading_jobs) == 0 else "text-sky-500", "bar_class": "bg-sky-400"},
+                {"label": "X\u1eed l\u00fd l\u1ed7i", "icon": "shield-alert", "icon_class": "text-rose-500", "value": len(failed_jobs), "accent": "L\u1ed7i", "accent_class": "text-rose-500", "accent_badge_class": "border-rose-200 bg-rose-50 text-rose-700", "value_class": "text-slate-900" if len(failed_jobs) == 0 else "text-rose-500", "bar_class": "bg-rose-400"},
             ],
-            "render_config": {"title": "Cấu hình render", "description": "Thiết lập nguồn đầu vào, file loop và kênh xuất bản cho job mới."},
+            "render_config": {"title": "C\u1ea5u h\u00ecnh render", "description": "Thi\u1ebft l\u1eadp ngu\u1ed3n \u0111\u1ea7u v\u00e0o, file loop v\u00e0 k\u00eanh xu\u1ea5t b\u1ea3n cho job m\u1edbi."},
             "quick_settings": {"video_title": "", "description_text": "", "duration": "03:30:00", "schedule_at": (now + timedelta(hours=1)).strftime("%d/%m/%Y %H:%M")},
             "channels": channels,
             "connected_channels": connected_channels,
             "render_tabs": [
-                {"label": "Danh sách render", "count": len(render_jobs), "active": True},
-                {"label": "Đang xử lý", "count": len([job for job in render_jobs if job["status"] in {"Đang render", "Đang upload", "Đang tải nguồn"}]), "active": False},
+                {"label": "Danh s\u00e1ch render", "count": len(render_jobs), "active": True},
+                {"label": "\u0110ang x\u1eed l\u00fd", "count": len([job for job in render_jobs if job["status"] in {"\u0110ang render", "\u0110ang upload", "\u0110ang t\u1ea3i ngu\u1ed3n"}]), "active": False},
             ],
             "render_jobs": render_jobs,
-            "render_summary": f"Hiển thị 1 đến {len(render_jobs)} trong số {len(render_jobs)} kết quả" if render_jobs else "Chưa có job nào trong hàng đợi",
+            "render_summary": f"Hi\u1ec3n th\u1ecb 1 \u0111\u1ebfn {len(render_jobs)} trong s\u1ed1 {len(render_jobs)} k\u1ebft qu\u1ea3" if render_jobs else "Ch\u01b0a c\u00f3 job n\u00e0o trong h\u00e0ng \u0111\u1ee3i",
         }
 
     def get_user_bootstrap(self, user_id: str) -> UserBootstrapResponse:
@@ -4445,7 +4634,147 @@ class AppStore:
             "browser_session": dashboard.get("browser_session"),
         }
 
+    def get_user_live_workspace_view(
+        self,
+        *,
+        user_id: str,
+        notice: str | None = None,
+        notice_level: str = "success",
+    ) -> dict[str, Any]:
+        dashboard = self.get_user_dashboard_view(
+            user_id=user_id,
+            notice=notice,
+            notice_level=notice_level,
+        )
+        bootstrap = self.get_user_bootstrap(user_id)
+        now = self._now()
+        workspace_workers = self._workspace_workers_for_user(bootstrap.user)
+        live_worker_options: list[dict[str, Any]] = []
+        connected_worker_count = 0
+
+        for worker in workspace_workers:
+            status_key = str(worker.status or "").strip().lower()
+            is_connected = status_key in {"online", "busy"}
+            if is_connected:
+                connected_worker_count += 1
+            live_worker_options.append(
+                {
+                    "id": worker.id,
+                    "name": self._resolve_worker_display_name(worker.id),
+                    "manager_name": worker.manager_name or "-",
+                    "group": worker.group or "-",
+                    "status_key": status_key or "offline",
+                    "status_label": "S\u1eb5n s\u00e0ng" if is_connected else "M\u1ea5t k\u1ebft n\u1ed1i",
+                    "status_class": (
+                        "border-emerald-200 bg-emerald-50 text-emerald-700"
+                        if is_connected
+                        else "border-rose-200 bg-rose-50 text-rose-600"
+                    ),
+                    "thread_text": self._worker_thread_summary(worker)["thread_text"],
+                }
+            )
+
+        live_rows: list[dict[str, Any]] = []
+
+        dashboard.update(
+            {
+                "page_title": "Upload Youtube",
+                "active_page": "live_workspace",
+                "nav_items": (
+                    self._admin_nav_items("live")
+                    if dashboard.get("admin_shell")
+                    else self._user_workspace_nav_items()
+                ),
+                "kpis": [
+                    {
+                        "label": "BOT \u0111\u01b0\u1ee3c c\u1ea5p",
+                        "icon": "server",
+                        "icon_class": "text-emerald-500",
+                        "value": len(live_worker_options),
+                        "accent": "Live + Backup",
+                        "accent_class": "text-emerald-600",
+                        "accent_badge_class": "border-emerald-200 bg-emerald-50 text-emerald-700",
+                        "value_class": "text-emerald-600",
+                        "bar_class": "bg-emerald-500",
+                    },
+                    {
+                        "label": "BOT live s\u1eb5n s\u00e0ng",
+                        "icon": "server",
+                        "icon_class": "text-brand-500",
+                        "value": connected_worker_count,
+                        "accent": f"{connected_worker_count}/{len(live_worker_options)} BOT",
+                        "accent_class": "text-brand-600",
+                        "accent_badge_class": "border-indigo-200 bg-indigo-50 text-indigo-700",
+                        "value_class": "text-brand-600",
+                        "bar_class": "bg-brand-500",
+                    },
+                    {
+                        "label": "\u0110ang live",
+                        "icon": "radio",
+                        "icon_class": "text-rose-500",
+                        "value": 0,
+                        "accent": "Live",
+                        "accent_class": "text-rose-500",
+                        "accent_badge_class": "border-rose-200 bg-rose-50 text-rose-700",
+                        "value_class": "text-slate-900",
+                        "bar_class": "bg-rose-400",
+                    },
+                    {
+                        "label": "Ch\u1edd l\u00ean l\u1ecbch",
+                        "icon": "clock-3",
+                        "icon_class": "text-amber-500",
+                        "value": 0,
+                        "accent": "L\u1ecbch",
+                        "accent_class": "text-amber-600",
+                        "accent_badge_class": "border-amber-200 bg-amber-50 text-amber-700",
+                        "value_class": "text-slate-900",
+                        "bar_class": "bg-amber-500",
+                    },
+                    {
+                        "label": "BOT backup",
+                        "icon": "shield-check",
+                        "icon_class": "text-sky-500",
+                        "value": 0,
+                        "accent": "Fallback",
+                        "accent_class": "text-sky-600",
+                        "accent_badge_class": "border-sky-200 bg-sky-50 text-sky-700",
+                        "value_class": "text-slate-900",
+                        "bar_class": "bg-sky-400",
+                    },
+                ],
+                "live_config": {
+                    "title": "Live Config",
+                    "description": "Thi\u1ebft l\u1eadp BOT ch\u00ednh, BOT backup, media ngu\u1ed3n v\u00e0 l\u1ecbch live.",
+                },
+                "live_form": {
+                    "stream_name": "",
+                    "stream_key": "",
+                    "video_url": "",
+                    "audio_url": "",
+                    "backup_delay_minutes": 3,
+                    "start_at": (now + timedelta(hours=1)).strftime("%d/%m/%Y %H:%M"),
+                    "end_at": (now + timedelta(hours=3)).strftime("%d/%m/%Y %H:%M"),
+                },
+                "live_channels": dashboard.get("channels", []),
+                "live_workers": live_worker_options,
+                "connected_channels": dashboard.get("connected_channels", []),
+                "live_tabs": [
+                    {"label": "Danh s\u00e1ch live", "count": len(live_rows), "active": True},
+                    {"label": "Ch\u1edd l\u00ean l\u1ecbch", "count": 0, "active": False},
+                ],
+                "live_stream_rows": live_rows,
+                "live_summary": (
+                    f"Hi\u1ec3n th\u1ecb 1 \u0111\u1ebfn {len(live_rows)} trong s\u1ed1 {len(live_rows)} k\u1ebft qu\u1ea3"
+                    if live_rows
+                    else "Ch\u01b0a c\u00f3 lu\u1ed3ng live n\u00e0o trong danh s\u00e1ch"
+                ),
+            }
+        )
+        return dashboard
+
     def _resolve_job_preview(self, job: RenderJobRecord) -> dict[str, str] | None:
+
+
         if job.thumbnail_path and self._path_has_content(self._absolute_preview_path(str(job.thumbnail_path).strip())):
             return {
                 "kind": "image",
@@ -4498,7 +4827,7 @@ class AppStore:
         user = self._require_workspace_user(user_id)
         channel = self._find_channel(payload.channel_id)
         if not self._user_has_channel_access(user_id, channel.id):
-            raise ValueError("Bạn không có quyền tạo job trên kênh này.")
+            raise ValueError("B?n không có quy?n t?o job trên kênh này.")
         worker = self._assert_channel_matches_user_worker(user, channel)
         queue_order = max([job.queue_order or 0 for job in self.jobs], default=0) + 1
         created_at = self._now()
@@ -4680,6 +5009,52 @@ class AppStore:
             jobs=deepcopy(self.jobs),
         )
 
+    @staticmethod
+    def _normalize_live_bot_type(raw_type: Any, note: str | None = None) -> str:
+        normalized = str(raw_type or "").strip().lower()
+        normalized_note = str(note or "").strip().lower()
+        if "backup" in normalized or "backup" in normalized_note or "phu" in normalized_note or "ph?" in normalized_note:
+            return "backup"
+        return "live"
+
+    @staticmethod
+    def _live_bot_type_label(bot_type: str) -> str:
+        mapping = {
+            "live": "Live Stream",
+            "backup": "Backup",
+            "mixed": "Live + Backup",
+        }
+        return mapping.get(str(bot_type or "").strip().lower(), "--")
+
+    def _live_capacity_metrics_for_user(self, user: UserSummary) -> dict[str, int]:
+        links = self._assigned_worker_links_for_user(user.id)
+        metrics = {
+            "threads_live_total": 0,
+            "threads_backup_total": 0,
+            "threads_live_running": 0,
+            "threads_backup_running": 0,
+            "threads_backup_pending": 0,
+            "bots_live_total": 0,
+            "bots_backup_total": 0,
+        }
+        seen_worker_ids: dict[str, set[str]] = {
+            "live": set(),
+            "backup": set(),
+        }
+        for link in links:
+            worker_id = str(link.get("worker_id") or "").strip()
+            bot_type = self._normalize_live_bot_type(link.get("bot_type"), str(link.get("note") or ""))
+            threads = max(0, int(link.get("threads") or 0))
+            if bot_type == "backup":
+                metrics["threads_backup_total"] += threads
+            else:
+                metrics["threads_live_total"] += threads
+            if worker_id:
+                seen_worker_ids.setdefault(bot_type, set()).add(worker_id)
+        metrics["bots_live_total"] = len(seen_worker_ids.get("live", set()))
+        metrics["bots_backup_total"] = len(seen_worker_ids.get("backup", set()))
+        return metrics
+
     def _build_user_rows(
         self,
         manager_ids: list[str] | None = None,
@@ -4721,6 +5096,8 @@ class AppStore:
             meta = self._user_meta_record(user.id)
             row_manager_name = user.manager_name or (user.username if user.role == "manager" else "-")
             row_manager_id = manager.id if manager else (user.id if user.role == "manager" else "")
+            live_metrics = self._live_capacity_metrics_for_user(user)
+            manager_meta = self._user_meta_record(row_manager_id) if row_manager_id else {}
             rows.append(
                 {
                     "index": len(rows) + 1,
@@ -4735,10 +5112,25 @@ class AppStore:
                     "manager_name": row_manager_name,
                     "manager_id": row_manager_id,
                     "telegram": meta.get("telegram") or "",
-                    "updated_meta": f"{meta.get('updated_by') or '-'} • {self._format_compact_datetime(meta.get('updated_at'))}",
+                    "telegram_manager": manager_meta.get("telegram") or "",
+                    "updated_meta": f"{meta.get('updated_by') or '-'}  {self._format_compact_datetime(meta.get('updated_at'))}",
                     "total_channels": self._user_channel_count(user),
                     "total_workers": self._user_worker_count(user),
-                    "can_delete": not (viewer_role == "manager" and viewer_id and user.role == "manager" and user.id == viewer_id),
+                    "live_threads_total": live_metrics["threads_live_total"],
+                    "live_threads_running": live_metrics["threads_live_running"],
+                    "live_bots_total": live_metrics["bots_live_total"],
+                    "live_threads_backup_total": live_metrics["threads_backup_total"],
+                    "live_threads_backup_running": live_metrics["threads_backup_running"],
+                    "live_threads_backup_pending": live_metrics["threads_backup_pending"],
+                    "live_bots_backup_total": live_metrics["bots_backup_total"],
+                    "live_total_bots": (
+                        live_metrics["bots_live_total"]
+                        + live_metrics["bots_backup_total"]
+                    ),
+                    "can_delete": not (
+                        (viewer_role == "manager" and viewer_id and user.role == "manager" and user.id == viewer_id)
+                        or (user.role == "admin" and len([item for item in self.users if item.role == "admin"]) <= 1)
+                    ),
                 }
             )
         return rows
@@ -4747,10 +5139,10 @@ class AppStore:
     def _credential_status_label(meta: dict[str, Any]) -> str:
         password_hash = str(meta.get("password_hash") or "").strip()
         if password_hash:
-            return "Đã đặt mật khẩu"
+            return "Ðã d?t m?t kh?u"
         if str(meta.get("password") or "").strip():
-            return "Cần đổi lại mật khẩu"
-        return "Chưa đặt mật khẩu"
+            return "C?n d?i l?i m?t kh?u"
+        return "Chua d?t m?t kh?u"
 
     def _build_role_page_context(
         self,
@@ -4758,6 +5150,7 @@ class AppStore:
         role_kind: str,
         notice: str | None = None,
         notice_level: str = "success",
+        workspace_mode: str = "upload",
     ) -> dict[str, Any]:
         is_manager = role_kind == "manager"
         current_role = "manager" if is_manager else "admin"
@@ -4773,7 +5166,7 @@ class AppStore:
                     "username": user.username,
                     "display_name": user.display_name,
                     "credential_status": self._credential_status_label(meta),
-                    "updated_meta": f"{meta.get('updated_by') or '-'} • {self._format_compact_datetime(meta.get('updated_at'))}",
+                    "updated_meta": f"{meta.get('updated_by') or '-'}  {self._format_compact_datetime(meta.get('updated_at'))}",
                 }
             )
 
@@ -4783,6 +5176,7 @@ class AppStore:
             user_section="managers" if is_manager else "admins",
             notice=notice,
             notice_level=notice_level,
+            workspace_mode=workspace_mode,
         )
         context.update(
             {
@@ -4791,7 +5185,7 @@ class AppStore:
                 "heading": "Danh sách manager" if is_manager else "Danh sách admin",
                 "role_label": "manager" if is_manager else "admin",
                 "title": "Danh sách manager" if is_manager else "Danh sách admin",
-                "description": "Bổ nhiệm hoặc gỡ quyền manager cho tài khoản." if is_manager else "Bổ nhiệm hoặc gỡ quyền admin cho tài khoản.",
+                "description": "B? nhi?m ho?c g? quy?n manager cho tài kho?n." if is_manager else "B? nhi?m ho?c g? quy?n admin cho tài kho?n.",
                 "action_route": "/admin/user/updaterolemanager" if is_manager else "/admin/user/updateroleadmin",
                 "rows": rows,
                 "assignable_user_options": [
@@ -4808,7 +5202,7 @@ class AppStore:
                             ]
                             if part
                         ).lower(),
-                        "description": " • ".join(
+                        "description": "  ".join(
                             part
                             for part in [
                                 f"Role: {user.role}",
@@ -4839,7 +5233,9 @@ class AppStore:
                     "manager_name": worker.manager_name,
                     "status_label": status_label,
                     "status_class": status_class,
-                    "bot_type": mapping.get("bot_type", "1080p"),
+                    "bot_type": self._live_bot_type_label(
+                        self._normalize_live_bot_type(mapping.get("bot_type"), str(mapping.get("note") or ""))
+                    ),
                     "number_of_threads": mapping["threads"],
                     "note": mapping.get("note") or "VPS duoc cap",
                     "disk_text": f"{worker.disk_used_gb:.1f}/{worker.disk_total_gb:.1f}GB",
@@ -5188,9 +5584,10 @@ class AppStore:
         viewer_id: str | None = None,
         notice: str | None = None,
         notice_level: str = "success",
+        workspace_mode: str = "upload",
     ) -> dict[str, Any]:
         context = self._admin_shell_context(
-            page_title="Danh sách người dùng",
+            page_title="Danh sách ngu?i dùng",
             active_page="users",
             user_section="users",
             viewer_role=viewer_role,
@@ -5198,6 +5595,7 @@ class AppStore:
             manager_ids=manager_ids,
             notice=notice,
             notice_level=notice_level,
+            workspace_mode=workspace_mode,
         )
         context.update(
             {
@@ -5223,15 +5621,17 @@ class AppStore:
         notice_level: str = "success",
         form_data: dict[str, Any] | None = None,
         error: str | None = None,
+        workspace_mode: str = "upload",
     ) -> dict[str, Any]:
         context = self._admin_shell_context(
-            page_title="Tạo user",
+            page_title="T?o user",
             active_page="users",
             user_section="create",
             viewer_role=viewer_role,
             viewer_id=viewer_id,
             notice=notice,
             notice_level=notice_level,
+            workspace_mode=workspace_mode,
         )
         context.update(
             {
@@ -5256,6 +5656,7 @@ class AppStore:
         notice: str | None = None,
         notice_level: str = "success",
         error: str | None = None,
+        workspace_mode: str = "upload",
     ) -> dict[str, Any]:
         user = self._find_user(user_id)
         meta = self._user_meta_record(user.id)
@@ -5268,6 +5669,7 @@ class AppStore:
             viewer_id=viewer_id,
             notice=notice,
             notice_level=notice_level,
+            workspace_mode=workspace_mode,
         )
         context.update(
             {
@@ -5287,11 +5689,33 @@ class AppStore:
         )
         return context
 
-    def get_admin_manager_page_context(self, *, notice: str | None = None, notice_level: str = "success") -> dict[str, Any]:
-        return self._build_role_page_context(role_kind="manager", notice=notice, notice_level=notice_level)
+    def get_admin_manager_page_context(
+        self,
+        *,
+        notice: str | None = None,
+        notice_level: str = "success",
+        workspace_mode: str = "upload",
+    ) -> dict[str, Any]:
+        return self._build_role_page_context(
+            role_kind="manager",
+            notice=notice,
+            notice_level=notice_level,
+            workspace_mode=workspace_mode,
+        )
 
-    def get_admin_admin_page_context(self, *, notice: str | None = None, notice_level: str = "success") -> dict[str, Any]:
-        return self._build_role_page_context(role_kind="admin", notice=notice, notice_level=notice_level)
+    def get_admin_admin_page_context(
+        self,
+        *,
+        notice: str | None = None,
+        notice_level: str = "success",
+        workspace_mode: str = "upload",
+    ) -> dict[str, Any]:
+        return self._build_role_page_context(
+            role_kind="admin",
+            notice=notice,
+            notice_level=notice_level,
+            workspace_mode=workspace_mode,
+        )
 
     def get_admin_user_bot_context(
         self,
@@ -5301,19 +5725,21 @@ class AppStore:
         viewer_id: str | None = None,
         notice: str | None = None,
         notice_level: str = "success",
+        workspace_mode: str = "upload",
     ) -> dict[str, Any]:
         user = self._find_user(user_id)
         meta = self._user_meta_record(user.id)
         assigned_workers = self._assigned_workers_for_user(user)
         assigned_worker = assigned_workers[0] if assigned_workers else None
         context = self._admin_shell_context(
-            page_title=f"BOT của {user.username}",
+            page_title=f"BOT c?a {user.username}",
             active_page="users",
             user_section="users",
             viewer_role=viewer_role,
             viewer_id=viewer_id,
             notice=notice,
             notice_level=notice_level,
+            workspace_mode=workspace_mode,
         )
         context.update(
             {
@@ -5373,6 +5799,7 @@ class AppStore:
     def _build_operation_placeholder_row(self, task: dict[str, Any]) -> dict[str, Any]:
         status_label, status_class = self._worker_operation_badge(task)
         placeholder_name = str(task.get("worker_name") or task.get("vps_ip") or task.get("worker_id") or "").strip()
+        operation_failed = str(task.get("status") or "").strip() == "failed"
         return {
             "index": 0,
             "id": str(task.get("worker_id") or "").strip(),
@@ -5396,14 +5823,22 @@ class AppStore:
             "running_threads": 0,
             "max_threads": 0,
             "threads": 0,
+            "live_type_key": "",
+            "live_type_label": "--",
+            "live_thread_text": "--",
+            "live_total_threads": 0,
+            "live_running_threads": 0,
+            "live_pending_threads": 0,
             "ram_text": "--",
             "ram_percent": 0,
             "disk_text": "--",
             "bandwidth_text": "--",
             "load_percent": 0,
-            "meta_text": str(task.get("message") or "").strip() or "Control-plane đang xử lý trên VPS.",
+            "cpu_percent": 0,
+            "space_text": "--",
+            "meta_text": str(task.get("message") or "").strip() or "Control-plane dang x? lý trên VPS.",
             "row_dimmed": True,
-            "actions_disabled": True,
+            "actions_disabled": not operation_failed,
             "is_operation_placeholder": True,
             "operation_kind": str(task.get("kind") or "").strip(),
             "operation_status": str(task.get("status") or "").strip(),
@@ -5441,6 +5876,31 @@ class AppStore:
         for worker in self._filtered_workers(manager_ids):
             status_label, status_class = self._worker_status_badge(worker.status)
             thread_summary = self._worker_thread_summary(worker)
+            worker_links = [
+                link
+                for link in self.user_worker_links
+                if str(link.get("worker_id") or "").strip() == worker.id
+            ]
+            live_total_threads = sum(max(0, int(link.get("threads") or 0)) for link in worker_links)
+            if live_total_threads <= 0:
+                live_total_threads = max(0, int(worker.threads or 0))
+            live_type_keys = {
+                self._normalize_live_bot_type(link.get("bot_type"), str(link.get("note") or ""))
+                for link in worker_links
+            }
+            if not live_type_keys:
+                live_type_key = ""
+            elif len(live_type_keys) == 1:
+                live_type_key = next(iter(live_type_keys))
+            else:
+                live_type_key = "mixed"
+            live_type_label = self._live_bot_type_label(live_type_key)
+            live_running_threads = 0
+            live_pending_threads = 0
+            if live_type_key == "backup":
+                live_thread_text = f"{live_running_threads}/{live_pending_threads}/{live_total_threads}"
+            else:
+                live_thread_text = f"{live_running_threads}/{live_total_threads}"
             assigned_users = self._assigned_users_for_worker(worker.id)
             assigned_user_ids = [user.id for user in assigned_users]
             assigned_user_names = [user.username for user in assigned_users]
@@ -5452,7 +5912,7 @@ class AppStore:
                 assigned_user_name = f"{len(assigned_users)} user"
             else:
                 assigned_user_id = ""
-                assigned_user_name = "BOT trống"
+                assigned_user_name = "BOT tr?ng"
             row = {
                 "index": 0,
                 "id": worker.id,
@@ -5476,6 +5936,12 @@ class AppStore:
                 "running_threads": thread_summary["running_threads"],
                 "max_threads": thread_summary["max_threads"],
                 "threads": worker.threads,
+                "live_type_key": live_type_key,
+                "live_type_label": live_type_label,
+                "live_thread_text": live_thread_text,
+                "live_total_threads": live_total_threads,
+                "live_running_threads": live_running_threads,
+                "live_pending_threads": live_pending_threads,
                 "ram_text": f"{worker.ram_used_gb:.1f}GB / {worker.ram_total_gb:.1f}GB"
                 if worker.ram_total_gb > 0
                 else "--",
@@ -5483,6 +5949,8 @@ class AppStore:
                 "disk_text": f"{worker.disk_used_gb:.1f}/{worker.disk_total_gb:.1f}GB",
                 "bandwidth_text": f"{worker.bandwidth_kbps:.2f}KB/s",
                 "load_percent": worker.load_percent,
+                "cpu_percent": worker.load_percent,
+                "space_text": f"{worker.disk_used_gb:.1f}/{worker.disk_total_gb:.1f}GB",
                 "meta_text": worker.manager_name,
                 "row_dimmed": False,
                 "actions_disabled": False,
@@ -5515,6 +5983,7 @@ class AppStore:
         focus_user_id: str | None = None,
         notice: str | None = None,
         notice_level: str = "success",
+        workspace_mode: str = "upload",
     ) -> dict[str, Any]:
         worker_rows = self._build_bot_rows(manager_ids)
         context = self._admin_shell_context(
@@ -5525,6 +5994,7 @@ class AppStore:
             manager_ids=manager_ids,
             notice=notice,
             notice_level=notice_level,
+            workspace_mode=workspace_mode,
         )
         focus_user: dict[str, Any] | None = None
         if focus_user_id:
@@ -5563,6 +6033,156 @@ class AppStore:
             context["manager_options"] = [item for item in context["manager_options"] if item["id"] == viewer_id]
         return context
 
+    def get_admin_live_workspace_context(
+        self,
+        *,
+        manager_ids: list[str] | None = None,
+        viewer_role: str = "admin",
+        viewer_id: str | None = None,
+        notice: str | None = None,
+        notice_level: str = "success",
+    ) -> dict[str, Any]:
+        context = self._admin_shell_context(
+            page_title="Ði?u ph?i live stream",
+            active_page="live_workspace",
+            viewer_role=viewer_role,
+            viewer_id=viewer_id,
+            manager_ids=manager_ids,
+            notice=notice,
+            notice_level=notice_level,
+            workspace_mode="live",
+        )
+        selected_manager_labels = [
+            item["username"] for item in context.get("manager_options", []) if item.get("selected")
+        ]
+        live_scope_count = len(selected_manager_labels)
+        if viewer_role == "manager" and viewer_id:
+            live_scope_count = 1
+        if not live_scope_count:
+            live_scope_count = context["summary"].total_managers
+        scoped_manager_ids = self._effective_manager_scope_ids(
+            viewer_role=viewer_role,
+            viewer_id=viewer_id,
+            manager_ids=manager_ids,
+        )
+        if scoped_manager_ids:
+            scoped_workers = [worker for worker in self.workers if worker.manager_id in scoped_manager_ids]
+            scoped_users = [
+                user for user in self.users
+                if user.role == "user" and self._resolved_user_manager_id(user) in scoped_manager_ids
+            ]
+        elif viewer_role == "manager" and viewer_id:
+            scoped_workers = [worker for worker in self.workers if worker.manager_id == viewer_id]
+            scoped_users = [
+                user for user in self.users
+                if user.role == "user" and self._resolved_user_manager_id(user) == viewer_id
+            ]
+        else:
+            scoped_workers = list(self.workers)
+            scoped_users = [user for user in self.users if user.role == "user"]
+
+        live_bot_options: list[dict[str, Any]] = []
+        for worker in scoped_workers:
+            status_label, status_class = self._worker_status_badge(worker.status)
+            thread_summary = self._worker_thread_summary(worker)
+            live_bot_options.append(
+                {
+                    "id": worker.id,
+                    "name": self._resolve_worker_display_name(worker.id),
+                    "group": worker.group or worker.manager_name or "-",
+                    "manager_name": worker.manager_name or "-",
+                    "status_label": status_label,
+                    "status_class": status_class,
+                    "thread_text": thread_summary["thread_text"],
+                    "connected": worker.status in {"online", "busy"},
+                }
+            )
+        live_bot_options.sort(key=lambda item: str(item["name"]).casefold())
+
+        live_user_options: list[dict[str, Any]] = []
+        for user in scoped_users:
+            live_user_options.append(
+                {
+                    "id": user.id,
+                    "username": user.username,
+                    "display_name": user.display_name or user.username,
+                    "manager_name": user.manager_name or "-",
+                    "channel_count": self._user_channel_count(user),
+                    "bot_count": self._user_worker_count(user),
+                }
+            )
+        live_user_options.sort(key=lambda item: str(item["username"]).casefold())
+
+        connected_worker_count = len([worker for worker in scoped_workers if worker.status in {"online", "busy"}])
+        context.update(
+            {
+                "template": "admin/live_workspace.html",
+                "selected_manager_labels": selected_manager_labels,
+                "live_shortcuts": [
+                    {
+                        "title": "Qu?n lý ngu?i dùng",
+                        "description": "Dùng chung module user v?i Upload, d?i scope b?ng tab Live Stream ? d?u trang.",
+                        "href": self._with_query("/admin/user/index", workspace="live"),
+                        "icon": "users",
+                        "button_label": "M? danh sách user",
+                    },
+                    {
+                        "title": "Qu?n lý BOT live",
+                        "description": "Dùng chung b?ng BOT hi?n t?i; ?n thao tác upload-only và gi? nguyên filter manager.",
+                        "href": self._with_query("/admin/ManagerBOT/index", workspace="live"),
+                        "icon": "server",
+                        "button_label": "M? danh sách BOT",
+                    },
+                ],
+                "live_scope": {
+                    "manager_count": live_scope_count,
+                    "manager_labels": selected_manager_labels,
+                    "worker_count": context["summary"].total_workers,
+                    "user_count": context["summary"].total_users,
+                },
+                "live_form_defaults": {
+                    "platform_label": "YouTube RTMP",
+                    "platform_note": "B? phân lo?i 1080/4K; ch?t lu?ng lu?ng ph? thu?c media d?u vào và pipeline ffmpeg.",
+                    "backup_delay_minutes": 3,
+                    "video_placeholder": "Dán link video ngu?n ho?c media URL kh? d?ng v?i downloader hi?n t?i",
+                    "audio_placeholder": "Tùy ch?n: link audio n?n ho?c soundtrack riêng",
+                },
+                "live_scope_cards": [
+                    {
+                        "title": "Ngu?i dùng trong scope",
+                        "value": str(len(live_user_options)),
+                        "meta": "User du?c phép t?o lu?ng trong workspace hi?n t?i.",
+                        "icon": "users",
+                    },
+                    {
+                        "title": "BOT kh? d?ng",
+                        "value": f"{connected_worker_count}/{len(live_bot_options)}",
+                        "meta": "BOT dang k?t n?i / t?ng BOT trong scope manager.",
+                        "icon": "server",
+                    },
+                    {
+                        "title": "Backup m?c d?nh",
+                        "value": f"{3} phút",
+                        "meta": "Delay kh?i d?ng fallback theo rule cu, có th? ch?nh trên t?ng lu?ng.",
+                        "icon": "shield-check",
+                    },
+                ],
+                "live_user_options": live_user_options,
+                "live_bot_options": live_bot_options,
+                "live_backup_bot_options": live_bot_options,
+                "live_policy_notes": [
+                    "M?t lu?ng ch? ch?n m?t BOT chính và m?t BOT backup tùy ch?n.",
+                    "YouTube RTMP du?c khóa c? d?nh ? phase UI d? bám nghi?p v? app cu.",
+                    "Video là b?t bu?c, audio là tùy ch?n; backup delay gi? theo phút nhu app cu.",
+                    "L?ch live dùng c?p th?i gian b?t d?u/k?t thúc, không còn nhánh 1080 hay 4K.",
+                ],
+                "live_stream_rows": [],
+            }
+        )
+        if viewer_role == "manager" and viewer_id:
+            context["manager_options"] = [item for item in context["manager_options"] if item["id"] == viewer_id]
+        return context
+
     def get_admin_bots_of_user_context(
         self,
         *,
@@ -5571,6 +6191,7 @@ class AppStore:
         viewer_id: str | None = None,
         notice: str | None = None,
         notice_level: str = "success",
+        workspace_mode: str = "upload",
     ) -> dict[str, Any]:
         user = self._find_user(user_id)
         if user.role == "user":
@@ -5602,12 +6223,13 @@ class AppStore:
             )
 
         context = self._admin_shell_context(
-            page_title=f"Danh sách BOT của {user.username}",
+            page_title=f"Danh sách BOT c?a {user.username}",
             active_page="workers",
             viewer_role=viewer_role,
             viewer_id=viewer_id,
             notice=notice,
             notice_level=notice_level,
+            workspace_mode=workspace_mode,
         )
         context.update(
             {
@@ -5630,6 +6252,7 @@ class AppStore:
         viewer_id: str | None = None,
         notice: str | None = None,
         notice_level: str = "success",
+        workspace_mode: str = "upload",
     ) -> dict[str, Any]:
         worker = self._find_worker(worker_id)
         assigned_ids = [link["user_id"] for link in self.user_worker_links if link["worker_id"] == worker.id]
@@ -5648,12 +6271,13 @@ class AppStore:
             )
 
         context = self._admin_shell_context(
-            page_title=f"Danh sách user của {self._resolve_worker_display_name(worker.id)}",
+            page_title=f"Danh sách user c?a {self._resolve_worker_display_name(worker.id)}",
             active_page="workers",
             viewer_role=viewer_role,
             viewer_id=viewer_id,
             notice=notice,
             notice_level=notice_level,
+            workspace_mode=workspace_mode,
         )
         context.update(
             {
@@ -5682,11 +6306,11 @@ class AppStore:
         display_name = display_name.strip()
         role = role.strip().lower()
         if not username or not display_name or not password.strip():
-            raise ValueError("UserName, DisplayName vÃ  Password lÃ  báº¯t buá»™c.")
+            raise ValueError("UserName, DisplayName vÃ  Password lÃ  báº¯t buá»c.")
         if any(user.username.lower() == username.lower() for user in self.users):
-            raise ValueError("UserName Ä‘Ã£ tá»“n táº¡i.")
+            raise ValueError("UserName ÄÃ£ tá»n táº¡i.")
         if role not in {"user", "manager", "admin"}:
-            raise ValueError("Role khÃ´ng há»£p lá»‡.")
+            raise ValueError("Role khÃ´ng há»£p lá».")
 
         manager_name: str | None = None
         if role == "user":
@@ -5695,7 +6319,7 @@ class AppStore:
             else:
                 manager = self._find_user(manager_id)
                 if manager.role != "manager":
-                    raise ValueError("Manager được chọn không hợp lệ.")
+                    raise ValueError("Manager du?c ch?n không h?p l?.")
                 manager_name = manager.username
 
         user_id = f"user-{uuid4().hex[:8]}"
@@ -5715,12 +6339,12 @@ class AppStore:
     def _validate_admin_username(self, username: str, *, exclude_user_id: str | None = None) -> str:
         normalized_username = username.strip()
         if not normalized_username:
-            raise ValueError("TÃªn Ä‘Äƒng nháº­p lÃ  báº¯t buá»™c.")
+            raise ValueError("TÃªn ÄÄng nháº­p lÃ  báº¯t buá»c.")
         if any(
             user.id != exclude_user_id and user.username.lower() == normalized_username.lower()
             for user in self.users
         ):
-            raise ValueError("TÃªn Ä‘Äƒng nháº­p Ä‘Ã£ tá»“n táº¡i.")
+            raise ValueError("TÃªn ÄÄng nháº­p ÄÃ£ tá»n táº¡i.")
         return normalized_username
 
     def _cascade_manager_username_change(self, old_username: str, new_username: str) -> None:
@@ -5742,9 +6366,9 @@ class AppStore:
     def delete_admin_user(self, user_id: str) -> None:
         user = self._find_user(user_id)
         if user.role == "admin" and len([item for item in self.users if item.role == "admin"]) <= 1:
-            raise ValueError("KhÃ´ng thá»ƒ xÃ³a admin cuá»‘i cÃ¹ng.")
+            raise ValueError("KhÃ´ng thá» xÃ³a admin cuá»i cÃ¹ng.")
         if user.role == "manager" and any(item.role == "user" and item.manager_name == user.username for item in self.users):
-            raise ValueError("Manager nÃ y Ä‘ang quáº£n lÃ½ user khÃ¡c, chÆ°a thá»ƒ xÃ³a.")
+            raise ValueError("Manager nÃ y Äang quáº£n lÃ½ user khÃ¡c, chÆ°a thá» xÃ³a.")
 
         self.users = [item for item in self.users if item.id != user_id]
         self.user_meta.pop(user_id, None)
@@ -5758,7 +6382,7 @@ class AppStore:
 
     def reset_admin_user_password(self, user_id: str, password: str, updated_by: str = "admin") -> None:
         if not password.strip():
-            raise ValueError("Password má»›i lÃ  báº¯t buá»™c.")
+            raise ValueError("Password má»i lÃ  báº¯t buá»c.")
         self._find_user(user_id)
         meta = self._user_meta_record(user_id)
         self._set_user_password(user_id, password.strip())
@@ -5797,7 +6421,7 @@ class AppStore:
             else:
                 manager = self._find_user(manager_id)
                 if manager.role != "manager":
-                    raise ValueError("Manager được chọn không hợp lệ.")
+                    raise ValueError("Manager du?c ch?n không h?p l?.")
                 user.manager_name = manager.username
         else:
             user.manager_name = None
@@ -5827,14 +6451,14 @@ class AppStore:
         user = self._find_user(user_id)
         if promote:
             if user.role == "admin":
-                raise ValueError("Admin hiá»‡n táº¡i khÃ´ng cáº§n gÃ¡n thÃªm quyá»n manager.")
+                raise ValueError("Admin hiá»n táº¡i khÃ´ng cáº§n gÃ¡n thÃªm quyá»n manager.")
             user.role = "manager"
             user.manager_name = None
         else:
             if user.role != "manager":
                 raise ValueError("User nÃ y khÃ´ng pháº£i manager.")
             if any(item.role == "user" and item.manager_name == user.username for item in self.users):
-                raise ValueError("Manager nÃ y Ä‘ang quáº£n lÃ½ user khÃ¡c, chÆ°a thá»ƒ gá»¡ quyá»n.")
+                raise ValueError("Manager nÃ y Äang quáº£n lÃ½ user khÃ¡c, chÆ°a thá» gá»¡ quyá»n.")
             user.role = "user"
             user.manager_name = None
 
@@ -5852,7 +6476,7 @@ class AppStore:
             if user.role != "admin":
                 raise ValueError("User nÃ y khÃ´ng pháº£i admin.")
             if len([item for item in self.users if item.role == "admin"]) <= 1:
-                raise ValueError("KhÃ´ng thá»ƒ gá»¡ quyá»n admin cuá»‘i cÃ¹ng.")
+                raise ValueError("KhÃ´ng thá» gá»¡ quyá»n admin cuá»i cÃ¹ng.")
             user.role = "user"
             user.manager_name = None
 
@@ -5877,7 +6501,7 @@ class AppStore:
     ) -> None:
         worker = self._find_worker(worker_id)
         if not name.strip():
-            raise ValueError("Tên BOT là bắt buộc.")
+            raise ValueError("Tên BOT là b?t bu?c.")
         worker.name = name.strip()
         normalized_group = str(group or "").strip()
         normalized_user_id = str(assigned_user_id or "").strip()
@@ -5895,15 +6519,15 @@ class AppStore:
         if normalized_manager_id:
             manager = self._find_user(normalized_manager_id)
             if manager.role != "manager":
-                raise ValueError("Manager được chọn không hợp lệ.")
+                raise ValueError("Manager du?c ch?n không h?p l?.")
 
         if viewer_role == "manager":
             if manager is None:
-                raise ValueError("Manager được chọn không hợp lệ.")
+                raise ValueError("Manager du?c ch?n không h?p l?.")
             if viewer_id and manager.id != viewer_id:
-                raise ValueError("Manager không được đổi phạm vi BOT sang manager khác.")
+                raise ValueError("Manager không du?c d?i ph?m vi BOT sang manager khác.")
             if worker.manager_id and worker.manager_id != manager.id:
-                raise ValueError("BOT này không nằm trong phạm vi manager hiện tại.")
+                raise ValueError("BOT này không n?m trong ph?m vi manager hi?n t?i.")
 
             self._apply_worker_manager(worker, manager)
             if normalized_group:
@@ -5927,15 +6551,15 @@ class AppStore:
                     if assigned_user.role == "user":
                         assigned_user_manager_id = self._resolved_user_manager_id(assigned_user)
                         if assigned_user_manager_id != manager.id and not already_assigned:
-                            raise ValueError("User phải thuộc manager hiện tại.")
+                            raise ValueError("User ph?i thu?c manager hi?n t?i.")
                     elif assigned_user.role == "manager":
                         if assigned_user.id != manager.id and not already_assigned:
-                            raise ValueError("Manager chỉ được chọn chính mình trong BOT này.")
+                            raise ValueError("Manager ch? du?c ch?n chính mình trong BOT này.")
                     elif assigned_user.role == "admin":
                         if not already_assigned:
-                            raise ValueError("User được chọn không hợp lệ.")
+                            raise ValueError("User du?c ch?n không h?p l?.")
                     else:
-                        raise ValueError("User được chọn không hợp lệ.")
+                        raise ValueError("User du?c ch?n không h?p l?.")
                     selected_users.append(assigned_user)
 
                 current_links_by_user_id = {
@@ -5980,15 +6604,15 @@ class AppStore:
                 if assigned_user.role == "user":
                     assigned_user_manager_id = self._resolved_user_manager_id(assigned_user)
                     if assigned_user_manager_id != manager.id:
-                        raise ValueError("User phải thuộc manager hiện tại.")
+                        raise ValueError("User ph?i thu?c manager hi?n t?i.")
                 elif assigned_user.role == "manager":
                     if assigned_user.id != manager.id:
-                        raise ValueError("Manager chỉ được chọn chính mình trong BOT này.")
+                        raise ValueError("Manager ch? du?c ch?n chính mình trong BOT này.")
                 elif assigned_user.role == "admin":
                     if assigned_user.id not in current_user_ids:
-                        raise ValueError("User được chọn không hợp lệ.")
+                        raise ValueError("User du?c ch?n không h?p l?.")
                 else:
-                    raise ValueError("User được chọn không hợp lệ.")
+                    raise ValueError("User du?c ch?n không h?p l?.")
                 existing_link = next(
                     (
                         link
@@ -6047,8 +6671,8 @@ class AppStore:
             elif worker_links or worker_channels or worker_jobs:
                 if not confirm_manager_transfer_cleanup:
                     raise ValueError(
-                        "Đổi manager BOT này sẽ xóa sạch dữ liệu user/kênh/job của manager hiện tại. "
-                        "Hãy xác nhận cảnh báo rồi thử lại."
+                        "Ð?i manager BOT này s? xóa s?ch d? li?u user/kênh/job c?a manager hi?n t?i. "
+                        "Hãy xác nh?n c?nh báo r?i th? l?i."
                     )
                 self._purge_worker_assignment_scope(
                     worker.id,
@@ -6078,15 +6702,15 @@ class AppStore:
                 if assigned_user.role == "user":
                     assigned_user_manager_id = self._resolved_user_manager_id(assigned_user)
                     if assigned_user_manager_id != manager.id and not already_assigned:
-                        raise ValueError("User phải thuộc manager đã chọn.")
+                        raise ValueError("User ph?i thu?c manager dã ch?n.")
                 elif assigned_user.role == "manager":
                     if assigned_user.id != manager.id and not already_assigned:
-                        raise ValueError("Manager chỉ được chọn chính mình trong BOT này.")
+                        raise ValueError("Manager ch? du?c ch?n chính mình trong BOT này.")
                 elif assigned_user.role == "admin":
                     if not already_assigned and (not viewer_id or assigned_user.id != viewer_id):
-                        raise ValueError("Admin chỉ được tự gán BOT cho chính tài khoản admin đang đăng nhập.")
+                        raise ValueError("Admin ch? du?c t? gán BOT cho chính tài kho?n admin dang dang nh?p.")
                 else:
-                    raise ValueError("User được chọn không hợp lệ.")
+                    raise ValueError("User du?c ch?n không h?p l?.")
                 selected_users.append(assigned_user)
 
             current_links_by_user_id = {
@@ -6131,15 +6755,15 @@ class AppStore:
             if assigned_user.role == "user":
                 assigned_user_manager_id = self._resolved_user_manager_id(assigned_user)
                 if assigned_user_manager_id != manager.id:
-                    raise ValueError("User phải thuộc manager đã chọn.")
+                    raise ValueError("User ph?i thu?c manager dã ch?n.")
             elif assigned_user.role == "manager":
                 if assigned_user.id != manager.id:
-                    raise ValueError("Manager chỉ được chọn chính mình trong BOT này.")
+                    raise ValueError("Manager ch? du?c ch?n chính mình trong BOT này.")
             elif assigned_user.role == "admin":
                 if not viewer_id or assigned_user.id != viewer_id:
-                    raise ValueError("Admin chỉ được tự gán BOT cho chính tài khoản admin đang đăng nhập.")
+                    raise ValueError("Admin ch? du?c t? gán BOT cho chính tài kho?n admin dang dang nh?p.")
             else:
-                raise ValueError("User được chọn không hợp lệ.")
+                raise ValueError("User du?c ch?n không h?p l?.")
             existing_link = next(
                 (
                     link
@@ -6186,7 +6810,7 @@ class AppStore:
             seen_worker_ids.add(worker_id)
 
         if not manager_id:
-            raise ValueError("Vui lòng chọn manager.")
+            raise ValueError("Vui lòng ch?n manager.")
 
         manager = self._find_user(manager_id)
         allowed_manager_roles = {"manager"}
@@ -6195,22 +6819,22 @@ class AppStore:
         if viewer_role == "manager" and viewer_id and manager.id == viewer_id:
             allowed_manager_roles.add("manager")
         if manager.role not in allowed_manager_roles:
-            raise ValueError("Manager được chọn không hợp lệ.")
+            raise ValueError("Manager du?c ch?n không h?p l?.")
         if viewer_role == "manager" and viewer_id and manager.id != viewer_id:
-            raise ValueError("Manager không được đổi phạm vi BOT sang manager khác.")
+            raise ValueError("Manager không du?c d?i ph?m vi BOT sang manager khác.")
 
         assigned_user: UserSummary | None = None
         if assigned_user_id:
             assigned_user = self._find_user(assigned_user_id)
             if assigned_user.role not in {"user", "admin", "manager"}:
-                raise ValueError("Người nhận được chọn không hợp lệ.")
+                raise ValueError("Ngu?i nh?n du?c ch?n không h?p l?.")
             if assigned_user.role == "user":
                 assigned_user_manager_id = self._resolved_user_manager_id(assigned_user)
                 if assigned_user_manager_id != manager.id:
-                    raise ValueError("User phải thuộc manager đã chọn.")
+                    raise ValueError("User ph?i thu?c manager dã ch?n.")
             elif assigned_user.role == "manager":
                 if assigned_user.id != manager.id:
-                    raise ValueError("Manager chỉ được chọn chính mình trong BOT này.")
+                    raise ValueError("Manager ch? du?c ch?n chính mình trong BOT này.")
 
         selected_workers: list[WorkerRecord] = []
         for worker_id in normalized_worker_ids:
@@ -6249,7 +6873,7 @@ class AppStore:
                             1,
                             int((previous_link or {}).get("threads") or worker.threads or 1),
                         ),
-                        "bot_type": str((previous_link or {}).get("bot_type") or "1080p").strip() or "1080p",
+                        "bot_type": str((previous_link or {}).get("bot_type") or "live").strip() or "live",
                         "note": str((previous_link or {}).get("note") or "").strip() or "VPS duoc cap",
                     }
                 )
@@ -6341,12 +6965,12 @@ class AppStore:
     def update_bot_thread(self, worker_id: str, thread: int) -> None:
         worker = self._find_worker(worker_id)
         if thread < 1:
-            raise ValueError("Sá»‘ luá»“ng pháº£i lá»›n hÆ¡n hoáº·c báº±ng 1.")
+            raise ValueError("Sá» luá»ng pháº£i lá»n hÆ¡n hoáº·c báº±ng 1.")
         worker.threads = self._fixed_assignment_threads()
         worker.capacity = self._fixed_assignment_threads()
         self._save_state()
 
-    def add_user_bot(self, user_id: str, worker_id: str, threads: int, bot_type: str = "1080p", note: str | None = None) -> None:
+    def add_user_bot(self, user_id: str, worker_id: str, threads: int, bot_type: str = "live", note: str | None = None) -> None:
         user = self._find_user(user_id)
         worker = self._find_worker(worker_id)
         if user.role != "user":
@@ -6457,7 +7081,7 @@ class AppStore:
                 {
                     "index": index,
                     "id": channel.id,
-                    "avatar_url": channel.avatar_url or "/legacy/admin-themes/assets/img/avatar/avatar-1.png",
+                    "avatar_url": channel.avatar_url or "/static/admin-themes/assets/img/avatar/avatar-1.png",
                     "name": channel.name,
                     "channel_id": channel.channel_id,
                     "channel_link": self._channel_link(channel),
@@ -6486,6 +7110,7 @@ class AppStore:
         viewer_id: str | None = None,
         notice: str | None = None,
         notice_level: str = "success",
+        workspace_mode: str = "upload",
     ) -> dict[str, Any]:
         channels, filtered_user, filtered_bot = self._filtered_channels_v2(
             manager_ids=manager_ids,
@@ -6500,6 +7125,7 @@ class AppStore:
             manager_ids=manager_ids,
             notice=notice,
             notice_level=notice_level,
+            workspace_mode=workspace_mode,
         )
         context.update(
             {
@@ -6543,7 +7169,7 @@ class AppStore:
             rows.append(row)
 
         context = self._admin_shell_context(
-            page_title=f"Thêm kênh cho người dùng {user.username}",
+            page_title=f"Thêm kênh cho ngu?i dùng {user.username}",
             active_page="channels",
             viewer_role=viewer_role,
             viewer_id=viewer_id,
@@ -6595,7 +7221,7 @@ class AppStore:
         ]
 
         context = self._admin_shell_context(
-            page_title=f"Danh sách người dùng của kênh {channel.name}",
+            page_title=f"Danh sách ngu?i dùng c?a kênh {channel.name}",
             active_page="channels",
             viewer_role=viewer_role,
             viewer_id=viewer_id,
@@ -6620,9 +7246,9 @@ class AppStore:
         user = self._find_user(user_id)
         channel = self._find_channel(channel_id)
         if user.role != "user":
-            raise ValueError("Chỉ user thường mới được gán vào kênh.")
+            raise ValueError("Ch? user thu?ng m?i du?c gán vào kênh.")
         if user.manager_id and self._resolve_channel_manager_id(channel) != user.manager_id:
-            raise ValueError("User không cùng manager với kênh này.")
+            raise ValueError("User không cùng manager v?i kênh này.")
 
         self._assert_channel_matches_user_worker(user, channel)
 
@@ -6754,7 +7380,7 @@ class AppStore:
         channel = self._find_channel(channel_id)
         has_access = self._user_has_channel_access(user_id, channel.id)
         if not has_access:
-            raise ValueError("Bạn không có quyền xóa kênh này.")
+            raise ValueError("B?n không có quy?n xóa kênh này.")
         self.delete_channel(channel.id)
 
     def get_channel_export_rows(self) -> list[dict[str, Any]]:
@@ -6798,6 +7424,7 @@ class AppStore:
         viewer_id: str | None = None,
         notice: str | None = None,
         notice_level: str = "success",
+        workspace_mode: str = "upload",
     ) -> dict[str, Any]:
         context = self._admin_shell_context(
             page_title="Danh sách Render",
@@ -6807,6 +7434,7 @@ class AppStore:
             manager_ids=manager_ids,
             notice=notice,
             notice_level=notice_level,
+            workspace_mode=workspace_mode,
         )
 
         selected_manager_ids = set(self._selected_manager_ids(manager_ids))
@@ -6839,7 +7467,7 @@ class AppStore:
                     "title": job.title,
                     "worker_name": self._resolve_job_worker_display_name(job),
                     "group": manager_name,
-                    "avatar_url": job.channel_avatar_url or "/legacy/admin-themes/assets/img/avatar/avatar-1.png",
+                    "avatar_url": job.channel_avatar_url or "/static/admin-themes/assets/img/avatar/avatar-1.png",
                     "channel_name": job.channel_name,
                     "channel_id": channel.channel_id if channel else job.channel_id,
                     "video_link": primary_asset.url if primary_asset and primary_asset.url else (primary_asset.file_name if primary_asset else "-"),
@@ -7001,7 +7629,7 @@ class AppStore:
         if not client_id or not redirect_uri:
             return OAuthStartResponse(
                 auth_url=None,
-                message="ÄÃ£ sáºµn sÃ ng cho flow Google OAuth. Cáº§n bá»• sung GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET vÃ  GOOGLE_REDIRECT_URI Ä‘á»ƒ báº­t káº¿t ná»‘i tháº­t.",
+                message="ÄÃ£ sáºµn sÃ ng cho flow Google OAuth. Cáº§n bá» sung GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET vÃ  GOOGLE_REDIRECT_URI Äá» báº­t káº¿t ná»i tháº­t.",
             )
 
         query = urlencode(
@@ -7018,7 +7646,7 @@ class AppStore:
         )
         return OAuthStartResponse(
             auth_url=f"https://accounts.google.com/o/oauth2/v2/auth?{query}",
-            message="ÄÃ£ táº¡o URL káº¿t ná»‘i Google OAuth.",
+            message="ÄÃ£ táº¡o URL káº¿t ná»i Google OAuth.",
         )
 
     def complete_google_oauth(self, *, user_id: str, code: str, base_url: str | None = None) -> dict[str, str]:
@@ -7208,13 +7836,13 @@ class AppStore:
         self._cleanup_stale_uploads()
         capabilities = self.get_upload_capabilities()
         if payload.size_bytes <= 0:
-            raise ValueError("KÃ­ch thÆ°á»›c file pháº£i lá»›n hÆ¡n 0.")
+            raise ValueError("KÃ­ch thÆ°á»c file pháº£i lá»n hÆ¡n 0.")
         if payload.size_bytes > capabilities.max_local_upload_bytes:
-            raise ValueError("File vÆ°á»£t quÃ¡ giá»›i háº¡n local upload hiá»‡n táº¡i.")
+            raise ValueError("File vÆ°á»£t quÃ¡ giá»i háº¡n local upload hiá»n táº¡i.")
 
         extension = Path(payload.file_name).suffix.lower()
         if extension not in capabilities.allowed_extensions:
-            raise ValueError(f"Äá»‹nh dáº¡ng file khÃ´ng há»— trá»£: {extension or '(khÃ´ng cÃ³ extension)'}")
+            raise ValueError(f"Äá»nh dáº¡ng file khÃ´ng há» trá»£: {extension or '(khÃ´ng cÃ³ extension)'}")
 
         sanitized_name = self._sanitize_filename(payload.file_name)
         now = self._now(trim=False)
@@ -7251,19 +7879,19 @@ class AppStore:
         self._require_workspace_user(user_id)
         session = self._find_user_upload_session(user_id, session_id)
         if session.status not in {"active", "completed"}:
-            raise ValueError("Upload session khÃ´ng cÃ²n hoáº¡t Ä‘á»™ng.")
+            raise ValueError("Upload session khÃ´ng cÃ²n hoáº¡t Äá»ng.")
         if session.status == "completed":
             return self._upload_response(session)
         if offset < 0:
-            raise ValueError("Offset khÃ´ng há»£p lá»‡.")
+            raise ValueError("Offset khÃ´ng há»£p lá».")
 
         temp_path = self._absolute_upload_path(session.temp_path)
         temp_path.parent.mkdir(parents=True, exist_ok=True)
         current_size = temp_path.stat().st_size if temp_path.exists() else 0
         if offset != current_size:
-            raise ValueError(f"Offset khÃ´ng khá»›p. Server Ä‘ang cÃ³ {current_size} bytes.")
+            raise ValueError(f"Offset khÃ´ng khá»p. Server Äang cÃ³ {current_size} bytes.")
         if offset + len(chunk) > session.size_bytes:
-            raise ValueError("Chunk vÆ°á»£t quÃ¡ kÃ­ch thÆ°á»›c Ä‘Ã£ khai bÃ¡o.")
+            raise ValueError("Chunk vÆ°á»£t quÃ¡ kÃ­ch thÆ°á»c ÄÃ£ khai bÃ¡o.")
 
         with temp_path.open("ab") as file_obj:
             file_obj.write(chunk)
@@ -7272,7 +7900,7 @@ class AppStore:
         session.updated_at = self._now(trim=False)
         session.expires_at = session.updated_at + timedelta(hours=24)
         if session.received_bytes > session.size_bytes:
-            raise ValueError("Upload vÆ°á»£t quÃ¡ kÃ­ch thÆ°á»›c Ä‘Ã£ khai bÃ¡o.")
+            raise ValueError("Upload vÆ°á»£t quÃ¡ kÃ­ch thÆ°á»c ÄÃ£ khai bÃ¡o.")
 
         if session.received_bytes == session.size_bytes:
             session.status = "completed"
@@ -7300,7 +7928,7 @@ class AppStore:
             None,
         )
         if session is None or session.status != "completed" or not session.stored_file_name:
-            raise ValueError("Uploaded asset khÃ´ng há»£p lá»‡ hoáº·c chÆ°a hoÃ n táº¥t.")
+            raise ValueError("Uploaded asset khÃ´ng há»£p lá» hoáº·c chÆ°a hoÃ n táº¥t.")
         return session.stored_file_name
 
     def _find_job_asset(self, job: RenderJobRecord, slot: str) -> JobAsset:
@@ -7438,4 +8066,3 @@ class AppStore:
 
 
 store = AppStore()
-

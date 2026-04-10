@@ -9,6 +9,8 @@ BRANCH="${BRANCH:-main}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/git_runtime_layout.sh"
 
+export DEBIAN_FRONTEND=noninteractive
+
 apt-get update
 apt-get install -y ffmpeg
 
@@ -125,6 +127,7 @@ if [ "${BROWSER_SESSION_ENABLED:-0}" = "1" ]; then
         echo "BROWSER_SESSION_CHROMIUM_BIN=google-chrome-stable" >> /etc/youtube-upload-worker.env
       fi
     fi
+    BROWSER_SESSION_CHROMIUM_BIN=google-chrome-stable
   fi
 
   # ---------- Verify required binaries ----------
