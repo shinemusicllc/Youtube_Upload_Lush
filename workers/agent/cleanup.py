@@ -106,6 +106,7 @@ def cleanup_stale_worker_artifacts(config: WorkerConfig) -> dict[str, int]:
     if not enabled:
         return {
             "removed_job_dirs": 0,
+            "removed_live_stream_dirs": 0,
             "removed_output_files": 0,
             "removed_browser_upload_runtime_dirs": 0,
             "killed_stray_xvfb": 0,
@@ -121,6 +122,7 @@ def cleanup_stale_worker_artifacts(config: WorkerConfig) -> dict[str, int]:
     output_cutoff = now - (output_retention_hours * 3600.0)
 
     removed_job_dirs = 0
+    removed_live_stream_dirs = 0
     removed_output_files = 0
     removed_browser_upload_runtime_dirs = 0
 
@@ -132,6 +134,16 @@ def cleanup_stale_worker_artifacts(config: WorkerConfig) -> dict[str, int]:
             continue
         if _safe_remove_tree(job_dir):
             removed_job_dirs += 1
+
+    live_stream_root = work_root / "live-streams"
+    if live_stream_root.exists():
+        for stream_dir in sorted(live_stream_root.iterdir()):
+            if not stream_dir.is_dir():
+                continue
+            if not _is_older_than(stream_dir, cutoff_ts=temp_cutoff):
+                continue
+            if _safe_remove_tree(stream_dir):
+                removed_live_stream_dirs += 1
 
     browser_upload_runtime_root = work_root / "browser-upload-runtime"
     if browser_upload_runtime_root.exists():
@@ -156,6 +168,7 @@ def cleanup_stale_worker_artifacts(config: WorkerConfig) -> dict[str, int]:
     killed_stray_xvfb = _kill_stray_xvfb_processes()
     return {
         "removed_job_dirs": removed_job_dirs,
+        "removed_live_stream_dirs": removed_live_stream_dirs,
         "removed_output_files": removed_output_files,
         "removed_browser_upload_runtime_dirs": removed_browser_upload_runtime_dirs,
         "killed_stray_xvfb": killed_stray_xvfb,

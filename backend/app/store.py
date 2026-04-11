@@ -33,6 +33,9 @@ from .schemas import (
     ChannelRecord,
     JobAsset,
     JobCreatePayload,
+    LiveWorkerControlResponse,
+    LiveWorkerHeartbeatPayload,
+    LiveWorkerRegisterPayload,
     LiveStreamRecord,
     OAuthStartResponse,
     OAuthSummary,
@@ -2224,6 +2227,11 @@ class AppStore:
         changed = False
         normalized_streams: list[LiveStreamRecord] = []
         seen_ids: set[str] = set()
+        current_stream_map = {
+            str(item.id or "").strip(): item
+            for item in self.live_streams
+            if str(item.id or "").strip()
+        }
 
         for stream in self.live_streams:
             stream_changed = False
@@ -2231,6 +2239,39 @@ class AppStore:
                 stream.id = f"live-{uuid4().hex[:10]}"
                 stream_changed = True
             seen_ids.add(stream.id)
+
+            stream.runtime_role = "backup" if str(stream.runtime_role or "").strip().lower() == "backup" else "primary"
+            stream.is_runtime_clone = bool(stream.is_runtime_clone)
+            is_runtime_backup_clone = stream.is_runtime_clone and stream.runtime_role == "backup"
+            parent_stream: LiveStreamRecord | None = None
+            if is_runtime_backup_clone:
+                parent_stream_id = str(stream.parent_stream_id or "").strip()
+                parent_stream = current_stream_map.get(parent_stream_id)
+                if parent_stream is None or bool(parent_stream.is_runtime_clone):
+                    changed = True
+                    continue
+                if stream.owner_user_id != parent_stream.owner_user_id:
+                    stream.owner_user_id = parent_stream.owner_user_id
+                    stream_changed = True
+                if stream.owner_username != parent_stream.owner_username:
+                    stream.owner_username = parent_stream.owner_username
+                    stream_changed = True
+                if stream.owner_display_name != parent_stream.owner_display_name:
+                    stream.owner_display_name = parent_stream.owner_display_name
+                    stream_changed = True
+                if stream.backup_stream_id is not None:
+                    stream.backup_stream_id = None
+                    stream_changed = True
+            else:
+                if stream.is_runtime_clone:
+                    stream.is_runtime_clone = False
+                    stream_changed = True
+                if stream.runtime_role != "primary":
+                    stream.runtime_role = "primary"
+                    stream_changed = True
+                if stream.parent_stream_id is not None:
+                    stream.parent_stream_id = None
+                    stream_changed = True
 
             try:
                 owner = self._require_workspace_user(stream.owner_user_id)
@@ -2249,7 +2290,10 @@ class AppStore:
             available_primary_workers = self._assigned_live_workers_for_user(owner, role="primary")
             available_backup_workers = self._assigned_live_workers_for_user(owner, role="backup")
             available_worker_map = {worker.id: worker for worker in available_workers}
-            primary_worker_map = {worker.id: worker for worker in available_primary_workers}
+            primary_worker_map = {
+                worker.id: worker
+                for worker in (available_backup_workers if is_runtime_backup_clone else available_primary_workers)
+            }
             backup_worker_map = {worker.id: worker for worker in available_backup_workers}
             primary_worker = primary_worker_map.get(stream.primary_worker_id)
             if primary_worker is None:
@@ -2257,7 +2301,7 @@ class AppStore:
                 primary_worker = next(
                     (
                         worker
-                        for worker in available_primary_workers
+                        for worker in (available_backup_workers if is_runtime_backup_clone else available_primary_workers)
                         if desired_primary_name
                         and desired_primary_name in {
                             str(worker.id or "").strip(),
@@ -2267,8 +2311,9 @@ class AppStore:
                     ),
                     None,
                 )
-            if primary_worker is None and available_primary_workers:
-                primary_worker = available_primary_workers[0]
+            if primary_worker is None and (available_backup_workers if is_runtime_backup_clone else available_primary_workers):
+                primary_candidates = available_backup_workers if is_runtime_backup_clone else available_primary_workers
+                primary_worker = primary_candidates[0]
                 if stream.primary_worker_id != primary_worker.id:
                     stream.primary_worker_id = primary_worker.id
                     stream_changed = True
@@ -2289,7 +2334,7 @@ class AppStore:
                 stream_changed = True
 
             backup_worker: WorkerRecord | None = None
-            if stream.backup_worker_id:
+            if not is_runtime_backup_clone and stream.backup_worker_id:
                 candidate_backup = backup_worker_map.get(stream.backup_worker_id)
                 if candidate_backup is None:
                     desired_backup_name = str(stream.backup_worker_name or self._resolve_worker_display_name(stream.backup_worker_id)).strip()
@@ -2336,6 +2381,44 @@ class AppStore:
             if stream.manager_name != manager_name:
                 stream.manager_name = manager_name
                 stream_changed = True
+
+            if is_runtime_backup_clone and parent_stream is not None:
+                if stream.stream_key != parent_stream.stream_key:
+                    stream.stream_key = parent_stream.stream_key
+                    stream_changed = True
+                if stream.video_url != parent_stream.video_url:
+                    stream.video_url = parent_stream.video_url
+                    stream_changed = True
+                if stream.audio_url != parent_stream.audio_url:
+                    stream.audio_url = parent_stream.audio_url
+                    stream_changed = True
+                if stream.start_time_live != parent_stream.start_time_live:
+                    stream.start_time_live = parent_stream.start_time_live
+                    stream_changed = True
+                if stream.end_time_live != parent_stream.end_time_live:
+                    stream.end_time_live = parent_stream.end_time_live
+                    stream_changed = True
+                if stream.is_forever != parent_stream.is_forever:
+                    stream.is_forever = parent_stream.is_forever
+                    stream_changed = True
+                if stream.live_label != parent_stream.live_label:
+                    stream.live_label = parent_stream.live_label
+                    stream_changed = True
+                if stream.backup_delay_minutes != parent_stream.backup_delay_minutes:
+                    stream.backup_delay_minutes = parent_stream.backup_delay_minutes
+                    stream_changed = True
+                backup_stream_name = parent_stream.stream_name
+                if parent_stream.end_time_live is not None:
+                    backup_stream_name = f"{backup_stream_name}_backup11h"
+                elif parent_stream.is_forever:
+                    backup_stream_name = f"{backup_stream_name}_backup247"
+                if stream.stream_name != backup_stream_name:
+                    stream.stream_name = backup_stream_name
+                    stream_changed = True
+                backup_rtmp_url = self._backup_rtmp_url()
+                if stream.rtmp_url != backup_rtmp_url:
+                    stream.rtmp_url = backup_rtmp_url
+                    stream_changed = True
 
             normalized_platform = str(stream.platform or "youtube_rtmp").strip().lower() or "youtube_rtmp"
             if normalized_platform != "youtube_rtmp":
@@ -2393,6 +2476,20 @@ class AppStore:
         if normalized_streams != self.live_streams:
             self.live_streams = normalized_streams
             changed = True
+        normalized_stream_map = {
+            str(item.id or "").strip(): item
+            for item in self.live_streams
+            if str(item.id or "").strip()
+        }
+        for stream in self.live_streams:
+            if stream.is_runtime_clone:
+                continue
+            backup_stream_id = str(stream.backup_stream_id or "").strip()
+            backup_stream = normalized_stream_map.get(backup_stream_id) if backup_stream_id else None
+            if backup_stream is None or not backup_stream.is_runtime_clone or backup_stream.parent_stream_id != stream.id:
+                if stream.backup_stream_id is not None:
+                    stream.backup_stream_id = None
+                    changed = True
         return changed
 
     def _build_session_payload(self, user: UserSummary) -> dict[str, Any]:
@@ -3403,6 +3500,601 @@ class AppStore:
             self._refresh_queue_positions()
             self._save_state()
             return deepcopy(job)
+
+    def _authenticate_live_worker(self, worker_id: str, shared_secret: str) -> WorkerRecord:
+        if shared_secret != self.get_worker_shared_secret():
+            raise ValueError("Worker shared secret không hợp lệ.")
+        return self._find_live_worker(worker_id)
+
+    @staticmethod
+    def _is_runtime_backup_clone(stream: LiveStreamRecord) -> bool:
+        return bool(stream.is_runtime_clone and stream.runtime_role == "backup")
+
+    @classmethod
+    def _is_visible_live_stream(cls, stream: LiveStreamRecord) -> bool:
+        return not cls._is_runtime_backup_clone(stream)
+
+    @staticmethod
+    def _backup_rtmp_url() -> str:
+        return "rtmp://y.rtmp.youtube.com/live2?backup=1"
+
+    @staticmethod
+    def _live_worker_active_statuses() -> set[str]:
+        return {"downloading", "preparing", "waiting", "streaming"}
+
+    @classmethod
+    def _live_worker_scheduled_statuses(cls) -> set[str]:
+        return {"scheduled", "disconnected", *cls._live_worker_active_statuses()}
+
+    def _count_live_worker_running_streams(self, worker: WorkerRecord) -> int:
+        active_statuses = self._live_worker_active_statuses()
+        return sum(
+            1
+            for stream in self.live_streams
+            if stream.claimed_by_worker_id == worker.id and stream.status in active_statuses
+        )
+
+    def _sync_live_worker_runtime_status(self, worker: WorkerRecord) -> None:
+        worker.status = "busy" if self._count_live_worker_running_streams(worker) > 0 else "online"
+
+    def _find_live_backup_clone_optional(self, stream: LiveStreamRecord) -> LiveStreamRecord | None:
+        if self._is_runtime_backup_clone(stream):
+            return None
+        backup_stream_id = str(stream.backup_stream_id or "").strip()
+        if backup_stream_id:
+            candidate = self._find_live_stream_optional(backup_stream_id)
+            if candidate and self._is_runtime_backup_clone(candidate) and candidate.parent_stream_id == stream.id:
+                return candidate
+        return next(
+            (
+                candidate
+                for candidate in self.live_streams
+                if self._is_runtime_backup_clone(candidate) and candidate.parent_stream_id == stream.id
+            ),
+            None,
+        )
+
+    def _reset_live_backup_clone_runtime(self, stream: LiveStreamRecord, *, now: datetime) -> None:
+        stream.status = "scheduled"
+        stream.log_label = "Lên lịch"
+        stream.status_message = None
+        stream.progress = 0
+        stream.error_message = None
+        stream.is_live_now = False
+        stream.claimed_by_worker_id = None
+        stream.claimed_by_role = None
+        stream.claimed_at = None
+        stream.lease_expires_at = None
+        stream.download_started_at = None
+        stream.prepared_at = None
+        stream.waiting_started_at = None
+        stream.streaming_started_at = None
+        stream.disconnected_at = None
+        stream.stop_requested_at = None
+        stream.ended_at = None
+        stream.updated_at = now
+
+    def _upsert_live_backup_clone(self, stream: LiveStreamRecord, *, now: datetime) -> LiveStreamRecord | None:
+        if self._is_runtime_backup_clone(stream):
+            return None
+        backup_worker_id = str(stream.backup_worker_id or "").strip()
+        if not backup_worker_id:
+            return None
+        backup_worker = self._find_live_worker_optional(backup_worker_id)
+        if backup_worker is None or backup_worker.id == stream.primary_worker_id:
+            return None
+
+        clone = self._find_live_backup_clone_optional(stream)
+        clone_name = f"{stream.stream_name}_{'backup11h' if stream.end_time_live is not None else 'backup247'}"
+        if clone is None:
+            clone = LiveStreamRecord(
+                id=f"live-{uuid4().hex[:10]}",
+                owner_user_id=stream.owner_user_id,
+                owner_username=stream.owner_username,
+                owner_display_name=stream.owner_display_name,
+                manager_id=stream.manager_id,
+                manager_name=stream.manager_name,
+                primary_worker_id=backup_worker.id,
+                primary_worker_name=self._resolve_live_worker_display_name(backup_worker.id),
+                primary_group=backup_worker.group or backup_worker.manager_name,
+                backup_worker_id=None,
+                backup_worker_name=None,
+                backup_group=None,
+                runtime_role="backup",
+                is_runtime_clone=True,
+                parent_stream_id=stream.id,
+                backup_stream_id=None,
+                stream_name=clone_name,
+                stream_key=stream.stream_key,
+                rtmp_url=self._backup_rtmp_url(),
+                platform=stream.platform,
+                video_url=stream.video_url,
+                audio_url=stream.audio_url,
+                live_label=stream.live_label,
+                is_forever=stream.is_forever,
+                is_live_now=False,
+                start_time_live=stream.start_time_live,
+                end_time_live=stream.end_time_live,
+                backup_delay_minutes=stream.backup_delay_minutes,
+                status="scheduled",
+                log_label="Lên lịch",
+                created_at=now,
+                updated_at=now,
+            )
+            self.live_streams.append(clone)
+        else:
+            clone.owner_user_id = stream.owner_user_id
+            clone.owner_username = stream.owner_username
+            clone.owner_display_name = stream.owner_display_name
+            clone.manager_id = stream.manager_id
+            clone.manager_name = stream.manager_name
+            clone.primary_worker_id = backup_worker.id
+            clone.primary_worker_name = self._resolve_live_worker_display_name(backup_worker.id)
+            clone.primary_group = backup_worker.group or backup_worker.manager_name
+            clone.backup_worker_id = None
+            clone.backup_worker_name = None
+            clone.backup_group = None
+            clone.runtime_role = "backup"
+            clone.is_runtime_clone = True
+            clone.parent_stream_id = stream.id
+            clone.backup_stream_id = None
+            clone.stream_name = clone_name
+            clone.stream_key = stream.stream_key
+            clone.rtmp_url = self._backup_rtmp_url()
+            clone.platform = stream.platform
+            clone.video_url = stream.video_url
+            clone.audio_url = stream.audio_url
+            clone.live_label = stream.live_label
+            clone.is_forever = stream.is_forever
+            clone.start_time_live = stream.start_time_live
+            clone.end_time_live = stream.end_time_live
+            clone.backup_delay_minutes = stream.backup_delay_minutes
+            if clone.status in {"draft", "scheduled", "disconnected", "ended", "stopped", "error"} and clone.claimed_by_worker_id is None:
+                self._reset_live_backup_clone_runtime(clone, now=now)
+            else:
+                clone.updated_at = now
+
+        stream.backup_stream_id = clone.id
+        stream.updated_at = now
+        return clone
+
+    def _retire_live_backup_clone(
+        self,
+        clone: LiveStreamRecord,
+        *,
+        now: datetime,
+        reason: str | None = None,
+    ) -> None:
+        if clone.status == "stopped" and clone.claimed_by_worker_id is None:
+            return
+        clone.status = "stopped"
+        clone.log_label = "Đã dừng"
+        clone.status_message = None
+        clone.error_message = (reason or "").strip() or None
+        clone.is_live_now = False
+        clone.progress = min(int(clone.progress or 0), 100)
+        clone.stop_requested_at = now
+        clone.lease_expires_at = None
+        clone.claimed_by_worker_id = None
+        clone.claimed_by_role = None
+        clone.updated_at = now
+
+    def _sync_live_backup_policy(self, *, now: datetime) -> None:
+        visible_streams = [stream for stream in self.live_streams if self._is_visible_live_stream(stream)]
+        for stream in visible_streams:
+            clone = self._find_live_backup_clone_optional(stream)
+            should_have_backup = bool(stream.backup_worker_id) and stream.status not in {"stopped", "ended", "error"}
+            if not should_have_backup:
+                if clone is not None:
+                    self._retire_live_backup_clone(clone, now=now, reason="Luồng chính không còn dùng BOT backup.")
+                if stream.backup_stream_id is not None:
+                    stream.backup_stream_id = None
+                    stream.updated_at = now
+                continue
+
+            if not stream.is_forever and stream.end_time_live is not None:
+                clone = self._upsert_live_backup_clone(stream, now=now)
+                if clone is not None and stream.backup_stream_id != clone.id:
+                    stream.backup_stream_id = clone.id
+                    stream.updated_at = now
+                continue
+
+            if stream.disconnected_at is None:
+                if clone is not None:
+                    self._retire_live_backup_clone(clone, now=now, reason="BOT chính đã hồi phục.")
+                if stream.backup_stream_id is not None:
+                    stream.backup_stream_id = None
+                    stream.updated_at = now
+                continue
+
+            delay_seconds = max(0, int(stream.backup_delay_minutes or 0)) * 60
+            disconnected_for_seconds = max(0.0, (now - stream.disconnected_at).total_seconds())
+            if disconnected_for_seconds >= delay_seconds:
+                clone = self._upsert_live_backup_clone(stream, now=now)
+                if clone is not None and stream.backup_stream_id != clone.id:
+                    stream.backup_stream_id = clone.id
+                    stream.updated_at = now
+
+    def _refresh_live_stream_leases(
+        self,
+        worker_id: str,
+        now: datetime | None = None,
+        *,
+        stream_ids: list[str] | None = None,
+    ) -> None:
+        lease_base = now or self._now(trim=False)
+        allowed_stream_ids = {str(stream_id).strip() for stream_id in (stream_ids or []) if str(stream_id).strip()}
+        lease_duration = timedelta(seconds=self._worker_job_lease_seconds())
+        for stream in self.live_streams:
+            if stream.claimed_by_worker_id != worker_id or stream.status not in self._live_worker_active_statuses():
+                continue
+            if allowed_stream_ids and stream.id not in allowed_stream_ids:
+                continue
+            stream.lease_expires_at = lease_base + lease_duration
+
+    def _handle_interrupted_live_stream(
+        self,
+        stream: LiveStreamRecord,
+        *,
+        now: datetime,
+        reason: str,
+    ) -> None:
+        if self._is_runtime_backup_clone(stream):
+            stream.status = "error"
+            stream.log_label = "Lỗi"
+            stream.error_message = reason
+        else:
+            stream.status = "disconnected"
+            stream.log_label = "Mất kết nối"
+            stream.error_message = None
+            stream.disconnected_at = now
+        stream.status_message = None
+        stream.is_live_now = False
+        stream.claimed_by_worker_id = None
+        stream.claimed_by_role = None
+        stream.claimed_at = None
+        stream.lease_expires_at = None
+        stream.updated_at = now
+
+    def _reconcile_live_streams_from_heartbeat(
+        self,
+        worker: WorkerRecord,
+        *,
+        active_stream_ids: list[str],
+        now: datetime,
+    ) -> None:
+        active_stream_id_set = {str(stream_id).strip() for stream_id in active_stream_ids if str(stream_id).strip()}
+        lease_duration = timedelta(seconds=self._worker_job_lease_seconds())
+        for stream in self.live_streams:
+            if stream.claimed_by_worker_id != worker.id or stream.status not in self._live_worker_active_statuses():
+                continue
+            if stream.id in active_stream_id_set:
+                stream.lease_expires_at = now + lease_duration
+                continue
+            if stream.lease_expires_at is not None and stream.lease_expires_at > now:
+                continue
+            self._handle_interrupted_live_stream(
+                stream,
+                now=now,
+                reason="Worker không còn báo luồng live này trong heartbeat sau khi đã qua grace window.",
+            )
+
+    def register_live_worker(self, payload: LiveWorkerRegisterPayload) -> LiveWorkerControlResponse:
+        with self._worker_state_lock:
+            if payload.shared_secret != self.get_worker_shared_secret():
+                raise ValueError("Worker shared secret không hợp lệ.")
+            now = self._now(trim=False)
+            existing = next((worker for worker in self.live_workers if worker.id == payload.worker_id), None)
+            worker_display_name = self._default_worker_display_name(payload.worker_id, payload.name)
+            manager = next(
+                (
+                    user
+                    for user in self.users
+                    if user.role == "manager" and user.username == str(payload.manager_name or "").strip()
+                ),
+                None,
+            )
+            resolved_manager_name = manager.username if manager else (str(payload.manager_name or "").strip() or "system")
+            resolved_group = str(payload.group or "").strip() or "S - Việt 3"
+            normalized_threads = self._normalize_requested_worker_threads(payload.threads)
+            if existing is None:
+                worker = WorkerRecord(
+                    id=payload.worker_id,
+                    name=worker_display_name,
+                    manager_id=manager.id if manager else None,
+                    manager_name=resolved_manager_name,
+                    group=resolved_group,
+                    created_at=now,
+                    status="online",
+                    capacity=max(int(payload.capacity or 1), 1),
+                    load_percent=0,
+                    ram_percent=0,
+                    ram_used_gb=0.0,
+                    ram_total_gb=0.0,
+                    bandwidth_kbps=0.0,
+                    disk_used_gb=0.0,
+                    disk_total_gb=float(payload.disk_total_gb or 0),
+                    threads=normalized_threads,
+                    last_seen_at=now,
+                )
+                self.live_workers.append(worker)
+            else:
+                existing.name = worker_display_name
+                existing.manager_id = manager.id if manager else existing.manager_id
+                existing.manager_name = resolved_manager_name
+                existing.group = resolved_group
+                existing.created_at = existing.created_at or now
+                existing.capacity = max(int(existing.capacity or 1), int(payload.capacity or 1), 1)
+                existing.threads = normalized_threads
+                existing.disk_total_gb = float(payload.disk_total_gb or existing.disk_total_gb or 0)
+                existing.status = "online"
+                existing.last_seen_at = now
+                existing.offline_since_at = None
+                existing.offline_alert_sent_at = None
+                worker = existing
+            self._save_state()
+            return LiveWorkerControlResponse(ok=True, worker=deepcopy(worker))
+
+    def heartbeat_live_worker(self, payload: LiveWorkerHeartbeatPayload) -> LiveWorkerControlResponse:
+        with self._worker_state_lock:
+            worker = self._authenticate_live_worker(payload.worker_id, payload.shared_secret)
+            now = self._now(trim=False)
+            worker.load_percent = payload.load_percent
+            worker.ram_percent = payload.ram_percent
+            worker.ram_used_gb = payload.ram_used_gb
+            worker.ram_total_gb = payload.ram_total_gb or worker.ram_total_gb
+            worker.bandwidth_kbps = payload.bandwidth_kbps
+            worker.disk_used_gb = payload.disk_used_gb
+            worker.disk_total_gb = payload.disk_total_gb or worker.disk_total_gb
+            worker.threads = self._normalize_requested_worker_threads(payload.threads)
+            worker.last_seen_at = now
+            worker.offline_since_at = None
+            worker.offline_alert_sent_at = None
+            self._reconcile_live_streams_from_heartbeat(
+                worker,
+                active_stream_ids=payload.active_stream_ids or [],
+                now=now,
+            )
+            self._sync_live_backup_policy(now=now)
+            if self._count_live_worker_running_streams(worker) > 0:
+                worker.status = "busy"
+            else:
+                worker.status = payload.status
+            self._save_state()
+            return LiveWorkerControlResponse(ok=True, worker=deepcopy(worker))
+
+    @staticmethod
+    def _live_stream_claim_sort_key(stream: LiveStreamRecord) -> tuple[int, datetime, datetime, str]:
+        priority_map = {
+            "streaming": 0,
+            "waiting": 0,
+            "preparing": 0,
+            "downloading": 0,
+            "disconnected": 1,
+            "scheduled": 2,
+            "draft": 3,
+        }
+        active_priority = priority_map.get(str(stream.status or "").strip().lower(), 4)
+        start_at = stream.start_time_live or datetime.max
+        created_at = stream.created_at or datetime.min
+        return (active_priority, start_at, created_at, stream.id)
+
+    def claim_next_live_stream(self, worker_id: str, shared_secret: str) -> tuple[WorkerRecord, LiveStreamRecord | None]:
+        with self._worker_state_lock:
+            worker = self._authenticate_live_worker(worker_id, shared_secret)
+            now = self._now(trim=False)
+            self._sync_live_backup_policy(now=now)
+            max_threads = max(1, int(worker.threads or worker.capacity or 1))
+            if self._count_live_worker_running_streams(worker) >= max_threads:
+                self._sync_live_worker_runtime_status(worker)
+                self._save_state()
+                return deepcopy(worker), None
+
+            candidates = [
+                stream
+                for stream in self.live_streams
+                if stream.primary_worker_id == worker.id
+                and stream.status in self._live_worker_scheduled_statuses()
+                and (
+                    stream.claimed_by_worker_id in {None, worker_id}
+                    or (stream.lease_expires_at is not None and stream.lease_expires_at <= now)
+                )
+            ]
+            if not candidates:
+                self._sync_live_worker_runtime_status(worker)
+                self._save_state()
+                return deepcopy(worker), None
+
+            stream = sorted(candidates, key=self._live_stream_claim_sort_key)[0]
+            stream.claimed_by_worker_id = worker.id
+            stream.claimed_by_role = stream.runtime_role or "primary"
+            stream.claimed_at = stream.claimed_at or now
+            stream.lease_expires_at = now + timedelta(seconds=self._worker_job_lease_seconds())
+            stream.updated_at = now
+            self._sync_live_worker_runtime_status(worker)
+            self._save_state()
+            return deepcopy(worker), deepcopy(stream)
+
+    def _find_claimed_live_stream(self, stream_id: str, worker_id: str) -> LiveStreamRecord:
+        stream = self._find_live_stream(stream_id)
+        if stream.claimed_by_worker_id not in {None, worker_id} and stream.status not in {"ended", "stopped", "error"}:
+            raise ValueError("Luồng live đang thuộc worker khác.")
+        return stream
+
+    @staticmethod
+    def _ensure_live_stream_can_continue(stream: LiveStreamRecord) -> None:
+        if stream.status == "stopped":
+            raise ValueError("Luồng live đã bị dừng trên control plane.")
+        if stream.status == "ended":
+            raise ValueError("Luồng live đã kết thúc trên control plane.")
+        if stream.status == "error":
+            raise ValueError("Luồng live đã dừng với trạng thái lỗi trên control plane.")
+
+    @staticmethod
+    def _live_runtime_log_label(status: str) -> str:
+        normalized = str(status or "").strip().lower()
+        if normalized == "downloading":
+            return "Đang tải media"
+        if normalized == "preparing":
+            return "Chuẩn bị luồng"
+        if normalized == "waiting":
+            return "Chờ đến giờ"
+        if normalized == "streaming":
+            return "Đang live"
+        if normalized == "ended":
+            return "Kết thúc"
+        if normalized == "stopped":
+            return "Đã dừng"
+        if normalized == "error":
+            return "Lỗi"
+        if normalized == "scheduled":
+            return "Lên lịch"
+        return "Khởi tạo"
+
+    def update_live_stream_progress(
+        self,
+        *,
+        stream_id: str,
+        worker_id: str,
+        shared_secret: str,
+        status: str,
+        progress: int,
+        message: str | None = None,
+    ) -> LiveStreamRecord:
+        with self._worker_state_lock:
+            worker = self._authenticate_live_worker(worker_id, shared_secret)
+            stream = self._find_claimed_live_stream(stream_id, worker_id)
+            self._ensure_live_stream_can_continue(stream)
+            now = self._now(trim=False)
+
+            normalized_status = str(status or "").strip().lower() or "scheduled"
+            bounded_progress = max(0, min(100, int(progress)))
+            stream.claimed_by_worker_id = worker_id
+            stream.claimed_by_role = stream.claimed_by_role or stream.runtime_role or "primary"
+            stream.claimed_at = stream.claimed_at or now
+            stream.status = normalized_status
+            stream.progress = bounded_progress
+            stream.status_message = (message or "").strip() or None
+            stream.log_label = self._live_runtime_log_label(normalized_status)
+            stream.error_message = None
+            stream.updated_at = now
+
+            if normalized_status == "downloading" and stream.download_started_at is None:
+                stream.download_started_at = now
+                stream.is_live_now = False
+            elif normalized_status == "preparing":
+                if stream.download_started_at is None:
+                    stream.download_started_at = now
+                stream.is_live_now = False
+            elif normalized_status == "waiting":
+                stream.prepared_at = stream.prepared_at or now
+                stream.waiting_started_at = stream.waiting_started_at or now
+                stream.is_live_now = False
+            elif normalized_status == "streaming":
+                stream.prepared_at = stream.prepared_at or now
+                stream.streaming_started_at = stream.streaming_started_at or now
+                stream.is_live_now = True
+                stream.disconnected_at = None
+            else:
+                stream.is_live_now = normalized_status == "streaming"
+
+            if self._is_visible_live_stream(stream) and normalized_status == "streaming":
+                stream.disconnected_at = None
+                if stream.is_forever:
+                    clone = self._find_live_backup_clone_optional(stream)
+                    if clone is not None:
+                        self._retire_live_backup_clone(clone, now=now, reason="BOT chính đã hồi phục.")
+                        if stream.backup_stream_id is not None:
+                            stream.backup_stream_id = None
+
+            self._refresh_live_stream_leases(worker_id, now, stream_ids=[stream.id])
+            self._sync_live_backup_policy(now=now)
+            self._sync_live_worker_runtime_status(worker)
+            self._save_state()
+            return deepcopy(stream)
+
+    def complete_live_stream_runtime(
+        self,
+        *,
+        stream_id: str,
+        worker_id: str,
+        shared_secret: str,
+        message: str | None = None,
+    ) -> LiveStreamRecord:
+        with self._worker_state_lock:
+            worker = self._authenticate_live_worker(worker_id, shared_secret)
+            stream = self._find_claimed_live_stream(stream_id, worker_id)
+            self._ensure_live_stream_can_continue(stream)
+            now = self._now(trim=False)
+            stream.status = "ended"
+            stream.log_label = "Kết thúc"
+            stream.status_message = (message or "").strip() or None
+            stream.progress = 100
+            stream.error_message = None
+            stream.is_live_now = False
+            stream.ended_at = now
+            stream.updated_at = now
+            stream.lease_expires_at = None
+            stream.claimed_by_worker_id = None
+            stream.claimed_by_role = None
+            stream.claimed_at = None
+            if self._is_visible_live_stream(stream):
+                clone = self._find_live_backup_clone_optional(stream)
+                if clone is not None:
+                    self._retire_live_backup_clone(clone, now=now, reason="Luồng chính đã kết thúc.")
+                    stream.backup_stream_id = None
+            self._sync_live_worker_runtime_status(worker)
+            self._save_state()
+            return deepcopy(stream)
+
+    def fail_live_stream_runtime(
+        self,
+        *,
+        stream_id: str,
+        worker_id: str,
+        shared_secret: str,
+        message: str,
+    ) -> LiveStreamRecord:
+        with self._worker_state_lock:
+            worker = self._authenticate_live_worker(worker_id, shared_secret)
+            stream = self._find_claimed_live_stream(stream_id, worker_id)
+            now = self._now(trim=False)
+            if stream.status == "stopped":
+                stream.status_message = None
+                stream.lease_expires_at = None
+                stream.claimed_by_worker_id = None
+                stream.claimed_by_role = None
+                stream.updated_at = now
+                self._sync_live_worker_runtime_status(worker)
+                self._save_state()
+                return deepcopy(stream)
+
+            if self._is_visible_live_stream(stream) and stream.backup_worker_id:
+                stream.status = "disconnected"
+                stream.log_label = "Mất kết nối"
+                stream.disconnected_at = now
+            else:
+                stream.status = "error"
+                stream.log_label = "Lỗi"
+            stream.status_message = None
+            stream.error_message = message
+            stream.is_live_now = False
+            stream.updated_at = now
+            stream.lease_expires_at = None
+            stream.claimed_by_worker_id = None
+            stream.claimed_by_role = None
+            stream.claimed_at = None
+            if self._is_visible_live_stream(stream):
+                if stream.status == "error":
+                    clone = self._find_live_backup_clone_optional(stream)
+                    if clone is not None:
+                        self._retire_live_backup_clone(clone, now=now, reason="Luồng chính gặp lỗi.")
+                        stream.backup_stream_id = None
+                else:
+                    self._sync_live_backup_policy(now=now)
+            self._sync_live_worker_runtime_status(worker)
+            self._save_state()
+            return deepcopy(stream)
 
     def _find_channel(self, channel_id: str) -> ChannelRecord:
         for channel in self.channels:
@@ -5140,8 +5832,10 @@ class AppStore:
         live_ready = len([worker for worker in assigned_workers if worker.status in {"online", "busy"}])
         total_workers = len(assigned_workers)
         live_records = self._live_streams_for_user(user)
-        active_live_count = len([record for record in live_records if record.status == "streaming"])
-        scheduled_live_count = len([record for record in live_records if record.status == "scheduled"])
+        active_live_count = len(
+            [record for record in live_records if self._effective_live_runtime_stream(record).status == "streaming"]
+        )
+        scheduled_live_count = len([record for record in live_records if record.status in self._live_worker_scheduled_statuses()])
         backup_live_count = len([record for record in live_records if record.backup_worker_id])
         editing_stream = None
         if editing_stream_id:
@@ -5217,6 +5911,7 @@ class AppStore:
                 stream
                 for stream in self.live_streams
                 if stream.owner_user_id == user.id
+                and self._is_visible_live_stream(stream)
             ],
             key=lambda item: (item.created_at or datetime.min, item.id),
             reverse=True,
@@ -5302,12 +5997,24 @@ class AppStore:
             )
         ]
 
+    def _find_live_stream_optional(self, stream_id: str) -> LiveStreamRecord | None:
+        normalized_stream_id = str(stream_id or "").strip()
+        if not normalized_stream_id:
+            return None
+        return next((stream for stream in self.live_streams if stream.id == normalized_stream_id), None)
+
     def _find_live_stream(self, stream_id: str) -> LiveStreamRecord:
         normalized_stream_id = str(stream_id or "").strip()
         for stream in self.live_streams:
             if stream.id == normalized_stream_id:
                 return stream
         raise KeyError(stream_id)
+
+    def _find_visible_live_stream(self, stream_id: str) -> LiveStreamRecord:
+        stream = self._find_live_stream(stream_id)
+        if self._is_runtime_backup_clone(stream):
+            raise KeyError(stream_id)
+        return stream
 
     def _assert_live_stream_owner_scope(
         self,
@@ -5417,8 +6124,16 @@ class AppStore:
             return normalized_status, str(log_override).strip()
         if normalized_status == "streaming":
             return normalized_status, "Đang live"
+        if normalized_status == "downloading":
+            return normalized_status, "Đang tải media"
+        if normalized_status == "preparing":
+            return normalized_status, "Chuẩn bị luồng"
+        if normalized_status == "waiting":
+            return normalized_status, "Chờ đến giờ"
         if normalized_status == "scheduled":
             return normalized_status, "Lên lịch"
+        if normalized_status == "disconnected":
+            return normalized_status, "Mất kết nối"
         if normalized_status == "error":
             return normalized_status, "Lỗi"
         if normalized_status == "ended":
@@ -5531,6 +6246,7 @@ class AppStore:
             updated_at=now,
         )
         self.live_streams.append(stream)
+        self._sync_live_backup_policy(now=now)
         self._save_state()
         return deepcopy(stream)
 
@@ -5541,7 +6257,7 @@ class AppStore:
         viewer_role: str = "admin",
         viewer_id: str | None = None,
     ) -> LiveStreamRecord:
-        stream = self._find_live_stream(stream_id)
+        stream = self._find_visible_live_stream(stream_id)
         owner = self._require_workspace_user(stream.owner_user_id)
         self._assert_live_stream_owner_scope(owner, viewer_role=viewer_role, viewer_id=viewer_id)
         return deepcopy(stream)
@@ -5567,7 +6283,7 @@ class AppStore:
         status: str | None = None,
         log_label: str | None = None,
     ) -> LiveStreamRecord:
-        stream = self._find_live_stream(stream_id)
+        stream = self._find_visible_live_stream(stream_id)
         owner = self._require_workspace_user(stream.owner_user_id)
         self._assert_live_stream_owner_scope(owner, viewer_role=viewer_role, viewer_id=viewer_id)
         normalized_name = self._normalize_live_text(stream_name, field_label="Tên luồng live")
@@ -5626,7 +6342,23 @@ class AppStore:
         stream.backup_delay_minutes = normalized_delay
         stream.status = live_status
         stream.log_label = live_log_label
-        stream.updated_at = self._now(trim=False)
+        stream.status_message = None
+        stream.progress = 0
+        stream.error_message = None
+        stream.claimed_by_worker_id = None
+        stream.claimed_by_role = None
+        stream.claimed_at = None
+        stream.lease_expires_at = None
+        stream.download_started_at = None
+        stream.prepared_at = None
+        stream.waiting_started_at = None
+        stream.streaming_started_at = None
+        stream.disconnected_at = None
+        stream.stop_requested_at = None
+        stream.ended_at = None
+        now = self._now(trim=False)
+        stream.updated_at = now
+        self._sync_live_backup_policy(now=now)
         self._save_state()
         return deepcopy(stream)
 
@@ -5637,9 +6369,13 @@ class AppStore:
         viewer_role: str = "admin",
         viewer_id: str | None = None,
     ) -> None:
-        stream = self._find_live_stream(stream_id)
+        stream = self._find_visible_live_stream(stream_id)
         owner = self._require_workspace_user(stream.owner_user_id)
         self._assert_live_stream_owner_scope(owner, viewer_role=viewer_role, viewer_id=viewer_id)
+        now = self._now(trim=False)
+        clone = self._find_live_backup_clone_optional(stream)
+        if clone is not None:
+            self._retire_live_backup_clone(clone, now=now, reason="Luồng chính đã bị xoá.")
         self.live_streams = [item for item in self.live_streams if item.id != stream.id]
         self._save_state()
 
@@ -5651,7 +6387,8 @@ class AppStore:
         log_label: str | None = None,
         error_message: str | None = None,
     ) -> LiveStreamRecord:
-        stream = self._find_live_stream(stream_id)
+        stream = self._find_visible_live_stream(stream_id)
+        now = self._now(trim=False)
         normalized_status, resolved_log = self._derive_live_status_defaults(
             start_time_live=stream.start_time_live,
             is_live_now=stream.is_live_now,
@@ -5661,8 +6398,53 @@ class AppStore:
         )
         stream.status = normalized_status
         stream.log_label = resolved_log
+        stream.status_message = None
         stream.error_message = self._normalize_live_optional_text(error_message)
-        stream.updated_at = self._now(trim=False)
+        if normalized_status in {"ended", "stopped", "error"}:
+            stream.is_live_now = False
+            stream.lease_expires_at = None
+            stream.claimed_by_worker_id = None
+            stream.claimed_by_role = None
+            stream.claimed_at = None
+            if normalized_status == "ended" and stream.ended_at is None:
+                stream.ended_at = now
+            clone = self._find_live_backup_clone_optional(stream)
+            if clone is not None:
+                self._retire_live_backup_clone(clone, now=now, reason="Luồng chính đã chuyển trạng thái dừng.")
+                stream.backup_stream_id = None
+        stream.updated_at = now
+        self._save_state()
+        return deepcopy(stream)
+
+    def stop_live_stream(
+        self,
+        stream_id: str,
+        *,
+        viewer_role: str = "admin",
+        viewer_id: str | None = None,
+    ) -> LiveStreamRecord:
+        stream = self._find_visible_live_stream(stream_id)
+        owner = self._require_workspace_user(stream.owner_user_id)
+        self._assert_live_stream_owner_scope(owner, viewer_role=viewer_role, viewer_id=viewer_id)
+        now = self._now(trim=False)
+        stream.status = "stopped"
+        stream.log_label = "Đã dừng"
+        stream.status_message = None
+        stream.error_message = None
+        stream.is_live_now = False
+        stream.progress = min(int(stream.progress or 0), 100)
+        stream.stop_requested_at = now
+        stream.lease_expires_at = None
+        stream.claimed_by_worker_id = None
+        stream.claimed_by_role = None
+        stream.claimed_at = None
+        stream.disconnected_at = None
+        stream.ended_at = stream.ended_at or now
+        stream.updated_at = now
+        clone = self._find_live_backup_clone_optional(stream)
+        if clone is not None:
+            self._retire_live_backup_clone(clone, now=now, reason="Luồng chính đã được dừng thủ công.")
+            stream.backup_stream_id = None
         self._save_state()
         return deepcopy(stream)
 
@@ -5682,14 +6464,20 @@ class AppStore:
             scoped = [
                 stream for stream in self.live_streams
                 if stream.manager_id == viewer_id
+                and self._is_visible_live_stream(stream)
             ]
             return sorted(scoped, key=lambda item: (item.created_at or datetime.min, item.id), reverse=True)
         if not effective_manager_ids:
-            return sorted(list(self.live_streams), key=lambda item: (item.created_at or datetime.min, item.id), reverse=True)
+            return sorted(
+                [stream for stream in self.live_streams if self._is_visible_live_stream(stream)],
+                key=lambda item: (item.created_at or datetime.min, item.id),
+                reverse=True,
+            )
         scoped = [
             stream
             for stream in self.live_streams
             if stream.manager_id in effective_manager_ids
+            and self._is_visible_live_stream(stream)
         ]
         return sorted(scoped, key=lambda item: (item.created_at or datetime.min, item.id), reverse=True)
 
@@ -5697,13 +6485,29 @@ class AppStore:
         normalized = str(status or "").strip().lower()
         if normalized == "streaming":
             return ("Đang live", "border-emerald-200 bg-emerald-50 text-emerald-700")
+        if normalized == "downloading":
+            return ("Đang tải", "border-sky-200 bg-sky-50 text-sky-700")
+        if normalized == "preparing":
+            return ("Chuẩn bị", "border-brand-200 bg-brand-50 text-brand-700")
+        if normalized == "waiting":
+            return ("Chờ giờ", "border-amber-200 bg-amber-50 text-amber-700")
         if normalized == "scheduled":
             return ("Chờ lịch", "border-amber-200 bg-amber-50 text-amber-700")
+        if normalized == "disconnected":
+            return ("Mất kết nối", "border-orange-200 bg-orange-50 text-orange-700")
         if normalized == "ended":
             return ("Kết thúc", "border-slate-200 bg-slate-50 text-slate-700")
         if normalized == "error":
             return ("Lỗi", "border-rose-200 bg-rose-50 text-rose-700")
         return ("Đã dừng", "border-rose-200 bg-rose-50 text-rose-700")
+
+    def _effective_live_runtime_stream(self, stream: LiveStreamRecord) -> LiveStreamRecord:
+        if self._is_runtime_backup_clone(stream):
+            return stream
+        clone = self._find_live_backup_clone_optional(stream)
+        if clone is not None and clone.status in self._live_worker_active_statuses():
+            return clone
+        return stream
 
     def _live_duration_text(self, stream: LiveStreamRecord) -> str:
         if stream.is_forever:
@@ -5727,8 +6531,7 @@ class AppStore:
         ]
 
     def _live_worker_thread_summary(self, worker: WorkerRecord) -> dict[str, int | str]:
-        streams = self._live_streams_using_worker(worker.id)
-        running_threads = len([stream for stream in streams if stream.status == "streaming"])
+        running_threads = self._count_live_worker_running_streams(worker)
         max_threads = max(1, int(worker.threads or worker.capacity or 1))
         return {
             "running_threads": running_threads,
@@ -5737,7 +6540,7 @@ class AppStore:
         }
 
     def _live_user_metrics(self, user: UserSummary) -> dict[str, Any]:
-        live_streams = [stream for stream in self.live_streams if stream.owner_user_id == user.id]
+        live_streams = [stream for stream in self.live_streams if stream.owner_user_id == user.id and self._is_visible_live_stream(stream)]
         live_bots = self._assigned_live_workers_for_user(user)
         backup_worker_ids = {stream.backup_worker_id for stream in live_streams if stream.backup_worker_id}
         manager = next(
@@ -5752,14 +6555,20 @@ class AppStore:
         if manager is not None:
             manager_telegram = str(self._user_meta_record(manager.id).get("telegram") or "").strip()
         return {
-            "live_threads_running": len([stream for stream in live_streams if stream.status == "streaming"]),
+            "live_threads_running": len(
+                [stream for stream in live_streams if self._effective_live_runtime_stream(stream).status == "streaming"]
+            ),
             "live_threads_total": len(live_streams),
             "live_bots_total": len(live_bots),
             "live_threads_backup_running": len(
-                [stream for stream in live_streams if stream.status == "streaming" and stream.backup_worker_id]
+                [
+                    stream
+                    for stream in live_streams
+                    if stream.backup_worker_id and self._effective_live_runtime_stream(stream).status == "streaming"
+                ]
             ),
             "live_threads_backup_pending": len(
-                [stream for stream in live_streams if stream.status == "scheduled" and stream.backup_worker_id]
+                [stream for stream in live_streams if stream.status in self._live_worker_scheduled_statuses() and stream.backup_worker_id]
             ),
             "live_threads_backup_total": len([stream for stream in live_streams if stream.backup_worker_id]),
             "live_bots_backup_total": len(backup_worker_ids),
@@ -5768,9 +6577,11 @@ class AppStore:
         }
 
     def _live_stream_display_row(self, stream: LiveStreamRecord) -> dict[str, Any]:
-        status_label, status_class = self._live_status_presentation(stream.status)
+        effective_runtime = self._effective_live_runtime_stream(stream)
+        status_label, status_class = self._live_status_presentation(effective_runtime.status)
         primary_name = stream.primary_worker_name or self._resolve_live_worker_display_name(stream.primary_worker_id)
         backup_name = stream.backup_worker_name
+        effective_log_label = effective_runtime.log_label or stream.log_label
         return {
             "id": stream.id,
             "manager_id": stream.manager_id,
@@ -5796,10 +6607,11 @@ class AppStore:
             "end_clock_text": self._format_clock(stream.end_time_live) if stream.end_time_live else "",
             "duration_text": self._live_duration_text(stream),
             "duration_meta": "",
-            "log_label": stream.log_label,
-            "log_class": "border-rose-200 bg-rose-50 text-rose-700" if stream.log_label == "Kết thúc" else "border-slate-200 bg-slate-50 text-slate-700",
+            "log_label": effective_log_label,
+            "log_class": "border-rose-200 bg-rose-50 text-rose-700" if effective_log_label == "Kết thúc" else "border-slate-200 bg-slate-50 text-slate-700",
             "status_label": status_label,
             "status_class": status_class,
+            "can_stop": effective_runtime.status in self._live_worker_scheduled_statuses(),
             "detail_href": "",
         }
 
@@ -7373,8 +8185,10 @@ class AppStore:
             manager_ids=manager_ids,
         )
         live_ready = len([worker for worker in scoped_workers if worker.status in {"online", "busy"}])
-        active_live_count = len([stream for stream in scoped_streams if stream.status == "streaming"])
-        scheduled_live_count = len([stream for stream in scoped_streams if stream.status == "scheduled"])
+        active_live_count = len(
+            [stream for stream in scoped_streams if self._effective_live_runtime_stream(stream).status == "streaming"]
+        )
+        scheduled_live_count = len([stream for stream in scoped_streams if stream.status in self._live_worker_scheduled_statuses()])
         backup_live_count = len({stream.backup_worker_id for stream in scoped_streams if stream.backup_worker_id})
         return [
             {
@@ -7477,8 +8291,10 @@ class AppStore:
         live_ready = len([worker for worker in scoped_workers if worker.status in {"online", "busy"}])
         total_workers = len(scoped_workers)
         assigned_bot_count = total_workers
-        active_live_count = len([stream for stream in scoped_streams if stream.status == "streaming"])
-        scheduled_live_count = len([stream for stream in scoped_streams if stream.status == "scheduled"])
+        active_live_count = len(
+            [stream for stream in scoped_streams if self._effective_live_runtime_stream(stream).status == "streaming"]
+        )
+        scheduled_live_count = len([stream for stream in scoped_streams if stream.status in self._live_worker_scheduled_statuses()])
         backup_live_count = len({stream.backup_worker_id for stream in scoped_streams if stream.backup_worker_id})
         kpis = [
             {

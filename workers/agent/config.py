@@ -26,6 +26,7 @@ def _ensure_directory(path: Path) -> Path:
 
 @dataclass
 class WorkerConfig:
+    runtime_mode: str
     control_plane_url: str
     shared_secret: str
     worker_id: str
@@ -62,6 +63,7 @@ def load_config() -> WorkerConfig:
         Path(os.getenv("WORKER_DATA_DIR", "/opt/youtube-upload-lush/worker-data")).expanduser()
     )
     return WorkerConfig(
+        runtime_mode=os.getenv("WORKER_RUNTIME_MODE", "upload").strip().lower() or "upload",
         control_plane_url=_env("CONTROL_PLANE_URL").rstrip("/"),
         shared_secret=_env("WORKER_SHARED_SECRET"),
         worker_id=os.getenv("WORKER_ID", hostname).strip() or hostname,

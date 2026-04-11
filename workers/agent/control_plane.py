@@ -160,7 +160,8 @@ def is_worker_missing_error(exc: Exception) -> bool:
     request = exc.request
     if response is None or request is None:
         return False
-    return response.status_code == 404 and "/api/workers/" in str(request.url)
+    request_url = str(request.url)
+    return response.status_code == 404 and ("/api/workers/" in request_url or "/api/live-workers/" in request_url)
 
 
 def is_worker_deleted_error(exc: Exception) -> bool:
@@ -170,7 +171,8 @@ def is_worker_deleted_error(exc: Exception) -> bool:
     request = exc.request
     if response is None or request is None:
         return False
-    if response.status_code != 403 or "/api/workers/" not in str(request.url):
+    request_url = str(request.url)
+    if response.status_code != 403 or ("/api/workers/" not in request_url and "/api/live-workers/" not in request_url):
         return False
     try:
         payload = response.json()
@@ -319,6 +321,58 @@ def heartbeat_worker(
             "browser_web_port_base": config.browser_web_port_base,
             "browser_debug_port_base": config.browser_debug_port_base,
             "active_job_ids": active_job_ids or [],
+        },
+    )
+
+
+def register_live_worker(client: httpx.Client, config: WorkerConfig) -> None:
+    _, total_gb = _disk_usage()
+    _request_with_retry(
+        client,
+        config,
+        "POST",
+        "/api/live-workers/register",
+        operation="register_live_worker",
+        json={
+            "worker_id": config.worker_id,
+            "name": config.worker_name,
+            "shared_secret": config.shared_secret,
+            "manager_name": config.manager_name,
+            "group": config.group,
+            "capacity": config.capacity,
+            "threads": config.threads,
+            "disk_total_gb": total_gb,
+        },
+    )
+
+
+def heartbeat_live_worker(
+    client: httpx.Client,
+    config: WorkerConfig,
+    *,
+    active_stream_ids: list[str] | None = None,
+) -> None:
+    used_gb, total_gb = _disk_usage()
+    ram_used_gb, ram_total_gb, ram_percent = _memory_usage()
+    _request_with_retry(
+        client,
+        config,
+        "POST",
+        "/api/live-workers/heartbeat",
+        operation="heartbeat_live_worker",
+        json={
+            "worker_id": config.worker_id,
+            "shared_secret": config.shared_secret,
+            "load_percent": _load_percent(),
+            "ram_percent": ram_percent,
+            "ram_used_gb": ram_used_gb,
+            "ram_total_gb": ram_total_gb,
+            "bandwidth_kbps": _bandwidth_kbps(),
+            "disk_used_gb": used_gb,
+            "disk_total_gb": total_gb,
+            "threads": config.threads,
+            "status": "online",
+            "active_stream_ids": active_stream_ids or [],
         },
     )
 
@@ -504,6 +558,22 @@ def claim_job(client: httpx.Client, config: WorkerConfig) -> dict[str, Any] | No
     return payload.get("job")
 
 
+def claim_live_stream(client: httpx.Client, config: WorkerConfig) -> dict[str, Any] | None:
+    response = _request_with_retry(
+        client,
+        config,
+        "POST",
+        "/api/live-workers/claim",
+        operation="claim_live_stream",
+        json={
+            "worker_id": config.worker_id,
+            "shared_secret": config.shared_secret,
+        },
+    )
+    payload = response.json()
+    return payload.get("stream")
+
+
 def update_job_progress(
     client: httpx.Client,
     config: WorkerConfig,
@@ -519,6 +589,33 @@ def update_job_progress(
         "POST",
         f"/api/workers/jobs/{job_id}/progress",
         operation=f"update_job_progress:{job_id}",
+        retry_forever=False,
+        max_attempts=config.progress_retry_attempts,
+        json={
+            "worker_id": config.worker_id,
+            "shared_secret": config.shared_secret,
+            "status": status,
+            "progress": progress,
+            "message": message,
+        },
+    )
+
+
+def update_live_stream_progress(
+    client: httpx.Client,
+    config: WorkerConfig,
+    stream_id: str,
+    *,
+    status: str,
+    progress: int,
+    message: str | None = None,
+) -> None:
+    _request_with_retry(
+        client,
+        config,
+        "POST",
+        f"/api/live-workers/streams/{stream_id}/progress",
+        operation=f"update_live_stream_progress:{stream_id}",
         retry_forever=False,
         max_attempts=config.progress_retry_attempts,
         json={
@@ -578,6 +675,27 @@ def complete_job(
     )
 
 
+def complete_live_stream(
+    client: httpx.Client,
+    config: WorkerConfig,
+    stream_id: str,
+    *,
+    message: str | None = None,
+) -> None:
+    _request_with_retry(
+        client,
+        config,
+        "POST",
+        f"/api/live-workers/streams/{stream_id}/complete",
+        operation=f"complete_live_stream:{stream_id}",
+        json={
+            "worker_id": config.worker_id,
+            "shared_secret": config.shared_secret,
+            "message": message,
+        },
+    )
+
+
 def fail_job(client: httpx.Client, config: WorkerConfig, job_id: str, *, message: str) -> None:
     _request_with_retry(
         client,
@@ -585,6 +703,21 @@ def fail_job(client: httpx.Client, config: WorkerConfig, job_id: str, *, message
         "POST",
         f"/api/workers/jobs/{job_id}/fail",
         operation=f"fail_job:{job_id}",
+        json={
+            "worker_id": config.worker_id,
+            "shared_secret": config.shared_secret,
+            "message": message,
+        },
+    )
+
+
+def fail_live_stream(client: httpx.Client, config: WorkerConfig, stream_id: str, *, message: str) -> None:
+    _request_with_retry(
+        client,
+        config,
+        "POST",
+        f"/api/live-workers/streams/{stream_id}/fail",
+        operation=f"fail_live_stream:{stream_id}",
         json={
             "worker_id": config.worker_id,
             "shared_secret": config.shared_secret,

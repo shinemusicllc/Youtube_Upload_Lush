@@ -15,8 +15,20 @@ JobVisibility = Literal["draft", "private", "public", "unlisted"]
 UploadSessionStatus = Literal["active", "completed", "expired", "cancelled"]
 ChannelConnectionMode = Literal["oauth", "browser_profile"]
 BrowserSessionStatus = Literal["launching", "awaiting_confirmation", "confirmed", "closed", "expired", "failed"]
-LiveStreamStatus = Literal["draft", "scheduled", "streaming", "ended", "stopped", "error"]
+LiveStreamStatus = Literal[
+    "draft",
+    "scheduled",
+    "downloading",
+    "preparing",
+    "waiting",
+    "streaming",
+    "disconnected",
+    "ended",
+    "stopped",
+    "error",
+]
 LivePlatform = Literal["youtube_rtmp"]
+LiveRuntimeRole = Literal["primary", "backup"]
 
 
 class UserSummary(BaseModel):
@@ -172,6 +184,10 @@ class LiveStreamRecord(BaseModel):
     backup_worker_id: str | None = None
     backup_worker_name: str | None = None
     backup_group: str | None = None
+    runtime_role: LiveRuntimeRole = "primary"
+    is_runtime_clone: bool = False
+    parent_stream_id: str | None = None
+    backup_stream_id: str | None = None
     stream_name: str
     stream_key: str
     rtmp_url: str = "rtmp://x.rtmp.youtube.com/live2"
@@ -185,8 +201,21 @@ class LiveStreamRecord(BaseModel):
     end_time_live: datetime | None = None
     backup_delay_minutes: int = 3
     status: LiveStreamStatus = "draft"
+    status_message: str | None = None
+    progress: int = 0
     log_label: str = "Khởi tạo"
     error_message: str | None = None
+    claimed_by_worker_id: str | None = None
+    claimed_by_role: LiveRuntimeRole | None = None
+    claimed_at: datetime | None = None
+    lease_expires_at: datetime | None = None
+    download_started_at: datetime | None = None
+    prepared_at: datetime | None = None
+    waiting_started_at: datetime | None = None
+    streaming_started_at: datetime | None = None
+    disconnected_at: datetime | None = None
+    stop_requested_at: datetime | None = None
+    ended_at: datetime | None = None
     created_at: datetime
     updated_at: datetime | None = None
 
@@ -419,6 +448,68 @@ class WorkerJobCompletePayload(BaseModel):
 
 
 class WorkerJobFailPayload(BaseModel):
+    worker_id: str
+    shared_secret: str
+    message: str
+
+
+class LiveWorkerRegisterPayload(BaseModel):
+    worker_id: str
+    name: str
+    shared_secret: str
+    manager_name: str = "system"
+    group: str | None = None
+    capacity: int = 1
+    threads: int = 1
+    disk_total_gb: float = 0
+
+
+class LiveWorkerHeartbeatPayload(BaseModel):
+    worker_id: str
+    shared_secret: str
+    load_percent: int = 0
+    ram_percent: int = 0
+    ram_used_gb: float = 0
+    ram_total_gb: float = 0
+    bandwidth_kbps: float = 0
+    disk_used_gb: float = 0
+    disk_total_gb: float = 0
+    threads: int = 1
+    status: WorkerStatus = "online"
+    active_stream_ids: list[str] | None = None
+
+
+class LiveWorkerControlResponse(BaseModel):
+    ok: bool
+    worker: WorkerRecord
+
+
+class LiveWorkerAuthPayload(BaseModel):
+    worker_id: str
+    shared_secret: str
+
+
+class LiveWorkerClaimResponse(BaseModel):
+    ok: bool
+    worker: WorkerRecord
+    stream: LiveStreamRecord | None = None
+
+
+class LiveWorkerProgressPayload(BaseModel):
+    worker_id: str
+    shared_secret: str
+    status: LiveStreamStatus
+    progress: int = 0
+    message: str | None = None
+
+
+class LiveWorkerCompletePayload(BaseModel):
+    worker_id: str
+    shared_secret: str
+    message: str | None = None
+
+
+class LiveWorkerFailPayload(BaseModel):
     worker_id: str
     shared_secret: str
     message: str
