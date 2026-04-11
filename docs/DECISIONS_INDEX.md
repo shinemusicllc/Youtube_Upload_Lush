@@ -27,6 +27,10 @@
 | DEC-022 | Production worker browser canonical chuyen sang native `google-chrome-stable`; login noVNC va upload phai dung chung `profile_path + _build_browser_env()` voi `HOME`, `DBUS`, `XDG_*`, `password-store=basic`, shutdown graceful, va khong pin `chromedriver` co dinh trong bootstrap | Active | worker runtime + browser profile | High |
 | DEC-023 | Live stream dung chung account/role model voi upload, nhung tach rieng live bot pool, live assignment `primary/backup`, va CRUD route cua live stream | Active | backend + admin/live workspace | High |
 | DEC-024 | Workspace live cua admin/manager bo han `Danh sách Kênh`; username/password van dung chung mot account voi upload, con Telegram live se xu ly rieng o app workspace sau | Active | admin/live workspace + auth model | High |
+| DEC-025 | Runtime live stream bo hoan toan nhanh `1080/4K`; chat luong phu thuoc media dau vao, audio URL la tuy chon va neu vang thi giu audio goc cua video | Active | live runtime + live form contract | High |
+| DEC-026 | Runtime live phase 1 dung namespace `/api/live-workers/*` rieng va bam 4 pha `download -> pre-render -> wait -> RTMP stream`; worker entrypoint lazy-import theo `runtime_mode` de live khong phu thuoc upload stack | Active | live runtime + worker architecture | High |
+
+| DEC-027 | Backup policy cua live phai bam sat app cu: luong co `EndTimeLive` chay song song primary + backup ngay tu dau, con luong `24/7` chi start backup sau khi primary mat ket noi qua `backup delay` va se huy backup neu primary hoi phuc | Active | live runtime + failover policy | High |
 
 ## Notes
 - `docs/DECISIONS.md` van giu full history va ly do chi tiet.

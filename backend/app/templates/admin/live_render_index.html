@@ -194,6 +194,18 @@
                         </td>
                         <td class="live-render-col-actions">
                             <div class="live-render-action-row">
+                                {% if render.can_stop %}
+                                <form method="post" action="/admin/live/stop" onsubmit="return window.confirm('Bạn có chắc chắn muốn dừng luồng live này không?');">
+                                    <input type="hidden" name="stream_id" value="{{ render.id | e }}">
+                                    {% for manager_id in dashboard.selected_manager_ids | default([], true) %}
+                                    <input type="hidden" name="manager_ids" value="{{ manager_id | e }}">
+                                    {% endfor %}
+                                    <button type="submit" class="action-btn action-btn-amber">
+                                        <i data-lucide="square" class="h-3.5 w-3.5"></i>
+                                        Dừng
+                                    </button>
+                                </form>
+                                {% endif %}
                                 <a href="{{ live_index_href }}?edit={{ render.id | e }}{% for manager_id in dashboard.selected_manager_ids | default([], true) %}&manager_ids={{ manager_id | e }}{% endfor %}" class="action-btn action-btn-emerald">
                                     <i data-lucide="pencil" class="h-3.5 w-3.5"></i>
                                     Sửa

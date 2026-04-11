@@ -723,6 +723,22 @@ async def user_live_delete(request: Request):
         return _redirect_with_notice("/app/live", str(exc), "error")
 
 
+@router.post("/app/live/stop")
+async def user_live_stop(request: Request):
+    current_user = require_app_access(request, "user", "manager", "admin")
+    form = await request.form()
+    stream_id = str(form.get("stream_id") or "").strip()
+    try:
+        store.stop_live_stream(
+            stream_id,
+            viewer_role=current_user.role,
+            viewer_id=current_user.id,
+        )
+        return _redirect_with_notice("/app/live", "Đã dừng luồng live stream.", "success")
+    except (KeyError, ValueError) as exc:
+        return _redirect_with_notice("/app/live", str(exc), "error")
+
+
 @router.get("/auth/google/callback")
 async def google_oauth_callback(
     request: Request,
@@ -1650,6 +1666,25 @@ async def admin_live_delete(request: Request):
             viewer_id=current_admin.id,
         )
         return _redirect_live_page_with_scope("Đã xóa luồng live stream.", "success", manager_ids=manager_ids)
+    except (KeyError, ValueError) as exc:
+        return _redirect_live_page_with_scope(str(exc), "error", manager_ids=manager_ids)
+
+
+@router.post("/admin/live/stop")
+async def admin_live_stop(request: Request):
+    current_admin = require_admin_access(request)
+    form = await request.form()
+    manager_ids = [str(value).strip() for value in form.getlist("manager_ids") if str(value).strip()]
+    if current_admin.role == "manager" and not manager_ids:
+        manager_ids = [current_admin.id]
+    stream_id = str(form.get("stream_id") or "").strip()
+    try:
+        store.stop_live_stream(
+            stream_id,
+            viewer_role=current_admin.role,
+            viewer_id=current_admin.id,
+        )
+        return _redirect_live_page_with_scope("Đã dừng luồng live stream.", "success", manager_ids=manager_ids)
     except (KeyError, ValueError) as exc:
         return _redirect_live_page_with_scope(str(exc), "error", manager_ids=manager_ids)
 

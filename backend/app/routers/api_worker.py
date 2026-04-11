@@ -4,6 +4,12 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from ..schemas import (
+    LiveWorkerAuthPayload,
+    LiveWorkerCompletePayload,
+    LiveWorkerFailPayload,
+    LiveWorkerHeartbeatPayload,
+    LiveWorkerProgressPayload,
+    LiveWorkerRegisterPayload,
     WorkerBrowserProfileCleanupAckPayload,
     WorkerDecommissionCompletePayload,
     WorkerBrowserSessionSyncPayload,
@@ -60,6 +66,35 @@ async def poll_worker_browser_sessions(payload: WorkerAuthPayload):
         }
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Worker chÆ°a Ä‘Æ°á»£c Ä‘Äƒng kÃ½.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.post("/live-workers/register")
+async def register_live_worker(payload: LiveWorkerRegisterPayload):
+    try:
+        return store.register_live_worker(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.post("/live-workers/heartbeat")
+async def heartbeat_live_worker(payload: LiveWorkerHeartbeatPayload):
+    try:
+        return store.heartbeat_live_worker(payload)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Live worker chưa được đăng ký.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.post("/live-workers/claim")
+async def claim_live_worker_stream(payload: LiveWorkerAuthPayload):
+    try:
+        worker, stream = store.claim_next_live_stream(payload.worker_id, payload.shared_secret)
+        return {"ok": True, "worker": worker.model_dump(mode="json"), "stream": stream.model_dump(mode="json") if stream else None}
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Live worker chưa được đăng ký.") from exc
     except ValueError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
 
@@ -162,6 +197,53 @@ async def fail_worker_job(job_id: str, payload: WorkerJobFailPayload):
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Không tìm thấy job.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/live-workers/streams/{stream_id}/progress")
+async def update_live_stream_progress(stream_id: str, payload: LiveWorkerProgressPayload):
+    try:
+        return store.update_live_stream_progress(
+            stream_id=stream_id,
+            worker_id=payload.worker_id,
+            shared_secret=payload.shared_secret,
+            status=payload.status,
+            progress=payload.progress,
+            message=payload.message,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Không tìm thấy luồng live.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/live-workers/streams/{stream_id}/complete")
+async def complete_live_stream(stream_id: str, payload: LiveWorkerCompletePayload):
+    try:
+        return store.complete_live_stream_runtime(
+            stream_id=stream_id,
+            worker_id=payload.worker_id,
+            shared_secret=payload.shared_secret,
+            message=payload.message,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Không tìm thấy luồng live.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/live-workers/streams/{stream_id}/fail")
+async def fail_live_stream(stream_id: str, payload: LiveWorkerFailPayload):
+    try:
+        return store.fail_live_stream_runtime(
+            stream_id=stream_id,
+            worker_id=payload.worker_id,
+            shared_secret=payload.shared_secret,
+            message=payload.message,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Không tìm thấy luồng live.") from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
