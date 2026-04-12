@@ -16,19 +16,6 @@
             vertical-align: middle;
         }
 
-        .admin-table-live-users .table-head-stack {
-            display: inline-flex;
-            flex-direction: column;
-            gap: 2px;
-            line-height: 1.25;
-        }
-
-        .admin-table-live-users .table-head-note {
-            font-size: 10px;
-            font-weight: 600;
-            color: rgb(100 116 139);
-        }
-
         .admin-table-live-users .user-avatar-compact {
             width: 38px;
             height: 38px;
@@ -101,7 +88,7 @@
                     <h2 class="section-title">Danh sách người dùng</h2>
                     <p class="section-note">
                         {% if is_live_workspace %}
-                        Giữ nguyên quản lý admin và manager cho live stream, đồng bộ theo scope manager hiện tại.
+                        Theo d&#245;i t&#224;i kho&#7843;n v&#224; ph&#226;n quy&#7873;n cho workspace Live Stream theo scope manager hi&#7879;n t&#7841;i.
                         {% else %}
                         Manager filter, cập nhật user và gán BOT theo user.
                         {% endif %}
@@ -126,38 +113,28 @@
             <h3 class="section-title">Danh sách người dùng</h3>
             <p class="section-note">
                 {% if is_live_workspace %}
-                Bảng này giữ riêng các cột quản trị live stream; cột tương đồng với app hiện tại vẫn được gộp theo visual mới.
+                Theo d&#245;i user, ph&#226;n quy&#7873;n v&#224; th&#7889;ng k&#234; live c&#7911;a t&#7915;ng t&#224;i kho&#7843;n.
                 {% else %}
                 Theo dõi tài khoản, phân quyền và quản lý thông tin người dùng trong hệ thống.
                 {% endif %}
             </p>
         </div>
 
-        <div class="table-shell {% if is_live_workspace %}overflow-x-hidden{% endif %}">
-            <table class="admin-table {% if is_live_workspace %}admin-table-live-users{% endif %}" data-admin-list-table>
+        <div class="table-shell">
+            <table class="admin-table {% if is_live_workspace %}admin-table-live-users{% endif %}" data-admin-list-table="user-index">
                 <thead>
                     <tr>
                         {% if is_live_workspace %}
-                        <th class="stt-col">STT</th>
-                        <th class="info-col">Thông tin user</th>
-                        <th class="role-col">Vai trò</th>
-                        <th class="manager-col">Manager</th>
-                        <th class="updated-col">Cập nhật</th>
-                        <th class="live-col">
-                            <span class="table-head-stack">
-                                <span>Luồng live stream</span>
-                                <span class="table-head-note">(Chạy/Tổng/BOT)</span>
-                            </span>
-                        </th>
-                        <th class="backup-col">
-                            <span class="table-head-stack">
-                                <span>Backup</span>
-                                <span class="table-head-note">(Chạy/Chờ/Tổng/BOT)</span>
-                            </span>
-                        </th>
-                        <th class="telegram-col">Telegram</th>
-                        <th class="bot-col">BOT</th>
-                        <th class="action-col text-right">Tác vụ</th>
+                        <th class="stt-col" data-admin-sort-label="STT">STT</th>
+                        <th class="info-col" data-admin-sort-label="Th&#244;ng tin user">Th&#244;ng tin user</th>
+                        <th class="role-col" data-admin-sort-label="Vai tr&#242;">Vai tr&#242;</th>
+                        <th class="manager-col" data-admin-sort-label="Manager">Manager</th>
+                        <th class="updated-col" data-admin-sort-label="C&#7853;p nh&#7853;t">C&#7853;p nh&#7853;t</th>
+                        <th class="live-col" data-admin-sort-label="Lu&#7891;ng live stream">Lu&#7891;ng live stream</th>
+                        <th class="backup-col" data-admin-sort-label="Backup">Backup</th>
+                        <th class="telegram-col" data-admin-sort-label="Telegram">Telegram</th>
+                        <th class="bot-col" data-admin-sort-label="BOT">BOT</th>
+                        <th class="action-col text-right" data-admin-sort-label="T&#225;c v&#7909;">T&#225;c v&#7909;</th>
                         {% else %}
                         <th class="w-14">STT</th>
                         <th>Thông tin user</th>

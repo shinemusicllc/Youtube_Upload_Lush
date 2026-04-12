@@ -193,19 +193,6 @@
             vertical-align: middle;
         }
 
-        .admin-table-live-workers .table-head-stack {
-            display: inline-flex;
-            flex-direction: column;
-            gap: 2px;
-            line-height: 1.25;
-        }
-
-        .admin-table-live-workers .table-head-note {
-            font-size: 10px;
-            font-weight: 600;
-            color: rgb(100 116 139);
-        }
-
         .admin-table-live-workers .action-row-nowrap {
             flex-wrap: nowrap;
             gap: 8px;
@@ -239,7 +226,7 @@
                     <h2 class="section-title">Danh s&#225;ch BOT</h2>
                     <p class="section-note">
                         {% if is_live_workspace %}
-                        Gi&#7919; b&#7897; c&#7897;t qu&#7843;n tr&#7883; BOT live theo app c&#361;, nh&#432;ng d&#249;ng shell v&#224; action style c&#7911;a control-plane hi&#7879;n t&#7841;i.
+                        Theo d&#245;i c&#7909;m BOT live, manager ph&#7909; tr&#225;ch v&#224; tr&#7841;ng th&#225;i k&#7871;t n&#7889;i theo th&#7901;i gian th&#7921;c.
                         {% else %}
                         Theo d&#245;i c&#7909;m VPS, metadata BOT v&#224; tr&#7841;ng th&#225;i t&#224;i nguy&#234;n live theo th&#7901;i gian th&#7921;c.
                         {% endif %}
@@ -272,14 +259,14 @@
             <h3 class="section-title">C&#7909;m BOT VPS</h3>
             <p class="section-note">
                 {% if is_live_workspace %}
-                Gi&#7919; nguy&#234;n logic qu&#7843;n l&#253; BOT live trong c&#249;ng shell: c&#7897;t t&#432;&#417;ng &#273;&#7891;ng v&#7899;i app upload v&#7851;n g&#7897;p theo visual hi&#7879;n t&#7841;i, c&#242;n schema live ri&#234;ng v&#7851;n &#273;&#432;&#7907;c b&#7843;o to&#224;n.
+                Theo d&#245;i BOT live, g&#225;n user v&#224; t&#224;i nguy&#234;n worker trong workspace Live Stream.
                 {% else %}
                 M&#7895;i VPS c&#243; th&#7875; g&#225;n cho nhi&#7873;u user; b&#7843;ng n&#224;y theo d&#245;i metadata BOT, s&#7889; k&#234;nh, s&#7889; user v&#224; t&#224;i nguy&#234;n live t&#7915; heartbeat worker.
                 {% endif %}
             </p>
         </div>
 
-        <div class="table-shell {% if is_live_workspace %}overflow-x-hidden{% endif %}">
+        <div class="table-shell">
             <table class="admin-table {% if is_live_workspace %}admin-table-live-workers{% else %}admin-table-upload-workers{% endif %}" data-admin-list-table="worker-index">
                 {% if not is_live_workspace %}
                 <colgroup>
@@ -300,23 +287,18 @@
                 <thead>
                     <tr>
                         {% if is_live_workspace %}
-                        <th class="w-14">STT</th>
-                        <th class="w-[156px]">BOT</th>
-                        <th class="w-[126px]">Group</th>
-                        <th class="w-[114px]">Tr&#7841;ng th&#225;i</th>
-                        <th class="w-[114px]">Ng&#224;y t&#7841;o</th>
-                        <th class="w-[84px]">
-                            <span class="table-head-stack">
-                                <span>Lu&#7891;ng live</span>
-                                <span class="table-head-note">stream</span>
-                            </span>
-                        </th>
-                        <th class="w-[82px]">S&#7889; user</th>
-                        <th class="w-[64px]">CPU</th>
-                        <th class="w-[96px]">RAM</th>
-                        <th class="w-[102px]">Bandwidth</th>
-                        <th class="w-[96px]">Space</th>
-                        <th class="w-[206px] text-right">T&#225;c v&#7909;</th>
+                        <th class="w-14" data-admin-sort-label="STT">STT</th>
+                        <th class="w-[156px]" data-admin-sort-label="BOT">BOT</th>
+                        <th class="w-[126px]" data-admin-sort-label="Group">Group</th>
+                        <th class="w-[114px]" data-admin-sort-label="Tr&#7841;ng th&#225;i">Tr&#7841;ng th&#225;i</th>
+                        <th class="w-[114px]" data-admin-sort-label="Ng&#224;y t&#7841;o">Ng&#224;y t&#7841;o</th>
+                        <th class="w-[92px]" data-admin-sort-label="Lu&#7891;ng live">Lu&#7891;ng live</th>
+                        <th class="w-[82px]" data-admin-sort-label="S&#7889; user">S&#7889; user</th>
+                        <th class="w-[64px]" data-admin-sort-label="CPU">CPU</th>
+                        <th class="w-[96px]" data-admin-sort-label="RAM">RAM</th>
+                        <th class="w-[102px]" data-admin-sort-label="Bandwidth">Bandwidth</th>
+                        <th class="w-[96px]" data-admin-sort-label="Space">Space</th>
+                        <th class="w-[206px] text-right" data-admin-sort-label="T&#225;c v&#7909;">T&#225;c v&#7909;</th>
                         {% else %}
                         <th class="w-14">STT</th>
                         <th class="w-[200px]">BOT</th>
