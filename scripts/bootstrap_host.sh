@@ -38,6 +38,7 @@ render_systemd_service() {
 }
 
 mkdir -p "$RUNTIME_DIR"
+mkdir -p "$RUNTIME_DIR/.backup" "$RUNTIME_DIR/backend-data"
 
 install_base_packages
 adopt_runtime_path "$APP_DIR" "$RUNTIME_DIR" ".env" ".env"
