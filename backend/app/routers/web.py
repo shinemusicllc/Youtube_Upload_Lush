@@ -1448,8 +1448,8 @@ async def admin_bot_create(request: Request):
         )
         return _redirect_bot_page_with_scope(
             (
-                f"Da xep hang cai dat {'BOT live' if workspace_mode == 'live' else 'BOT'} {task['worker_id']} tren {task['vps_ip']}. "
-                "Bang BOT se tu cap nhat khi worker duoc cai dat va ket noi lai."
+                f"Da tao yeu cau cai {'BOT live' if workspace_mode == 'live' else 'BOT'} {task['worker_id']} tren {task['vps_ip']}. "
+                "Control-plane dang xu ly va bang BOT se tu cap nhat khi worker ket noi lai."
             ),
             "success",
             manager_ids=return_manager_ids,

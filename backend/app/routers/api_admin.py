@@ -433,7 +433,7 @@ async def install_admin_bot(request: Request, payload: AdminBotInstallPayload):
             "worker_id": task["worker_id"],
             "vps_ip": task["vps_ip"],
             "message": (
-                f"Đã xếp hàng cài {'BOT live' if workspace_mode == 'live' else 'BOT'} "
+                f"Đã tạo yêu cầu cài {'BOT live' if workspace_mode == 'live' else 'BOT'} "
                 f"{task['worker_id']} trên {task['vps_ip']}."
             ),
         }

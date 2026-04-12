@@ -770,6 +770,7 @@ def start_worker_install_operation(
         worker_name=request.worker_name,
         vps_ip=request.vps_ip,
         ssh_user=ssh_user,
+        control_plane_url=request.control_plane_url,
         auth_mode=auth_mode,
         password=password,
         ssh_private_key=ssh_private_key,
@@ -819,13 +820,14 @@ def _install_request_from_task(store, task: dict[str, str]) -> WorkerBootstrapRe
     workspace_mode = str(task.get("workspace_mode") or "").strip() or "upload"
     profile = store.get_worker_connection_profile(worker_id, workspace_mode=workspace_mode)
     auth_mode = str(profile.get("auth_mode") or "password").strip().lower() or "password"
+    control_plane_url = str(task.get("control_plane_url") or "").strip()
     return build_worker_bootstrap_request(
         vps_ip=str(profile.get("vps_ip") or task.get("vps_ip") or "").strip(),
         ssh_user=str(profile.get("ssh_user") or "root").strip() or "root",
         password=(str(profile.get("password") or "").strip() or None) if auth_mode != "ssh_key" else None,
         ssh_private_key=(str(profile.get("ssh_private_key") or "").strip() or None) if auth_mode == "ssh_key" else None,
         shared_secret=store.get_worker_shared_secret(),
-        control_plane_url=build_worker_bootstrap_control_plane_url(None),
+        control_plane_url=build_worker_bootstrap_control_plane_url(control_plane_url),
         worker_id=worker_id,
         manager_name=str(task.get("manager_name") or "").strip() or "system",
         runtime_mode=workspace_mode,
