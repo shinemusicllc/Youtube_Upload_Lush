@@ -1521,6 +1521,10 @@ class AppStore:
             self._save_state()
             return deepcopy(task)
 
+    def get_worker_operation_snapshots(self) -> list[dict[str, Any]]:
+        with self._worker_state_lock:
+            return deepcopy(self.worker_operation_tasks)
+
     def clear_install_operation_after_register(self, worker_id: str, *, workspace_mode: str = "upload") -> bool:
         completed_task: dict[str, Any] | None = None
         with self._worker_state_lock:
