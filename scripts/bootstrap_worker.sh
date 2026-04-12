@@ -11,8 +11,28 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 export DEBIAN_FRONTEND=noninteractive
 
-apt-get update
-apt-get install -y ffmpeg
+apt_get_retry() {
+  local max_attempts="${APT_GET_MAX_ATTEMPTS:-20}"
+  local retry_seconds="${APT_GET_RETRY_SECONDS:-6}"
+  local attempt=1
+  local exit_code=0
+
+  while true; do
+    if apt-get "$@"; then
+      return 0
+    fi
+    exit_code=$?
+    if [ "$attempt" -ge "$max_attempts" ]; then
+      return "$exit_code"
+    fi
+    echo "[apt-retry] apt-get $* failed with exit code $exit_code. Retrying in ${retry_seconds}s (${attempt}/${max_attempts})..." >&2
+    attempt=$((attempt + 1))
+    sleep "$retry_seconds"
+  done
+}
+
+apt_get_retry update
+apt_get_retry install -y ffmpeg
 
 mkdir -p "$RUNTIME_DIR"
 install_base_packages
@@ -73,7 +93,7 @@ set -a
 set +a
 
 if [ "${BROWSER_SESSION_ENABLED:-0}" = "1" ]; then
-  apt-get install -y xvfb openbox x11vnc websockify novnc ca-certificates curl gnupg wget || true
+  apt_get_retry install -y xvfb openbox x11vnc websockify novnc ca-certificates curl gnupg wget || true
 
   # ---------- Install Google Chrome Stable (.deb) ----------
   # Why Chrome Stable instead of apt chromium-browser?
@@ -97,15 +117,15 @@ if [ "${BROWSER_SESSION_ENABLED:-0}" = "1" ]; then
       echo "[browser-setup] Removing snap chromium..."
       snap remove --purge chromium 2>/dev/null || true
     fi
-    apt-get remove -y chromium-browser 2>/dev/null || true
+    apt_get_retry remove -y chromium-browser 2>/dev/null || true
 
     # Add Google's official apt repo
     wget -qO- https://dl.google.com/linux/linux_signing_key.pub \
       | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg 2>/dev/null
     echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" \
       > /etc/apt/sources.list.d/google-chrome.list
-    apt-get update -qq
-    apt-get install -y google-chrome-stable
+    apt_get_retry update -qq
+    apt_get_retry install -y google-chrome-stable
 
     echo "[browser-setup] Google Chrome Stable installed successfully."
   }
@@ -116,7 +136,7 @@ if [ "${BROWSER_SESSION_ENABLED:-0}" = "1" ]; then
   # at runtime so Google Chrome auto-updates do not leave an old
   # chromedriver binary behind.
   rm -f /usr/local/bin/chromedriver /usr/bin/chromedriver 2>/dev/null || true
-  apt-get remove -y chromium-chromedriver chromium-driver google-chrome-driver 2>/dev/null || true
+  apt_get_retry remove -y chromium-chromedriver chromium-driver google-chrome-driver 2>/dev/null || true
 
   # ---------- Update env file ----------
   # Point BROWSER_SESSION_CHROMIUM_BIN to google-chrome-stable
