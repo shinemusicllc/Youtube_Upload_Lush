@@ -54,7 +54,7 @@ from .schemas import (
     WorkerRecord,
     WorkerYouTubeUploadTarget,
 )
-from .worker_bootstrap import suggest_next_worker_id
+from .worker_bootstrap import ensure_worker_operation_threads, suggest_next_worker_id
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
@@ -84,6 +84,12 @@ class AppStore:
         parsed = urlparse(normalized if "://" in normalized else f"http://{normalized}")
         hostname = str(parsed.hostname or "").strip().lower()
         return hostname in {"127.0.0.1", "localhost", "::1"}
+
+    def _resume_worker_operation_queue(self) -> None:
+        try:
+            ensure_worker_operation_threads(self)
+        except Exception as exc:
+            print(f"[worker_ops] scheduler resume failed: {exc}", flush=True)
 
     @classmethod
     def _live_demo_seed_enabled(cls) -> bool:
@@ -1308,6 +1314,7 @@ class AppStore:
                 if str(existing.get("id") or "").strip() != str(operation_id or "").strip()
             ]
             self._save_state()
+        self._resume_worker_operation_queue()
 
     def enqueue_worker_install_operation(
         self,
@@ -1577,6 +1584,7 @@ class AppStore:
 
     def clear_install_operation_after_register(self, worker_id: str, *, workspace_mode: str = "upload") -> bool:
         completed_task: dict[str, Any] | None = None
+        changed = False
         with self._worker_state_lock:
             normalized_worker_id = str(worker_id or "").strip()
             resolved_workspace_mode = self._normalize_workspace_mode(workspace_mode)
@@ -1603,6 +1611,8 @@ class AppStore:
             changed = len(self.worker_operation_tasks) != before
             if changed:
                 self._save_state()
+        if changed:
+            self._resume_worker_operation_queue()
         if changed and completed_task is not None:
             worker = self._find_workspace_worker(normalized_worker_id, workspace_mode=resolved_workspace_mode)
             worker_name = self._resolve_workspace_worker_display_name(worker.id, workspace_mode=resolved_workspace_mode)
@@ -1677,6 +1687,7 @@ class AppStore:
                 daemon=True,
             )
             self._monitor_thread.start()
+        self._resume_worker_operation_queue()
 
     def stop_background_services(self) -> None:
         self._monitor_stop_event.set()
@@ -3447,6 +3458,7 @@ class AppStore:
             self._save_state()
             worker_snapshot = deepcopy(worker)
         if completed_task is not None and worker_snapshot is not None:
+            self._resume_worker_operation_queue()
             self._notify_telegram_chat_ids(
                 self._bot_operation_recipient_chat_ids(completed_task),
                 self._bot_install_completed_message(
@@ -4055,6 +4067,7 @@ class AppStore:
             self._save_state()
             worker_snapshot = deepcopy(worker)
         if completed_task is not None and worker_snapshot is not None:
+            self._resume_worker_operation_queue()
             self._notify_telegram_chat_ids(
                 self._bot_operation_recipient_chat_ids(completed_task),
                 self._bot_install_completed_message(

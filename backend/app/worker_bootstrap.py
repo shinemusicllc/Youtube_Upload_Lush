@@ -726,8 +726,8 @@ def is_worker_operation_thread_active(operation_id: str) -> bool:
         return current is not None and current.is_alive()
 
 
-def _active_install_thread_operation_ids(store) -> set[str]:
-    active_ids: set[str] = set()
+def _occupied_install_operation_ids(store) -> set[str]:
+    occupied_ids: set[str] = set()
     operation_map = {
         str(task.get("id") or "").strip(): task
         for task in store.get_worker_operation_snapshots()
@@ -745,10 +745,16 @@ def _active_install_thread_operation_ids(store) -> set[str]:
         if str(task.get("kind") or "").strip() != "install":
             continue
         status = str(task.get("status") or "").strip()
-        if status in {"completed", "failed", "awaiting_registration"}:
+        if status in {"completed", "failed"}:
             continue
-        active_ids.add(operation_id)
-    return active_ids
+        occupied_ids.add(operation_id)
+    for operation_id, task in operation_map.items():
+        if str(task.get("kind") or "").strip() != "install":
+            continue
+        if str(task.get("status") or "").strip() != "awaiting_registration":
+            continue
+        occupied_ids.add(operation_id)
+    return occupied_ids
 
 
 def start_worker_install_operation(
@@ -851,8 +857,8 @@ def _decommission_request_from_task(store, task: dict[str, str]) -> WorkerDecomm
 def ensure_worker_operation_threads(store) -> None:
     snapshots = store.get_worker_operation_snapshots()
     install_limit = _worker_install_max_concurrency()
-    active_install_ids = _active_install_thread_operation_ids(store)
-    available_install_slots = max(0, install_limit - len(active_install_ids))
+    occupied_install_ids = _occupied_install_operation_ids(store)
+    available_install_slots = max(0, install_limit - len(occupied_install_ids))
 
     for task in snapshots:
         operation_id = str(task.get("id") or "").strip()
@@ -862,7 +868,7 @@ def ensure_worker_operation_threads(store) -> None:
             continue
         try:
             if kind == "install":
-                if operation_id in active_install_ids:
+                if operation_id in occupied_install_ids:
                     continue
                 if available_install_slots <= 0:
                     continue
@@ -873,7 +879,7 @@ def ensure_worker_operation_threads(store) -> None:
                     target=_run_worker_install_operation,
                     args=(store, operation_id, request),
                 )
-                active_install_ids.add(operation_id)
+                occupied_install_ids.add(operation_id)
                 available_install_slots -= 1
             elif kind == "decommission" and str(task.get("transport") or "ssh").strip() == "ssh":
                 request = _decommission_request_from_task(store, task)
