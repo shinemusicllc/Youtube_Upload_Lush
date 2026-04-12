@@ -46,6 +46,7 @@ adopt_runtime_path "$APP_DIR" "$RUNTIME_DIR" ".backup" ".backup"
 adopt_runtime_path "$APP_DIR" "$RUNTIME_DIR" "backend/data" "backend-data"
 ensure_git_checkout "$APP_DIR" "$REPO_URL" "$BRANCH"
 
+rm -rf "$APP_DIR/.venv"
 if [ ! -d "$RUNTIME_DIR/.venv" ]; then
   python3 -m venv "$RUNTIME_DIR/.venv"
 fi
