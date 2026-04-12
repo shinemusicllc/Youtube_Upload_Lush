@@ -67,6 +67,35 @@ class AppStore:
         "live-worker-02": "62.72.46.42",
     }
 
+    @staticmethod
+    def _env_flag(name: str, *, default: bool) -> bool:
+        raw_value = str(os.getenv(name, "")).strip().lower()
+        if raw_value in {"1", "true", "yes", "on"}:
+            return True
+        if raw_value in {"0", "false", "no", "off"}:
+            return False
+        return default
+
+    @staticmethod
+    def _url_points_to_localhost(value: str | None) -> bool:
+        normalized = str(value or "").strip()
+        if not normalized:
+            return False
+        parsed = urlparse(normalized if "://" in normalized else f"http://{normalized}")
+        hostname = str(parsed.hostname or "").strip().lower()
+        return hostname in {"127.0.0.1", "localhost", "::1"}
+
+    @classmethod
+    def _live_demo_seed_enabled(cls) -> bool:
+        default_enabled = any(
+            cls._url_points_to_localhost(candidate)
+            for candidate in (
+                os.getenv("WORKER_BOOTSTRAP_CONTROL_PLANE_URL"),
+                os.getenv("GOOGLE_REDIRECT_URI"),
+            )
+        )
+        return cls._env_flag("APP_ENABLE_LIVE_DEMO_SEED", default=default_enabled)
+
     def _seed_live_workers(self, *, now: datetime) -> list[WorkerRecord]:
         return [
             WorkerRecord(
@@ -253,6 +282,7 @@ class AppStore:
 
     def __init__(self) -> None:
         now = self._now()
+        live_demo_seed_enabled = self._live_demo_seed_enabled()
         self.data_dir = Path(__file__).resolve().parents[1] / "data"
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.upload_dir = self.data_dir / "uploads"
@@ -354,8 +384,10 @@ class AppStore:
             {"id": 1, "user_id": "user-1", "worker_id": "worker-01", "threads": 2, "note": "BOT chÃ­nh"},
             {"id": 2, "user_id": "user-1", "worker_id": "worker-02", "threads": 1, "note": "BOT phá»¥"},
         ]
-        self.live_workers = self._seed_live_workers(now=now)
-        self.live_user_worker_links: list[dict[str, Any]] = self._seed_live_user_worker_links()
+        self.live_workers = self._seed_live_workers(now=now) if live_demo_seed_enabled else []
+        self.live_user_worker_links: list[dict[str, Any]] = (
+            self._seed_live_user_worker_links() if live_demo_seed_enabled else []
+        )
 
         self.channels = [
             ChannelRecord(
@@ -464,7 +496,7 @@ class AppStore:
                 ],
             ),
         ]
-        self.live_streams = self._seed_live_streams(now=now)
+        self.live_streams = self._seed_live_streams(now=now) if live_demo_seed_enabled else []
         self.render_delete_meta = {
             "user": "admin",
             "deleted_at": now - timedelta(minutes=5),
@@ -963,17 +995,18 @@ class AppStore:
             connection.commit()
 
     def _load_or_seed_state(self) -> None:
+        live_demo_seed_enabled = self._live_demo_seed_enabled()
         with sqlite3.connect(self.state_db_path) as connection:
             row = connection.execute("SELECT payload FROM app_state WHERE state_key = 'main'").fetchone()
         if row and row[0]:
             payload = json.loads(row[0])
             self._apply_state(payload)
             if "live_workers" not in payload:
-                self.live_workers = self._seed_live_workers(now=self._now(trim=False))
+                self.live_workers = self._seed_live_workers(now=self._now(trim=False)) if live_demo_seed_enabled else []
             if "live_user_worker_links" not in payload:
-                self.live_user_worker_links = self._seed_live_user_worker_links()
+                self.live_user_worker_links = self._seed_live_user_worker_links() if live_demo_seed_enabled else []
             if "live_streams" not in payload:
-                self.live_streams = self._seed_live_streams(now=self._now(trim=False))
+                self.live_streams = self._seed_live_streams(now=self._now(trim=False)) if live_demo_seed_enabled else []
             if (
                 "live_workers" not in payload
                 or "live_user_worker_links" not in payload
