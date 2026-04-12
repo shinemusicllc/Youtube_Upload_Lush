@@ -361,6 +361,92 @@
             border-color: rgba(255, 255, 255, 0.16);
         }
 
+        .login-toast-stack {
+            position: fixed;
+            top: 24px;
+            right: 24px;
+            z-index: 90;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            width: min(360px, calc(100vw - 32px));
+            pointer-events: none;
+        }
+
+        .login-toast {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            border: 1px solid rgb(226 232 240);
+            border-radius: 12px;
+            background: #ffffff;
+            padding: 12px 14px;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+            pointer-events: auto;
+            transition: opacity 180ms ease, transform 180ms ease, max-height 180ms ease, margin 180ms ease, padding 180ms ease, border-width 180ms ease;
+        }
+
+        .login-toast[data-type="success"] {
+            border-color: rgb(167 243 208);
+            background: rgb(236 253 245);
+            color: rgb(6 95 70);
+        }
+
+        .login-toast[data-type="error"] {
+            border-color: rgb(254 205 211);
+            background: rgb(255 241 242);
+            color: rgb(159 18 57);
+        }
+
+        .login-toast[data-type="info"] {
+            border-color: rgb(199 210 254);
+            background: rgb(238 242 255);
+            color: rgb(67 56 202);
+        }
+
+        .login-toast-copy {
+            min-width: 0;
+            flex: 1;
+            font-size: 13px;
+            font-weight: 500;
+            line-height: 1.45;
+        }
+
+        .login-toast-dismiss {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 30px;
+            height: 30px;
+            flex-shrink: 0;
+            border-radius: 8px;
+            border: 1px solid transparent;
+            background: transparent;
+            color: currentColor;
+            opacity: 0.72;
+            transition: background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+        }
+
+        .login-toast-dismiss:hover,
+        .login-toast-dismiss:focus-visible {
+            opacity: 1;
+            outline: none;
+            background: rgba(255, 255, 255, 0.78);
+            border-color: rgba(226, 232, 240, 0.92);
+        }
+
+        .transient-hide {
+            opacity: 0 !important;
+            transform: translateY(-4px) !important;
+            max-height: 0 !important;
+            margin-top: 0 !important;
+            margin-bottom: 0 !important;
+            padding-top: 0 !important;
+            padding-bottom: 0 !important;
+            border-width: 0 !important;
+            pointer-events: none !important;
+        }
+
         @media (max-width: 767px) {
             body {
                 min-height: auto;
@@ -530,12 +616,12 @@
                 </div>
 
                 {% if notice %}
-                <div data-login-notice class="login-notice mb-6 rounded-[14px] border px-4 py-3 text-[13px] font-medium {% if notice_level == 'error' %}border-rose-200 bg-rose-50 text-rose-700{% else %}border-emerald-200 bg-emerald-50 text-emerald-700{% endif %}">
-                    <p class="min-w-0 flex-1 pr-1 leading-5">{{ notice }}</p>
-                    <button type="button" data-login-notice-close class="login-notice-close shrink-0" aria-label="Đóng thông báo">
-                        <i data-lucide="x" class="h-4 w-4"></i>
-                    </button>
-                </div>
+                <div
+                    hidden
+                    data-login-server-toast="true"
+                    data-toast-message="{{ notice | e }}"
+                    data-toast-level="{{ (notice_level or 'success') | e }}"
+                ></div>
                 {% endif %}
 
                 <form method="post" action="{{ form_action | default('/admin/login') }}">
@@ -617,13 +703,87 @@
             });
         }
 
-        const loginNotice = document.querySelector("[data-login-notice]");
-        const loginNoticeClose = document.querySelector("[data-login-notice-close]");
+        function initTransientToasts(root = document) {
+            root.querySelectorAll("[data-transient-notice]").forEach((notice) => {
+                if (!(notice instanceof HTMLElement) || notice.dataset.noticeReady === "true") {
+                    return;
+                }
+                notice.dataset.noticeReady = "true";
 
-        if (loginNotice && loginNoticeClose) {
-            loginNoticeClose.addEventListener("click", () => {
-                loginNotice.remove();
+                const dismiss = () => {
+                    if (notice.dataset.dismissed === "true") {
+                        return;
+                    }
+                    notice.dataset.dismissed = "true";
+                    notice.classList.add("transient-hide");
+                    window.setTimeout(() => {
+                        notice.remove();
+                    }, 220);
+                };
+
+                notice.querySelector("[data-notice-close]")?.addEventListener("click", dismiss);
+                const autoHideMs = Number(notice.getAttribute("data-notice-autohide") || 5000);
+                if (autoHideMs > 0) {
+                    window.setTimeout(dismiss, autoHideMs);
+                }
             });
+        }
+
+        function ensureLoginToastStack() {
+            let stack = document.getElementById("loginToastStack");
+            if (stack) {
+                return stack;
+            }
+            stack = document.createElement("div");
+            stack.id = "loginToastStack";
+            stack.className = "login-toast-stack";
+            stack.setAttribute("aria-live", "polite");
+            stack.setAttribute("aria-atomic", "false");
+            document.body.appendChild(stack);
+            return stack;
+        }
+
+        function normalizeLoginToastType(type) {
+            const normalized = String(type || "info").trim().toLowerCase();
+            if (normalized === "success" || normalized === "error" || normalized === "info") {
+                return normalized;
+            }
+            return "info";
+        }
+
+        function showLoginToast(message, type = "info") {
+            const text = String(message || "").trim();
+            if (!text) {
+                return;
+            }
+            const stack = ensureLoginToastStack();
+            const toast = document.createElement("div");
+            toast.className = "login-toast";
+            toast.dataset.type = normalizeLoginToastType(type);
+            toast.setAttribute("data-transient-notice", "");
+            toast.setAttribute("data-notice-autohide", "5000");
+            toast.innerHTML =
+                '<div class="login-toast-copy"></div>' +
+                '<button type="button" class="login-toast-dismiss" data-notice-close aria-label="Đóng thông báo"><i data-lucide="x" class="h-4 w-4" aria-hidden="true"></i></button>';
+            toast.querySelector(".login-toast-copy").textContent = text;
+            stack.appendChild(toast);
+            if (window.lucide) {
+                window.lucide.createIcons({ attrs: { "stroke-width": 1.75 } });
+            }
+            initTransientToasts(stack);
+        }
+
+        document.querySelectorAll("[data-login-server-toast=\"true\"]").forEach((marker) => {
+            const message = String(marker.getAttribute("data-toast-message") || "").trim();
+            const level = String(marker.getAttribute("data-toast-level") || "info").trim() || "info";
+            if (message) {
+                showLoginToast(message, level);
+            }
+            marker.remove();
+        });
+
+        if (window.lucide) {
+            window.lucide.createIcons({ attrs: { "stroke-width": 1.75 } });
         }
     </script>
 </body>

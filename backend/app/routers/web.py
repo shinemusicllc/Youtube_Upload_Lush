@@ -303,11 +303,11 @@ def _enforce_user_scope(current_user: AdminSessionUser, user_id: str) -> None:
         return
     user = store._find_user(user_id)
     if user.role == "manager" and user.id != current_user.id:
-        raise HTTPException(status_code=403, detail="Khong du quyen thao tac manager nay.")
+        raise HTTPException(status_code=403, detail="Không đủ quyền thao tác manager này.")
     if user.role == "admin":
-        raise HTTPException(status_code=403, detail="Manager khong duoc thao tac admin.")
+        raise HTTPException(status_code=403, detail="Manager không được thao tác admin.")
     if user.role == "user" and user.manager_name != current_user.username:
-        raise HTTPException(status_code=403, detail="Khong du quyen thao tac user khac manager.")
+        raise HTTPException(status_code=403, detail="Không đủ quyền thao tác user khác manager.")
 
 
 def _enforce_worker_scope(current_user: AdminSessionUser, worker_id: str, *, workspace_mode: str = "upload") -> None:
@@ -315,7 +315,7 @@ def _enforce_worker_scope(current_user: AdminSessionUser, worker_id: str, *, wor
         return
     worker = store._find_live_worker(worker_id) if workspace_mode == "live" else store._find_worker(worker_id)
     if worker.manager_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Khong du quyen thao tac BOT ngoai scope manager.")
+        raise HTTPException(status_code=403, detail="Không đủ quyền thao tác BOT ngoài scope manager.")
 
 
 def _enforce_channel_scope(current_user: AdminSessionUser, channel_id: str) -> None:
@@ -323,7 +323,7 @@ def _enforce_channel_scope(current_user: AdminSessionUser, channel_id: str) -> N
         return
     channel = store._find_channel(channel_id)
     if store._resolve_channel_manager_id(channel) != current_user.id:
-        raise HTTPException(status_code=403, detail="Khong du quyen thao tac kenh ngoai scope manager.")
+        raise HTTPException(status_code=403, detail="Không đủ quyền thao tác kênh ngoài scope manager.")
 
 
 def _enforce_job_scope(current_user: AdminSessionUser, job_id: str) -> None:
@@ -331,7 +331,7 @@ def _enforce_job_scope(current_user: AdminSessionUser, job_id: str) -> None:
         return
     job = store._find_job(job_id)
     if store._resolve_job_manager_id(job) != current_user.id:
-        raise HTTPException(status_code=403, detail="Khong du quyen thao tac job ngoai scope manager.")
+        raise HTTPException(status_code=403, detail="Không đủ quyền thao tác job ngoài scope manager.")
 
 
 def _scoped_job_ids(current_user: AdminSessionUser, *, channel_id: str | None = None) -> list[str]:
@@ -347,11 +347,11 @@ def _enforce_user_bot_mapping_scope(current_user: AdminSessionUser, user_id: str
     _enforce_user_scope(current_user, user_id)
     mapping = next((item for item in store.user_worker_links if int(item.get("id") or 0) == mapping_id), None)
     if mapping is None or str(mapping.get("user_id") or "").strip() != user_id:
-        raise HTTPException(status_code=403, detail="Khong du quyen thao tac mapping BOT nay.")
+        raise HTTPException(status_code=403, detail="Không đủ quyền thao tác mapping BOT này.")
 
 
 def _admin_forbidden_redirect(path: str = "/admin/user/index") -> RedirectResponse:
-    return _redirect_with_notice(path, "Khong du quyen truy cap khu vuc nay.", "error")
+    return _redirect_with_notice(path, "Không đủ quyền truy cập khu vực này.", "error")
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -782,7 +782,7 @@ async def google_oauth_callback(
     request.session.pop(GOOGLE_OAUTH_STATE_SESSION_KEY, None)
     return _redirect_with_notice(
         "/app",
-        "Luong OAuth da duoc tat tren nhanh hien tai. Hay dung '+ Them Kenh' de dang nhap bang Ubuntu Browser.",
+        "Luồng OAuth đã được tắt trên nhánh hiện tại. Hãy dùng '+ Thêm Kênh' để đăng nhập bằng Ubuntu Browser.",
         "error",
     )
 
@@ -982,7 +982,7 @@ async def admin_user_update(request: Request):
         )
         if current_admin.id == updated_user.id:
             set_admin_session_user(request, AdminSessionUser(**store._build_session_payload(updated_user)))
-        return _redirect_with_notice("/admin/user/index", "Da cap nhat user.", "success", workspace=workspace_mode)
+        return _redirect_with_notice("/admin/user/index", "Đã cập nhật user.", "success", workspace=workspace_mode)
     except (KeyError, ValueError) as exc:
         return _redirect_with_notice("/admin/user/index", str(exc), "error", workspace=workspace_mode)
 
@@ -1026,7 +1026,7 @@ async def admin_user_reset_page(
     require_admin_access(request)
     query = {
         "userId": userId,
-        "notice": notice or "Doi mat khau da duoc gop vao sua user.",
+        "notice": notice or "Đổi mật khẩu đã được gộp vào sửa user.",
         "notice_level": notice_level,
         "workspace": _resolve_admin_workspace(workspace),
     }
@@ -1042,7 +1042,7 @@ async def admin_user_reset_password(request: Request):
     if not user_id:
         return _redirect_with_notice(
             "/admin/user/index",
-            "Doi mat khau da duoc gop vao sua user.",
+            "Đổi mật khẩu đã được gộp vào sửa user.",
             "info",
             workspace=workspace_mode,
         )
@@ -1050,7 +1050,7 @@ async def admin_user_reset_password(request: Request):
         _enforce_user_scope(current_admin, user_id)
         return _redirect_with_notice(
             "/admin/user/edit",
-            "Doi mat khau da duoc gop vao sua user.",
+            "Đổi mật khẩu đã được gộp vào sửa user.",
             "info",
             userId=user_id,
             workspace=workspace_mode,
@@ -1068,7 +1068,7 @@ async def admin_user_delete(request: Request):
     _enforce_user_scope(current_admin, user_id)
     try:
         store.delete_admin_user(user_id)
-        return _redirect_with_notice("/admin/user/index", "Da xoa user.", "success", workspace=workspace_mode)
+        return _redirect_with_notice("/admin/user/index", "Đã xóa user.", "success", workspace=workspace_mode)
     except (KeyError, ValueError) as exc:
         return _redirect_with_notice("/admin/user/index", str(exc), "error", workspace=workspace_mode)
 
@@ -1103,7 +1103,7 @@ async def admin_manager_toggle(request: Request):
         )
         promote = _resolve_role_action(user_id, "manager", str(form.get("action") or "").strip() or None)
         store.update_role_manager(user_id, promote=promote, updated_by=current_admin.username)
-        return _redirect_with_notice("/admin/user/manager", "Da cap nhat quyen manager.", "success", workspace=workspace_mode)
+        return _redirect_with_notice("/admin/user/manager", "Đã cập nhật quyền manager.", "success", workspace=workspace_mode)
     except (KeyError, ValueError) as exc:
         return _redirect_with_notice("/admin/user/manager", str(exc), "error", workspace=workspace_mode)
 
@@ -1138,7 +1138,7 @@ async def admin_admin_toggle(request: Request):
         )
         promote = _resolve_role_action(user_id, "admin", str(form.get("action") or "").strip() or None)
         store.update_role_admin(user_id, promote=promote, updated_by=current_admin.username)
-        return _redirect_with_notice("/admin/user/admins", "Da cap nhat quyen admin.", "success", workspace=workspace_mode)
+        return _redirect_with_notice("/admin/user/admins", "Đã cập nhật quyền admin.", "success", workspace=workspace_mode)
     except (KeyError, ValueError) as exc:
         return _redirect_with_notice("/admin/user/admins", str(exc), "error", workspace=workspace_mode)
 
@@ -1274,7 +1274,7 @@ async def admin_bot_assignment(
     if current_admin.role == "manager" and not selected_manager_ids:
         selected_manager_ids = [current_admin.id]
     return _redirect_bot_page_with_scope(
-        notice or "Cap phat BOT da duoc gop vao Danh sach BOT.",
+        notice or "Cấp phát BOT đã được gộp vào Danh sách BOT.",
         notice_level or "info",
         manager_ids=selected_manager_ids,
         user_id=userId,
@@ -1300,7 +1300,7 @@ async def admin_bot_assign(request: Request):
         if user_id:
             _enforce_user_scope(current_admin, user_id)
         return _redirect_bot_page_with_scope(
-            "Man cap phat BOT cu da duoc gop vao Danh sach BOT.",
+            "Màn cấp phát BOT cũ đã được gộp vào Danh sách BOT.",
             "info",
             manager_ids=scoped_manager_ids,
             user_id=redirect_user_id,
@@ -1383,7 +1383,7 @@ async def admin_bot_update(request: Request):
             updated_by=current_admin.username,
         )
         return _redirect_bot_page_with_scope(
-            "Da cap nhat BOT.",
+            "Đã cập nhật BOT.",
             "success",
             manager_ids=return_manager_ids,
             user_id=return_user_id,
@@ -1445,8 +1445,8 @@ async def admin_bot_create(request: Request):
         )
         return _redirect_bot_page_with_scope(
             (
-                f"Da tao yeu cau cai {'BOT live' if workspace_mode == 'live' else 'BOT'} {task['worker_id']} tren {task['vps_ip']}. "
-                "Control-plane dang xu ly va bang BOT se tu cap nhat khi worker ket noi lai."
+                f"Đã tạo yêu cầu cài {'BOT live' if workspace_mode == 'live' else 'BOT'} {task['worker_id']} trên {task['vps_ip']}. "
+                "Control-plane đang xử lý và bảng BOT sẽ tự cập nhật khi worker kết nối lại."
             ),
             "success",
             manager_ids=return_manager_ids,
@@ -1508,8 +1508,8 @@ async def admin_bot_delete(request: Request):
                 requested_role=current_admin.role,
             )
             notice = (
-                f"Da bat dau go {'BOT live' if workspace_mode == 'live' else 'BOT'} {worker_id} khoi VPS {task['vps_ip']} bang credential da luu. "
-                "BOT se bien mat khoi danh sach sau khi service va du lieu tren may duoc don xong."
+                f"Đã bắt đầu gỡ {'BOT live' if workspace_mode == 'live' else 'BOT'} {worker_id} khỏi VPS {task['vps_ip']} bằng credential đã lưu. "
+                "BOT sẽ biến mất khỏi danh sách sau khi service và dữ liệu trên máy được dọn xong."
             )
         elif str(worker.status or "").strip() == "offline":
             if workspace_mode == "live":
@@ -1517,13 +1517,13 @@ async def admin_bot_delete(request: Request):
             else:
                 store.delete_bot_without_ssh(worker_id, deleted_by=current_admin.username)
             notice = (
-                f"Da xoa {'BOT live' if workspace_mode == 'live' else 'BOT'} {worker_id} khoi he thong. "
-                "BOT nay dang offline va khong co credential da luu, nen du lieu con lai tren VPS can don thu cong neu may van con chay."
+                f"Đã xóa {'BOT live' if workspace_mode == 'live' else 'BOT'} {worker_id} khỏi hệ thống. "
+                "BOT này đang offline và không có credential đã lưu, nên dữ liệu còn lại trên VPS cần dọn thủ công nếu máy vẫn còn chạy."
             )
         else:
             raise WorkerBootstrapError(
-                f"{'BOT live' if workspace_mode == 'live' else 'BOT'} nay chua co credential da luu de go tu dong. "
-                "Hay go thu cong tren VPS hoac them lai BOT roi xoa lai."
+                f"{'BOT live' if workspace_mode == 'live' else 'BOT'} này chưa có credential đã lưu để gỡ tự động. "
+                "Hãy gỡ thủ công trên VPS hoặc thêm lại BOT rồi xóa lại."
             )
         return _redirect_bot_page_with_scope(
             notice,
@@ -1554,7 +1554,7 @@ async def admin_bot_update_thread(request: Request):
             _enforce_worker_scope(current_admin, worker_id, workspace_mode=workspace_mode)
         return _redirect_with_notice(
             "/admin/ManagerBOT/index",
-            "Thiet lap luong BOT cu da duoc bo khoi UI dieu phoi hien tai.",
+            "Thiết lập luồng BOT cũ đã được bỏ khỏi UI điều phối hiện tại.",
             "info",
             workspace=workspace_mode,
         )

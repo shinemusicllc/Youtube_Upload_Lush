@@ -1,16 +1,8 @@
 {% if dashboard.notice %}
 <div
-    class="notice {% if dashboard.notice_level == 'error' %}notice-error{% else %}notice-success{% endif %}"
-    data-transient-notice
-    data-notice-autohide="5000"
-    data-server-notice="true"
->
-    <i data-lucide="{% if dashboard.notice_level == 'error' %}triangle-alert{% else %}circle-check{% endif %}" class="h-4 w-4 shrink-0"></i>
-    <div class="min-w-0 flex-1">
-        <p class="font-medium">{{ dashboard.notice }}</p>
-    </div>
-    <button type="button" class="notice-close" data-notice-close aria-label="Đóng thông báo">
-        <i data-lucide="x" class="h-4 w-4" aria-hidden="true"></i>
-    </button>
-</div>
+    hidden
+    data-server-toast="true"
+    data-toast-message="{{ dashboard.notice | e }}"
+    data-toast-level="{{ (dashboard.notice_level or 'success') | e }}"
+></div>
 {% endif %}

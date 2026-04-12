@@ -549,8 +549,6 @@ document.addEventListener("DOMContentLoaded", function () {
         console.error(error);
         if (typeof window.showAdminToast === "function") {
           window.showAdminToast("Không thể xóa trang hiện tại. Hãy thử lại.", "error");
-        } else {
-          window.alert("Không thể xóa trang hiện tại. Hãy thử lại.");
         }
         deletePageButton.innerHTML = originalHtml;
         applyTableState();

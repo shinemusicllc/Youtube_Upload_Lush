@@ -1611,17 +1611,32 @@
         return stack;
       }
 
-      window.showAdminToast = function (message, type) {
+      function normalizeAdminToastType(type) {
+        const normalized = String(type || 'info').trim().toLowerCase();
+        if (normalized === 'success' || normalized === 'error' || normalized === 'info') {
+          return normalized;
+        }
+        return 'info';
+      }
+
+      window.showAdminToast = function (message, type, options) {
+        const text = String(message || '').trim();
+        if (!text) {
+          return;
+        }
         const stack = ensureAdminToastStack();
         const toast = document.createElement('div');
         toast.className = 'admin-toast';
-        toast.dataset.type = type || 'info';
+        toast.dataset.type = normalizeAdminToastType(type);
         toast.setAttribute('data-transient-notice', '');
         toast.setAttribute('data-notice-autohide', '5000');
+        if (options && options.serverNotice) {
+          toast.setAttribute('data-server-notice', 'true');
+        }
         toast.innerHTML =
           '<div class="admin-toast-copy"></div>' +
           '<button type="button" class="notice-close" data-notice-close aria-label="Đóng thông báo"><i data-lucide="x" class="h-4 w-4" aria-hidden="true"></i></button>';
-        toast.querySelector('.admin-toast-copy').textContent = String(message || '');
+        toast.querySelector('.admin-toast-copy').textContent = text;
         stack.appendChild(toast);
         if (window.lucide) {
           window.lucide.createIcons({ attrs: { 'stroke-width': 1.75 } });
@@ -1629,8 +1644,25 @@
         initTransientNotices(stack);
       };
 
+      function hydrateServerToastMarkers(root) {
+        let shown = false;
+        (root || document).querySelectorAll('[data-server-toast="true"]').forEach(function (marker) {
+          const message = String(marker.getAttribute('data-toast-message') || '').trim();
+          if (!message) {
+            marker.remove();
+            return;
+          }
+          const level = String(marker.getAttribute('data-toast-level') || 'info').trim() || 'info';
+          shown = true;
+          window.showAdminToast(message, level, { serverNotice: true });
+          marker.remove();
+        });
+        return shown;
+      }
+
+      const hadServerToast = hydrateServerToastMarkers(document);
       initTransientNotices(document);
-      if (!document.querySelector('[data-server-notice="true"]')) {
+      if (!hadServerToast && !document.querySelector('[data-server-notice="true"]')) {
         clearTransientNoticeParams();
       }
 

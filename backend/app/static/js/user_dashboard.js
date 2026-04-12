@@ -214,7 +214,7 @@
     node.classList.add("transient-hide");
     window.setTimeout(() => {
       node.remove();
-      if (node.id === "dashboardNotice") {
+      if (node.getAttribute("data-server-notice") === "true") {
         clearTransientNoticeParams();
       }
     }, 220);
@@ -240,9 +240,10 @@
 
   const ensureToastStack = () => document.getElementById("toastStack");
 
-  const showToast = (message, type = "info") => {
+  const showToast = (message, type = "info", options = {}) => {
     const stack = ensureToastStack();
-    if (!(stack instanceof HTMLElement) || !message) return;
+    const text = String(message || "").trim();
+    if (!(stack instanceof HTMLElement) || !text) return;
 
     if (type === "info") {
       stack.querySelectorAll('.app-toast[data-type="info"]').forEach((node) => {
@@ -255,10 +256,13 @@
     toast.dataset.type = type;
     toast.setAttribute("data-transient-notice", "");
     toast.setAttribute("data-notice-autohide", "5000");
+    if (options.serverNotice) {
+      toast.setAttribute("data-server-notice", "true");
+    }
     toast.innerHTML =
       '<div class="app-toast-copy"></div>' +
       '<button type="button" class="app-toast-dismiss" data-notice-close aria-label="Đóng thông báo"><i data-lucide="x" class="h-4 w-4" aria-hidden="true"></i></button>';
-    toast.querySelector(".app-toast-copy").textContent = String(message);
+    toast.querySelector(".app-toast-copy").textContent = text;
     stack.appendChild(toast);
     if (window.lucide) {
       window.lucide.createIcons({ attrs: { "stroke-width": 1.75 } });
@@ -950,8 +954,8 @@
     if (!renderSummaryNode) return;
     if (totalCount <= 0) {
       renderSummaryNode.textContent = renderSearchInput?.value.trim()
-        ? "Khong tim thay job nao phu hop"
-        : "Chua co job nao trong hang doi";
+        ? "Không tìm thấy job nào phù hợp"
+        : "Chưa có job nào trong hàng đợi";
       return;
     }
 
@@ -966,7 +970,7 @@
     deleteVisibleJobsButton.disabled = disabled;
     deleteVisibleJobsButton.dataset.visibleCount = String(pageJobs.length);
     deleteVisibleJobsButton.title = disabled
-      ? "Khong co job nao de xoa tren trang nay"
+      ? "Không có job nào để xóa trên trang này"
       : `Xóa nhanh ${pageJobs.length} job đang hiển thị`;
     deleteVisibleJobsButton.classList.toggle("opacity-80", totalCount > 0 && !pageJobs.length);
   };
@@ -2634,6 +2638,23 @@
     window.history.replaceState({}, document.title, nextUrl);
   };
 
+  const hydrateServerToastMarkers = (root = document) => {
+    let shown = false;
+    root.querySelectorAll('[data-server-toast="true"]').forEach((marker) => {
+      if (!(marker instanceof HTMLElement)) return;
+      const message = String(marker.getAttribute("data-toast-message") || "").trim();
+      if (!message) {
+        marker.remove();
+        return;
+      }
+      const level = String(marker.getAttribute("data-toast-level") || "info").trim() || "info";
+      shown = true;
+      showToast(message, level, { serverNotice: true });
+      marker.remove();
+    });
+    return shown;
+  };
+
   const initJobPreviewVideos = () => {
     document.querySelectorAll(".job-preview-media[src]").forEach((node) => {
       if (!(node instanceof HTMLVideoElement)) return;
@@ -2679,8 +2700,9 @@
   initConnectedChannelSearch();
   initSearch();
   renderRenderTable();
+  const hadServerToast = hydrateServerToastMarkers();
   initTransientNotices();
-  if (!document.getElementById("dashboardNotice")) {
+  if (!hadServerToast && !document.querySelector('[data-server-notice="true"]')) {
     clearTransientNoticeParams();
   }
   document.addEventListener("visibilitychange", () => {

@@ -39,7 +39,7 @@ def _parse_schedule_time(value: str | None) -> datetime | None:
             return datetime.strptime(cleaned, fmt)
         except ValueError:
             continue
-    raise HTTPException(status_code=422, detail="schedule_time khong dung dinh dang ho tro.")
+    raise HTTPException(status_code=422, detail="schedule_time không đúng định dạng hỗ trợ.")
 
 
 def _is_supported_google_drive_url(value: str | None) -> bool:
@@ -58,13 +58,13 @@ def _is_supported_google_drive_url(value: str | None) -> bool:
 def _validate_job_title(value: str) -> str:
     cleaned = re.sub(r"\s+", " ", str(value or "").strip())
     if not cleaned:
-        raise HTTPException(status_code=422, detail="Ten video la bat buoc.")
+        raise HTTPException(status_code=422, detail="Tên video là bắt buộc.")
     if len(cleaned) > 100:
-        raise HTTPException(status_code=422, detail="Ten video chi duoc toi da 100 ky tu.")
+        raise HTTPException(status_code=422, detail="Tên video chỉ được tối đa 100 ký tự.")
     if not JOB_TITLE_ALLOWED_PATTERN.fullmatch(cleaned):
         raise HTTPException(
             status_code=422,
-            detail="Ten video chi duoc dung chu cai khong dau, so va khoang trang.",
+            detail="Tên video chỉ được dùng chữ cái không dấu, số và khoảng trắng.",
         )
     return cleaned
 
@@ -93,9 +93,9 @@ async def get_user_job_preview(request: Request, job_id: str, slot: str):
             slot=slot,
         )
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Khong tim thay asset preview.") from exc
+        raise HTTPException(status_code=404, detail="Không tìm thấy asset preview.") from exc
     except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="File preview khong con ton tai.") from exc
+        raise HTTPException(status_code=404, detail="File preview không còn tồn tại.") from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -114,9 +114,9 @@ async def get_user_job_preview_thumbnail(request: Request, job_id: str):
             job_id=job_id,
         )
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Khong tim thay job preview.") from exc
+        raise HTTPException(status_code=404, detail="Không tìm thấy job preview.") from exc
     except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="Preview image khong con ton tai.") from exc
+        raise HTTPException(status_code=404, detail="Preview image không còn tồn tại.") from exc
 
     return FileResponse(
         path=payload["path"],
@@ -130,7 +130,7 @@ async def start_user_oauth(request: Request):
     _current_app_user_id(request)
     raise HTTPException(
         status_code=410,
-        detail="Luong OAuth da duoc tat. Hay dung '+ Them Kenh' de dang nhap bang Ubuntu Browser.",
+        detail="Luồng OAuth đã được tắt. Hãy dùng '+ Thêm Kênh' để đăng nhập bằng Ubuntu Browser.",
     )
 
 
@@ -153,7 +153,7 @@ async def get_user_browser_session(request: Request, session_id: str):
     try:
         return store.get_browser_session(_current_app_user_id(request), session_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Khong tim thay browser session.") from exc
+        raise HTTPException(status_code=404, detail="Không tìm thấy browser session.") from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -163,7 +163,7 @@ async def confirm_user_browser_session(request: Request, session_id: str):
     try:
         return store.confirm_browser_session(_current_app_user_id(request), session_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Khong tim thay browser session.") from exc
+        raise HTTPException(status_code=404, detail="Không tìm thấy browser session.") from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -173,7 +173,7 @@ async def close_user_browser_session(request: Request, session_id: str):
     try:
         return store.close_browser_session(_current_app_user_id(request), session_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Khong tim thay browser session.") from exc
+        raise HTTPException(status_code=404, detail="Không tìm thấy browser session.") from exc
 
 
 @router.post("/user/uploads/sessions")
@@ -189,7 +189,7 @@ async def get_upload_session(request: Request, session_id: str):
     try:
         return store.get_upload_session(_current_app_user_id(request), session_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Khong tim thay upload session.") from exc
+        raise HTTPException(status_code=404, detail="Không tìm thấy upload session.") from exc
 
 
 @router.patch("/user/uploads/sessions/{session_id}")
@@ -198,12 +198,12 @@ async def append_upload_session_chunk(request: Request, session_id: str):
     try:
         offset = int(offset_header)
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail="x-upload-offset khong hop le.") from exc
+        raise HTTPException(status_code=422, detail="x-upload-offset không hợp lệ.") from exc
     body = await request.body()
     try:
         return store.append_upload_chunk(_current_app_user_id(request), session_id, offset, body)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Khong tim thay upload session.") from exc
+        raise HTTPException(status_code=404, detail="Không tìm thấy upload session.") from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -213,7 +213,7 @@ async def delete_upload_session(request: Request, session_id: str):
     try:
         store.abort_upload_session(_current_app_user_id(request), session_id)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Khong tim thay upload session.") from exc
+        raise HTTPException(status_code=404, detail="Không tìm thấy upload session.") from exc
     return {"status": "deleted", "session_id": session_id}
 
 
@@ -276,7 +276,7 @@ async def create_user_job(
     normalized_visibility = "draft"
 
     if not channel_id.strip():
-        raise HTTPException(status_code=422, detail="channel_id la bat buoc.")
+        raise HTTPException(status_code=422, detail="channel_id là bắt buộc.")
     if not (video_loop_url and video_loop_url.strip()) and not saved_files.get("video_loop") and not uploaded_asset_ids.get("video_loop"):
         raise HTTPException(status_code=422, detail="Can nhap video loop hoac upload file video loop.")
     for label, url_value, saved_file, uploaded_asset_id in (
@@ -289,7 +289,7 @@ async def create_user_job(
         if not cleaned_url or saved_file or uploaded_asset_id:
             continue
         if not _is_supported_google_drive_url(cleaned_url):
-            raise HTTPException(status_code=422, detail=f"{label} chi nhan link Google Drive hop le.")
+            raise HTTPException(status_code=422, detail=f"{label} chỉ nhận link Google Drive hợp lệ.")
 
     payload = JobCreatePayload(
         channel_id=channel_id,
@@ -319,7 +319,7 @@ async def cancel_user_job(request: Request, job_id: str):
     try:
         return store.cancel_job(job_id, user_id=_current_app_user_id(request))
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Khong tim thay job.") from exc
+        raise HTTPException(status_code=404, detail="Không tìm thấy job.") from exc
 
 
 @router.delete("/user/jobs/{job_id}")
@@ -327,7 +327,7 @@ async def delete_user_job(request: Request, job_id: str):
     try:
         store.delete_job(job_id, user_id=_current_app_user_id(request))
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Khong tim thay job.") from exc
+        raise HTTPException(status_code=404, detail="Không tìm thấy job.") from exc
     return {"status": "deleted", "job_id": job_id}
 
 
@@ -350,7 +350,7 @@ async def delete_user_channel(request: Request, channel_id: str):
     try:
         store.delete_user_connected_channel(channel_id, user_id=_current_app_user_id(request))
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Khong tim thay kenh.") from exc
+        raise HTTPException(status_code=404, detail="Không tìm thấy kênh.") from exc
     except ValueError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     return {"status": "deleted", "channel_id": channel_id}

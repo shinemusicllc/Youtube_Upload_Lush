@@ -997,28 +997,12 @@
     <div class="min-w-0 flex-1 overflow-y-auto w-full pb-16">
       <div class="min-w-0 w-full px-8 py-6 space-y-6">
         {% if dashboard.notice %}
-        <div id="dashboardNotice" data-transient-notice data-notice-autohide="5000" class="elevated-card px-5 py-4 border transition-all duration-200 {% if dashboard.notice_level == 'error' %}border-rose-200 bg-rose-50/80{% else %}border-emerald-200 bg-emerald-50/80{% endif %}">
-          <div class="flex items-start gap-3">
-            <div class="mt-0.5 {% if dashboard.notice_level == 'error' %}text-rose-600{% else %}text-emerald-600{% endif %}">
-              <i data-lucide="{% if dashboard.notice_level == 'error' %}shield-alert{% else %}circle-check{% endif %}" class="w-4 h-4"></i>
-            </div>
-            <div class="min-w-0 flex-1">
-              <p class="text-[13px] font-semibold {% if dashboard.notice_level == 'error' %}text-rose-700{% else %}text-emerald-700{% endif %}">
-                {{ dashboard.notice | e }}
-              </p>
-              <p class="mt-1 text-[11px] {% if dashboard.notice_level == 'error' %}text-rose-600{% else %}text-emerald-600{% endif %}">
-                {% if dashboard.notice_level == 'error' %}
-                Th&#244;ng b&#225;o s&#7869; t&#7921; &#7849;n sau v&#224;i gi&#226;y. B&#7841;n c&#361;ng c&#243; th&#7875; &#273;&#243;ng ngay t&#7841;i &#273;&#226;y.
-                {% else %}
-                OAuth callback &#273;&#227; &#273;&#432;&#7907;c backend x&#7917; l&#253; v&#224; &#273;&#7891;ng b&#7897; v&#224;o danh s&#225;ch k&#234;nh hi&#7879;n t&#7841;i.
-                {% endif %}
-              </p>
-            </div>
-            <button type="button" data-notice-close class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-transparent text-slate-400 hover:border-slate-200 hover:bg-white/70 hover:text-slate-700" aria-label="&#272;&#243;ng th&#244;ng b&#225;o">
-              <i data-lucide="x" class="w-4 h-4"></i>
-            </button>
-          </div>
-        </div>
+        <div
+          hidden
+          data-server-toast="true"
+          data-toast-message="{{ dashboard.notice | e }}"
+          data-toast-level="{{ (dashboard.notice_level or 'success') | e }}"
+        ></div>
         {% endif %}
 
         <div class="elevated-card grid grid-cols-5 divide-x divide-slate-200/70 overflow-hidden">

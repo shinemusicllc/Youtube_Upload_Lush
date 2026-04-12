@@ -299,7 +299,7 @@ class AppStore:
         if not normalized:
             return ""
         if not re.fullmatch(r"-?\d+", normalized):
-            raise ValueError("Telegram ID phai la chat_id dang so.")
+            raise ValueError("Telegram ID phải là chat_id dạng số.")
         return normalized
 
     def __init__(self) -> None:
@@ -403,8 +403,8 @@ class AppStore:
             ),
         ]
         self.user_worker_links: list[dict[str, Any]] = [
-            {"id": 1, "user_id": "user-1", "worker_id": "worker-01", "threads": 2, "note": "BOT chÃ­nh"},
-            {"id": 2, "user_id": "user-1", "worker_id": "worker-02", "threads": 1, "note": "BOT phá»¥"},
+            {"id": 1, "user_id": "user-1", "worker_id": "worker-01", "threads": 2, "note": "BOT chính"},
+            {"id": 2, "user_id": "user-1", "worker_id": "worker-02", "threads": 1, "note": "BOT phụ"},
         ]
         self.live_workers = self._seed_live_workers(now=now) if live_demo_seed_enabled else []
         self.live_user_worker_links: list[dict[str, Any]] = (
@@ -668,7 +668,7 @@ class AppStore:
     def _hash_password(cls, password: str) -> str:
         normalized = password.strip()
         if not normalized:
-            raise ValueError("Password khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.")
+            raise ValueError("Password không được để trống.")
         salt = secrets.token_hex(16)
         iterations = cls._password_iterations()
         digest = hashlib.pbkdf2_hmac(
@@ -732,7 +732,7 @@ class AppStore:
                 meta = self._user_meta_record(user.id)
                 password_hash = str(meta.get("password_hash") or "").strip()
                 if not password_hash:
-                    raise ValueError(f"User {user.username} chÆ°a cÃ³ password_hash.")
+                    raise ValueError(f"User {user.username} chưa có password_hash.")
                 connection.execute(
                     """
                     INSERT INTO auth_users (
@@ -1791,11 +1791,11 @@ class AppStore:
     def _telegram_api_payload(self, method: str, *, params: dict[str, str] | None = None) -> dict[str, Any]:
         bot_token = self._telegram_alert_bot_token()
         if not bot_token:
-            raise ValueError("Bot Telegram thong bao chua duoc cau hinh.")
+            raise ValueError("Bot Telegram thông báo chưa được cấu hình.")
 
         normalized_method = str(method or "").strip().strip("/")
         if not normalized_method:
-            raise ValueError("Telegram API method khong hop le.")
+            raise ValueError("Telegram API method không hợp lệ.")
 
         request_url = f"https://api.telegram.org/bot{bot_token}/{normalized_method}"
         if params:
@@ -1810,7 +1810,7 @@ class AppStore:
             with urlopen(request, timeout=10) as response:
                 payload = json.loads(response.read().decode("utf-8"))
         except Exception as exc:
-            raise ValueError("Khong the ket noi Telegram Bot API.") from exc
+            raise ValueError("Không thể kết nối Telegram Bot API.") from exc
 
         if not payload.get("ok"):
             description = str(payload.get("description") or "").strip() or "Telegram Bot API tra ve loi."
@@ -1823,7 +1823,7 @@ class AppStore:
         username = str(result.get("username") or "").strip()
         first_name = str(result.get("first_name") or "").strip()
         if not username:
-            raise ValueError("Bot Telegram chua co username cong khai.")
+            raise ValueError("Bot Telegram chưa có username công khai.")
         return {
             "username": username,
             "display_name": first_name or username,
@@ -1882,18 +1882,18 @@ class AppStore:
     def get_telegram_link_request_status(self, user_id: str, code: str) -> dict[str, Any]:
         cleaned_code = str(code or "").strip()
         if not cleaned_code:
-            raise ValueError("Thieu ma lien ket Telegram.")
+            raise ValueError("Thiếu mã liên kết Telegram.")
 
         now = self._now(trim=False)
         self._cleanup_expired_telegram_link_requests(now=now)
         request_state = self.telegram_link_requests.get(cleaned_code)
         if request_state is None or str(request_state.get("user_id") or "").strip() != str(user_id or "").strip():
-            raise KeyError("Ma lien ket Telegram da het han hoac khong ton tai.")
+            raise KeyError("Mã liên kết Telegram đã hết hạn hoặc không tồn tại.")
 
         expires_at = request_state.get("expires_at")
         if isinstance(expires_at, datetime) and expires_at <= now:
             self.telegram_link_requests.pop(cleaned_code, None)
-            raise ValueError("Ma lien ket Telegram da het han. Hay tao lai ma moi.")
+            raise ValueError("Mã liên kết Telegram đã hết hạn. Hãy tạo lại mã mới.")
 
         if not request_state.get("chat_id"):
             payload = self._telegram_api_payload("getUpdates", params={"limit": "100"})
@@ -2186,7 +2186,7 @@ class AppStore:
 
             mapping = dict(raw_mapping)
             mapping["threads"] = self._fixed_assignment_threads()
-            mapping["note"] = str(mapping.get("note") or "").strip() or "VPS duoc cap"
+            mapping["note"] = str(mapping.get("note") or "").strip() or "VPS được cấp"
             normalized_links.append(mapping)
             seen_pairs.add(pair)
             if mapping != raw_mapping:
@@ -2785,16 +2785,16 @@ class AppStore:
     def assert_admin_session_user(self, user_id: str, role: str) -> None:
         user = self._find_user(user_id)
         if user.role not in {"admin", "manager"}:
-            raise ValueError("TÃ i khoáº£n khÃ´ng Ä‘Æ°á»£c phÃ©p vÃ o trang quáº£n trá»‹.")
+            raise ValueError("Tài khoản không được phép vào trang quản trị.")
         if user.role != role:
-            raise ValueError("Role session khong con hop le.")
+            raise ValueError("Role session không còn hợp lệ.")
 
     def assert_app_session_user(self, user_id: str, role: str) -> None:
         user = self._find_user(user_id)
         if user.role not in {"user", "manager", "admin"}:
-            raise ValueError("Tai khoan khong duoc phep vao workspace.")
+            raise ValueError("Tài khoản không được phép vào workspace.")
         if user.role != role:
-            raise ValueError("Role session khong con hop le.")
+            raise ValueError("Role session không còn hợp lệ.")
 
     @staticmethod
     def _format_datetime(value: datetime | None, fmt: str = "%H:%M %d/%m/%y") -> str:
@@ -3263,7 +3263,7 @@ class AppStore:
 
     def _authenticate_worker(self, worker_id: str, shared_secret: str) -> WorkerRecord:
         if shared_secret != self.get_worker_shared_secret():
-            raise ValueError("Worker shared secret khÃ´ng há»£p lá»‡.")
+            raise ValueError("Worker shared secret không hợp lệ.")
         self._ensure_worker_not_deleted(worker_id)
         return self._find_worker(worker_id)
 
@@ -3393,7 +3393,7 @@ class AppStore:
         vps_ip = ""
         with self._worker_state_lock:
             if payload.shared_secret != self.get_worker_shared_secret():
-                raise ValueError("Worker shared secret khÃ´ng há»£p lá»‡.")
+                raise ValueError("Worker shared secret không hợp lệ.")
             self._ensure_worker_not_deleted(payload.worker_id)
 
             now = self._now(trim=False)
@@ -3624,11 +3624,11 @@ class AppStore:
     @staticmethod
     def _ensure_worker_job_can_continue(job: RenderJobRecord) -> None:
         if job.status == "cancelled":
-            raise ValueError("Job da bi huy tren control plane.")
+            raise ValueError("Job đã bị hủy trên control plane.")
         if job.status == "completed":
-            raise ValueError("Job da hoan tat tren control plane.")
+            raise ValueError("Job đã hoàn tất trên control plane.")
         if job.status == "error":
-            raise ValueError("Job da dung voi trang thai loi tren control plane.")
+            raise ValueError("Job đã dừng với trạng thái lỗi trên control plane.")
 
     def update_worker_job_progress(
         self,
@@ -4404,7 +4404,7 @@ class AppStore:
     def _require_workspace_user(self, user_id: str) -> UserSummary:
         user = self._find_user(user_id)
         if user.role not in {"user", "manager", "admin"}:
-            raise ValueError("Tai khoan khong duoc phep vao workspace user.")
+            raise ValueError("Tài khoản không được phép vào workspace user.")
         return user
 
     def _workspace_workers_for_user(self, user: UserSummary | str) -> list[WorkerRecord]:
@@ -4558,11 +4558,11 @@ class AppStore:
             worker = next((item for item in workers if item.id == normalized_worker_id), None)
             if worker is not None:
                 return worker
-            raise ValueError("VPS duoc chon khong nam trong danh sach da cap cho user.")
+            raise ValueError("VPS được chọn không nằm trong danh sách đã cấp cho user.")
         worker = workers[0] if workers else None
         if worker is not None:
             return worker
-        raise ValueError("User nay chua duoc cap VPS render/upload.")
+        raise ValueError("User này chưa được cấp VPS render/upload.")
 
     def _channel_matches_user_worker(self, user: UserSummary, channel: ChannelRecord) -> bool:
         assigned_worker_ids = {worker.id for worker in self._workspace_workers_for_user(user)}
@@ -4573,15 +4573,15 @@ class AppStore:
     def _assert_channel_matches_user_worker(self, user: UserSummary, channel: ChannelRecord) -> WorkerRecord:
         assigned_workers = self._workspace_workers_for_user(user)
         if not assigned_workers:
-            raise ValueError("User nay chua duoc cap VPS render/upload.")
+            raise ValueError("User này chưa được cấp VPS render/upload.")
         worker = next((item for item in assigned_workers if item.id == channel.worker_id), None)
         if worker is not None:
             return worker
         assigned_label = ", ".join(self._resolve_worker_display_name(worker.id) for worker in assigned_workers)
         channel_label = self._resolve_channel_worker_display_name(channel)
         raise ValueError(
-            f"Kenh nay dang gan voi VPS {channel_label}. User {user.username} hien duoc cap cac VPS: {assigned_label}. "
-            "Hay reconnect kenh tren mot VPS da duoc cap truoc khi render/upload."
+            f"Kênh này đang gắn với VPS {channel_label}. User {user.username} hiện được cấp các VPS: {assigned_label}. "
+            "Hãy reconnect kênh trên một VPS đã được cấp trước khi render/upload."
         )
 
     def _can_assign_channel_to_user(
@@ -4610,9 +4610,9 @@ class AppStore:
     def _assert_worker_browser_ready(self, worker: WorkerRecord) -> None:
         worker_label = self._resolve_worker_display_name(worker.id)
         if not worker.browser_session_enabled:
-            raise ValueError(f"VPS {worker_label} chua bat browser session.")
+            raise ValueError(f"VPS {worker_label} chưa bật browser session.")
         if not str(worker.public_base_url or "").strip():
-            raise ValueError(f"VPS {worker_label} chua khai bao public_base_url cho noVNC.")
+            raise ValueError(f"VPS {worker_label} chưa khai báo public_base_url cho noVNC.")
 
     def _ensure_channel_user_link(self, *, channel_id: str, user_id: str) -> None:
         exists = next(
@@ -4717,7 +4717,7 @@ class AppStore:
             if candidate not in taken:
                 return candidate
         raise ValueError(
-            f"Da het pool port browser session tren VPS {self._resolve_worker_display_name(worker.id)}."
+            f"Đã hết pool port browser session trên VPS {self._resolve_worker_display_name(worker.id)}."
         )
 
     def _sync_browser_session_details(self, session: BrowserSessionRecord) -> BrowserSessionRecord:
@@ -5093,7 +5093,7 @@ class AppStore:
         worker = self._authenticate_worker(payload.worker_id, payload.shared_secret)
         session = self._find_browser_session(session_id)
         if session.target_worker_id != worker.id:
-            raise ValueError("Browser session dang thuoc VPS khac.")
+            raise ValueError("Browser session đang thuộc VPS khác.")
 
         if not (
             session.status in {"closed", "expired"}
@@ -5733,7 +5733,7 @@ class AppStore:
                 self._release_worker_job_claim(
                     job,
                     reset_status="pending",
-                    message=f"{reason} Job duoc dua lai hang cho vi upload moi bat dau.",
+                    message=f"{reason} Job được đưa lại hàng chờ vì upload mới bắt đầu.",
                 )
                 return
             job.status = "error"
@@ -5745,14 +5745,14 @@ class AppStore:
             job.render_progress = max(int(job.render_progress or 0), 100)
             job.upload_progress = max(int(job.upload_progress or 0), min(max(job.progress, 0), 99))
             job.error_message = (
-                f"{reason} Job dang o pha upload da tien xa, "
-                "nen duoc danh dau loi de tranh upload trung video."
+                f"{reason} Job đang ở pha upload đã tiến xa, "
+                "nên được đánh dấu lỗi để tránh upload trùng video."
             )
             return
         self._release_worker_job_claim(
             job,
             reset_status="pending",
-            message=f"{reason} Job duoc dua lai hang cho de worker nhan lai sau khi ket noi on dinh.",
+            message=f"{reason} Job được đưa lại hàng chờ để worker nhận lại sau khi kết nối ổn định.",
         )
 
     def _reconcile_expired_worker_jobs(self, *, now: datetime) -> bool:
@@ -5768,7 +5768,7 @@ class AppStore:
             self._handle_interrupted_worker_job(
                 job,
                 now=now,
-                reason="Control-plane khong nhan duoc heartbeat/progress cua worker trong thoi gian grace.",
+                reason="Control-plane không nhận được heartbeat/progress của worker trong thời gian grace.",
             )
             changed = True
         if changed:
@@ -5816,7 +5816,7 @@ class AppStore:
             self._handle_interrupted_worker_job(
                 job,
                 now=now,
-                reason="Worker khong con bao job nay trong heartbeat sau khi da qua grace window.",
+                reason="Worker không còn báo job này trong heartbeat sau khi đã qua grace window.",
             )
         self._refresh_queue_positions()
 
@@ -7414,7 +7414,7 @@ class AppStore:
                     "number_of_threads": mapping["threads"],
                     "live_role": live_role or "",
                     "live_role_label": self._live_assignment_role_label(live_role) if is_live_workspace else "",
-                    "note": mapping.get("note") or (self._live_assignment_note(live_role) if is_live_workspace else "VPS duoc cap"),
+                    "note": mapping.get("note") or (self._live_assignment_note(live_role) if is_live_workspace else "VPS được cấp"),
                     "disk_text": f"{worker.disk_used_gb:.1f}/{worker.disk_total_gb:.1f}GB",
                     "bandwidth_text": f"{worker.bandwidth_kbps:.2f}KB/s",
                 }
@@ -7808,7 +7808,7 @@ class AppStore:
             self._close_user_worker_browser_sessions(
                 cleaned_user_id,
                 cleaned_worker_id,
-                reason="Session da dong do user khong con duoc cap VPS.",
+                reason="Session đã đóng do user không còn được cấp VPS.",
             )
             return 0
 
@@ -7845,7 +7845,7 @@ class AppStore:
         self._close_user_worker_browser_sessions(
             cleaned_user_id,
             cleaned_worker_id,
-            reason="Session da dong do user khong con duoc cap VPS.",
+            reason="Session đã đóng do user không còn được cấp VPS.",
         )
         self._close_orphan_browser_sessions_for_user(cleaned_user_id)
         return len(affected_channels)
@@ -8760,11 +8760,11 @@ class AppStore:
         display_name = display_name.strip()
         role = role.strip().lower()
         if not username or not display_name or not password.strip():
-            raise ValueError("UserName, DisplayName vÃ  Password lÃ  báº¯t buá»™c.")
+            raise ValueError("UserName, DisplayName và Password là bắt buộc.")
         if any(user.username.lower() == username.lower() for user in self.users):
-            raise ValueError("UserName Ä‘Ã£ tá»“n táº¡i.")
+            raise ValueError("UserName đã tồn tại.")
         if role not in {"user", "manager", "admin"}:
-            raise ValueError("Role khÃ´ng há»£p lá»‡.")
+            raise ValueError("Role không hợp lệ.")
 
         manager_name: str | None = None
         if role == "user":
@@ -8793,12 +8793,12 @@ class AppStore:
     def _validate_admin_username(self, username: str, *, exclude_user_id: str | None = None) -> str:
         normalized_username = username.strip()
         if not normalized_username:
-            raise ValueError("TÃªn Ä‘Äƒng nháº­p lÃ  báº¯t buá»™c.")
+            raise ValueError("Tên đăng nhập là bắt buộc.")
         if any(
             user.id != exclude_user_id and user.username.lower() == normalized_username.lower()
             for user in self.users
         ):
-            raise ValueError("TÃªn Ä‘Äƒng nháº­p Ä‘Ã£ tá»“n táº¡i.")
+            raise ValueError("Tên đăng nhập đã tồn tại.")
         return normalized_username
 
     def _cascade_manager_username_change(self, old_username: str, new_username: str) -> None:
@@ -8820,9 +8820,9 @@ class AppStore:
     def delete_admin_user(self, user_id: str) -> None:
         user = self._find_user(user_id)
         if user.role == "admin" and len([item for item in self.users if item.role == "admin"]) <= 1:
-            raise ValueError("KhÃ´ng thá»ƒ xÃ³a admin cuá»‘i cÃ¹ng.")
+            raise ValueError("Không thể xóa admin cuối cùng.")
         if user.role == "manager" and any(item.role == "user" and item.manager_name == user.username for item in self.users):
-            raise ValueError("Manager nÃ y Ä‘ang quáº£n lÃ½ user khÃ¡c, chÆ°a thá»ƒ xÃ³a.")
+            raise ValueError("Manager này đang quản lý user khác, chưa thể xóa.")
 
         self.users = [item for item in self.users if item.id != user_id]
         self.user_meta.pop(user_id, None)
@@ -8836,7 +8836,7 @@ class AppStore:
 
     def reset_admin_user_password(self, user_id: str, password: str, updated_by: str = "admin") -> None:
         if not password.strip():
-            raise ValueError("Password má»›i lÃ  báº¯t buá»™c.")
+            raise ValueError("Password mới là bắt buộc.")
         self._find_user(user_id)
         meta = self._user_meta_record(user_id)
         self._set_user_password(user_id, password.strip())
@@ -8905,14 +8905,14 @@ class AppStore:
         user = self._find_user(user_id)
         if promote:
             if user.role == "admin":
-                raise ValueError("Admin hiá»‡n táº¡i khÃ´ng cáº§n gÃ¡n thÃªm quyá»n manager.")
+                raise ValueError("Admin hiện tại không cần gán thêm quyền manager.")
             user.role = "manager"
             user.manager_name = None
         else:
             if user.role != "manager":
-                raise ValueError("User nÃ y khÃ´ng pháº£i manager.")
+                raise ValueError("User này không phải manager.")
             if any(item.role == "user" and item.manager_name == user.username for item in self.users):
-                raise ValueError("Manager nÃ y Ä‘ang quáº£n lÃ½ user khÃ¡c, chÆ°a thá»ƒ gá»¡ quyá»n.")
+                raise ValueError("Manager này đang quản lý user khác, chưa thể gỡ quyền.")
             user.role = "user"
             user.manager_name = None
 
@@ -8928,9 +8928,9 @@ class AppStore:
             user.manager_name = None
         else:
             if user.role != "admin":
-                raise ValueError("User nÃ y khÃ´ng pháº£i admin.")
+                raise ValueError("User này không phải admin.")
             if len([item for item in self.users if item.role == "admin"]) <= 1:
-                raise ValueError("KhÃ´ng thá»ƒ gá»¡ quyá»n admin cuá»‘i cÃ¹ng.")
+                raise ValueError("Không thể gỡ quyền admin cuối cùng.")
             user.role = "user"
             user.manager_name = None
 
@@ -9330,13 +9330,13 @@ class AppStore:
                                 "worker_id": worker.id,
                                 "threads": self._fixed_assignment_threads(),
                                 "bot_type": "1080p",
-                                "note": "VPS duoc cap",
+                                "note": "VPS được cấp",
                             }
                         )
                         next_id += 1
                     else:
                         existing_link["threads"] = self._fixed_assignment_threads()
-                        existing_link["note"] = str(existing_link.get("note") or "").strip() or "VPS duoc cap"
+                        existing_link["note"] = str(existing_link.get("note") or "").strip() or "VPS được cấp"
             elif normalized_user_id:
                 assigned_user = self._find_user(normalized_user_id)
                 if assigned_user.role == "user":
@@ -9369,12 +9369,12 @@ class AppStore:
                             "worker_id": worker.id,
                             "threads": self._fixed_assignment_threads(),
                             "bot_type": "1080p",
-                            "note": "VPS duoc cap",
+                            "note": "VPS được cấp",
                         }
                     )
                 else:
                     existing_link["threads"] = self._fixed_assignment_threads()
-                    existing_link["note"] = str(existing_link.get("note") or "").strip() or "VPS duoc cap"
+                    existing_link["note"] = str(existing_link.get("note") or "").strip() or "VPS được cấp"
 
             self._save_state()
             return
@@ -9414,7 +9414,7 @@ class AppStore:
                     )
                 self._purge_worker_assignment_scope(
                     worker.id,
-                    session_reason="Session da dong do BOT da duoc chuyen sang manager khac.",
+                    session_reason="Session đã đóng do BOT đã được chuyển sang manager khác.",
                 )
         self._apply_worker_manager(worker, manager)
         if normalized_group:
@@ -9481,13 +9481,13 @@ class AppStore:
                             "worker_id": worker.id,
                             "threads": self._fixed_assignment_threads(),
                             "bot_type": "1080p",
-                            "note": "VPS duoc cap",
+                            "note": "VPS được cấp",
                         }
                     )
                     next_id += 1
                 else:
                     existing_link["threads"] = self._fixed_assignment_threads()
-                    existing_link["note"] = str(existing_link.get("note") or "").strip() or "VPS duoc cap"
+                    existing_link["note"] = str(existing_link.get("note") or "").strip() or "VPS được cấp"
         elif normalized_user_id:
             assigned_user = self._find_user(normalized_user_id)
             if assigned_user.role == "user":
@@ -9520,12 +9520,12 @@ class AppStore:
                         "worker_id": worker.id,
                         "threads": self._fixed_assignment_threads(),
                         "bot_type": "1080p",
-                        "note": "VPS duoc cap",
+                        "note": "VPS được cấp",
                     }
                 )
             else:
                 existing_link["threads"] = self._fixed_assignment_threads()
-                existing_link["note"] = str(existing_link.get("note") or "").strip() or "VPS duoc cap"
+                existing_link["note"] = str(existing_link.get("note") or "").strip() or "VPS được cấp"
         self._save_state()
 
     def reconcile_assignment_target_bots(
@@ -9612,7 +9612,7 @@ class AppStore:
                             int((previous_link or {}).get("threads") or worker.threads or 1),
                         ),
                         "bot_type": str((previous_link or {}).get("bot_type") or "1080p").strip() or "1080p",
-                        "note": str((previous_link or {}).get("note") or "").strip() or "VPS duoc cap",
+                        "note": str((previous_link or {}).get("note") or "").strip() or "VPS được cấp",
                     }
                 )
                 next_id += 1
@@ -9703,7 +9703,7 @@ class AppStore:
     def update_bot_thread(self, worker_id: str, thread: int) -> None:
         worker = self._find_worker(worker_id)
         if thread < 1:
-            raise ValueError("Sá»‘ luá»“ng pháº£i lá»›n hÆ¡n hoáº·c báº±ng 1.")
+            raise ValueError("Số luồng phải lớn hơn hoặc bằng 1.")
         worker.threads = self._fixed_assignment_threads()
         worker.capacity = self._fixed_assignment_threads()
         self._save_state()
@@ -9712,11 +9712,11 @@ class AppStore:
         user = self._find_user(user_id)
         worker = self._find_worker(worker_id)
         if user.role != "user":
-            raise ValueError("Chi user thuong moi duoc cap VPS truc tiep.")
+            raise ValueError("Chỉ user thường mới được cấp VPS trực tiếp.")
         if user.manager_name and worker.manager_name != user.manager_name:
-            raise ValueError("User chi duoc cap VPS thuoc manager cua minh.")
+            raise ValueError("User chỉ được cấp VPS thuộc manager của mình.")
 
-        normalized_note = (note or "").strip() or "VPS duoc cap"
+        normalized_note = (note or "").strip() or "VPS được cấp"
         existing = next(
             (
                 item
@@ -9760,7 +9760,7 @@ class AppStore:
             if session.status in {"launching", "awaiting_confirmation", "confirmed"}:
                 session.status = "closed"
                 session.expires_at = self._now(trim=False)
-                session.last_error = "Session da dong do user khong con duoc cap VPS."
+                session.last_error = "Session đã đóng do user không còn được cấp VPS."
         self._save_state()
 
     def update_user_bot(self, mapping_id: int, threads: int, bot_type: str | None = None, note: str | None = None) -> None:
@@ -9771,7 +9771,7 @@ class AppStore:
             if bot_type:
                 mapping["bot_type"] = bot_type.lower()
             if note is not None:
-                mapping["note"] = (note or "").strip() or mapping.get("note") or "VPS duoc cap"
+                mapping["note"] = (note or "").strip() or mapping.get("note") or "VPS được cấp"
             self._save_state()
             return
         raise KeyError(mapping_id)
@@ -10159,7 +10159,7 @@ class AppStore:
                 continue
             session.status = "closed"
             session.expires_at = closed_at
-            session.last_error = "Session da dong vi profile tam khong con gan voi kenh nao."
+            session.last_error = "Session đã đóng vì profile tạm không còn gắn với kênh nào."
             self._queue_browser_profile_cleanup_if_orphan(
                 worker_id=session.target_worker_id,
                 profile_key=session.profile_key,
@@ -10180,7 +10180,7 @@ class AppStore:
                 continue
             session.status = "closed"
             session.expires_at = closed_at
-            session.last_error = "Session da dong vi kenh/profile da bi xoa."
+            session.last_error = "Session đã đóng vì kênh/profile đã bị xóa."
 
     def _schedule_channel_browser_profile_cleanup(self, channel: ChannelRecord) -> None:
         if channel.connection_mode != "browser_profile":
@@ -10376,7 +10376,7 @@ class AppStore:
             return asset.url or asset.file_name or ""
 
         context = self._admin_shell_context(
-            page_title="ThÃ´ng tin Render",
+            page_title="Thông tin Render",
             active_page="renders",
             viewer_role=viewer_role,
             viewer_id=viewer_id,
@@ -10461,9 +10461,9 @@ class AppStore:
                 return json.loads(response.read().decode("utf-8"))
         except HTTPError as exc:
             detail = self._parse_google_error(exc.read().decode("utf-8", errors="ignore"))
-            raise ValueError(detail or "Google token endpoint tra ve loi.") from exc
+            raise ValueError(detail or "Google token endpoint trả về lỗi.") from exc
         except URLError as exc:
-            raise ValueError("Khong the ket noi toi Google OAuth endpoint.") from exc
+            raise ValueError("Không thể kết nối tới Google OAuth endpoint.") from exc
 
     def _get_json(self, url: str, access_token: str) -> dict[str, Any]:
         request = Request(
@@ -10479,9 +10479,9 @@ class AppStore:
                 return json.loads(response.read().decode("utf-8"))
         except HTTPError as exc:
             detail = self._parse_google_error(exc.read().decode("utf-8", errors="ignore"))
-            raise ValueError(detail or "Google API tra ve loi.") from exc
+            raise ValueError(detail or "Google API trả về lỗi.") from exc
         except URLError as exc:
-            raise ValueError("Khong the ket noi toi Google API.") from exc
+            raise ValueError("Không thể kết nối tới Google API.") from exc
 
     def start_oauth(self, base_url: str | None = None, *, state: str) -> OAuthStartResponse:
         config = self._google_oauth_config(base_url)
@@ -10491,7 +10491,7 @@ class AppStore:
         if not client_id or not redirect_uri:
             return OAuthStartResponse(
                 auth_url=None,
-                message="ÄÃ£ sáºµn sÃ ng cho flow Google OAuth. Cáº§n bá»• sung GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET vÃ  GOOGLE_REDIRECT_URI Ä‘á»ƒ báº­t káº¿t ná»‘i tháº­t.",
+                message="Đã sẵn sàng cho flow Google OAuth. Cần bổ sung GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET và GOOGLE_REDIRECT_URI để bật kết nối thật.",
             )
 
         query = urlencode(
@@ -10508,7 +10508,7 @@ class AppStore:
         )
         return OAuthStartResponse(
             auth_url=f"https://accounts.google.com/o/oauth2/v2/auth?{query}",
-            message="ÄÃ£ táº¡o URL káº¿t ná»‘i Google OAuth.",
+            message="Đã tạo URL kết nối Google OAuth.",
         )
 
     def complete_google_oauth(self, *, user_id: str, code: str, base_url: str | None = None) -> dict[str, str]:
@@ -10517,7 +10517,7 @@ class AppStore:
         client_secret = config["client_secret"]
         redirect_uri = config["redirect_uri"]
         if not client_id or not client_secret or not redirect_uri:
-            raise ValueError("Thieu GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET hoac GOOGLE_REDIRECT_URI.")
+            raise ValueError("Thiếu GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET hoặc GOOGLE_REDIRECT_URI.")
 
         token_payload = self._post_form_json(
             "https://oauth2.googleapis.com/token",
@@ -10534,7 +10534,7 @@ class AppStore:
         scope = str(token_payload.get("scope") or self._google_oauth_scope()).strip()
         token_type = str(token_payload.get("token_type") or "").strip() or None
         if not access_token:
-            raise ValueError("Google khong tra ve access_token.")
+            raise ValueError("Google không trả về access_token.")
 
         userinfo = self._get_json("https://openidconnect.googleapis.com/v1/userinfo", access_token)
         youtube_payload = self._get_json(
@@ -10543,7 +10543,7 @@ class AppStore:
         )
         items = youtube_payload.get("items") or []
         if not items:
-            raise ValueError("Tai khoan Google nay chua co YouTube channel hoac chua chon dung channel.")
+            raise ValueError("Tài khoản Google này chưa có YouTube channel hoặc chưa chọn đúng channel.")
 
         channel_payload = items[0] or {}
         channel_id = str(channel_payload.get("id") or "").strip()
@@ -10559,14 +10559,14 @@ class AppStore:
         now = self._now()
 
         if not channel_id:
-            raise ValueError("Google tra ve du lieu channel khong hop le.")
+            raise ValueError("Google trả về dữ liệu channel không hợp lệ.")
 
         current_user = self._require_workspace_user(user_id)
         worker = self._pick_worker_for_user(current_user)
         existing_channel = next((channel for channel in self.channels if channel.channel_id == channel_id), None)
         existing_refresh_token = existing_channel.oauth_refresh_token if existing_channel else None
         if not refresh_token and not existing_refresh_token:
-            raise ValueError("Google khong tra ve refresh_token. Hay xoa quyen app cu va ket noi lai.")
+            raise ValueError("Google không trả về refresh_token. Hãy xóa quyền app cũ và kết nối lại.")
 
         if existing_channel:
             channel = existing_channel
@@ -10698,13 +10698,13 @@ class AppStore:
         self._cleanup_stale_uploads()
         capabilities = self.get_upload_capabilities()
         if payload.size_bytes <= 0:
-            raise ValueError("KÃ­ch thÆ°á»›c file pháº£i lá»›n hÆ¡n 0.")
+            raise ValueError("Kích thước file phải lớn hơn 0.")
         if payload.size_bytes > capabilities.max_local_upload_bytes:
-            raise ValueError("File vÆ°á»£t quÃ¡ giá»›i háº¡n local upload hiá»‡n táº¡i.")
+            raise ValueError("File vượt quá giới hạn local upload hiện tại.")
 
         extension = Path(payload.file_name).suffix.lower()
         if extension not in capabilities.allowed_extensions:
-            raise ValueError(f"Äá»‹nh dáº¡ng file khÃ´ng há»— trá»£: {extension or '(khÃ´ng cÃ³ extension)'}")
+            raise ValueError(f"Định dạng file không hỗ trợ: {extension or '(không có extension)'}")
 
         sanitized_name = self._sanitize_filename(payload.file_name)
         now = self._now(trim=False)
@@ -10741,19 +10741,19 @@ class AppStore:
         self._require_workspace_user(user_id)
         session = self._find_user_upload_session(user_id, session_id)
         if session.status not in {"active", "completed"}:
-            raise ValueError("Upload session khÃ´ng cÃ²n hoáº¡t Ä‘á»™ng.")
+            raise ValueError("Upload session không còn hoạt động.")
         if session.status == "completed":
             return self._upload_response(session)
         if offset < 0:
-            raise ValueError("Offset khÃ´ng há»£p lá»‡.")
+            raise ValueError("Offset không hợp lệ.")
 
         temp_path = self._absolute_upload_path(session.temp_path)
         temp_path.parent.mkdir(parents=True, exist_ok=True)
         current_size = temp_path.stat().st_size if temp_path.exists() else 0
         if offset != current_size:
-            raise ValueError(f"Offset khÃ´ng khá»›p. Server Ä‘ang cÃ³ {current_size} bytes.")
+            raise ValueError(f"Offset không khớp. Server đang có {current_size} bytes.")
         if offset + len(chunk) > session.size_bytes:
-            raise ValueError("Chunk vÆ°á»£t quÃ¡ kÃ­ch thÆ°á»›c Ä‘Ã£ khai bÃ¡o.")
+            raise ValueError("Chunk vượt quá kích thước đã khai báo.")
 
         with temp_path.open("ab") as file_obj:
             file_obj.write(chunk)
@@ -10762,7 +10762,7 @@ class AppStore:
         session.updated_at = self._now(trim=False)
         session.expires_at = session.updated_at + timedelta(hours=24)
         if session.received_bytes > session.size_bytes:
-            raise ValueError("Upload vÆ°á»£t quÃ¡ kÃ­ch thÆ°á»›c Ä‘Ã£ khai bÃ¡o.")
+            raise ValueError("Upload vượt quá kích thước đã khai báo.")
 
         if session.received_bytes == session.size_bytes:
             session.status = "completed"
@@ -10790,7 +10790,7 @@ class AppStore:
             None,
         )
         if session is None or session.status != "completed" or not session.stored_file_name:
-            raise ValueError("Uploaded asset khÃ´ng há»£p lá»‡ hoáº·c chÆ°a hoÃ n táº¥t.")
+            raise ValueError("Uploaded asset không hợp lệ hoặc chưa hoàn tất.")
         return session.stored_file_name
 
     def _find_job_asset(self, job: RenderJobRecord, slot: str) -> JobAsset:
@@ -10812,7 +10812,7 @@ class AppStore:
         self._ensure_worker_job_can_continue(job)
         asset = self._find_job_asset(job, slot)
         if asset.source_mode != "local" or not asset.file_name:
-            raise ValueError("Asset nÃ y khÃ´ng pháº£i local upload.")
+            raise ValueError("Asset này không phải local upload.")
 
         file_path = self.upload_asset_dir / asset.file_name
         if not file_path.exists():
@@ -10828,7 +10828,7 @@ class AppStore:
         job = self._find_user_visible_job(user_id, job_id)
         asset = self._find_job_asset(job, slot)
         if asset.source_mode != "local" or not asset.file_name:
-            raise ValueError("Asset nay khong phai local upload.")
+            raise ValueError("Asset này không phải local upload.")
 
         file_path = self.upload_asset_dir / asset.file_name
         if not self._path_has_content(file_path):
@@ -10903,7 +10903,7 @@ class AppStore:
         self._refresh_browser_channel_metadata(channel)
         if channel.connection_mode != "browser_profile":
             raise ValueError(
-                "Luong OAuth/API upload da duoc tat tren nhanh hien tai. Hay reconnect kenh bang Ubuntu Browser truoc khi upload."
+                "Luồng OAuth/API upload đã được tắt trên nhánh hiện tại. Hãy reconnect kênh bằng Ubuntu Browser trước khi upload."
             )
         return WorkerYouTubeUploadTarget(
             job_id=job.id,

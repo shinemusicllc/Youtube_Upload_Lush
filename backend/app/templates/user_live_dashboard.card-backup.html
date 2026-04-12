@@ -51,6 +51,83 @@
       content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.8), transparent); z-index: 10; border-radius: 16px 16px 0 0;
     }
     .elevated-card { background: white; border-radius: 16px; border: 1px solid rgba(226, 232, 240, 0.7); box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04), 0 4px 14px rgba(15, 23, 42, 0.04); }
+    .toast-stack {
+      position: fixed;
+      top: 88px;
+      right: 24px;
+      z-index: 90;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      width: min(360px, calc(100vw - 32px));
+      pointer-events: none;
+    }
+    .app-toast {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      border: 1px solid rgb(226 232 240);
+      border-radius: 12px;
+      background: white;
+      padding: 12px 14px;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+      pointer-events: auto;
+      transition: opacity 180ms ease, transform 180ms ease, max-height 180ms ease, margin 180ms ease, padding 180ms ease, border-width 180ms ease;
+    }
+    .app-toast[data-type="success"] {
+      border-color: rgb(167 243 208);
+      background: rgb(236 253 245);
+      color: rgb(6 95 70);
+    }
+    .app-toast[data-type="error"] {
+      border-color: rgb(254 205 211);
+      background: rgb(255 241 242);
+      color: rgb(190 24 93);
+    }
+    .app-toast[data-type="info"] {
+      border-color: rgb(199 210 254);
+      background: rgb(238 242 255);
+      color: rgb(67 56 202);
+    }
+    .app-toast-copy {
+      min-width: 0;
+      flex: 1;
+      font-size: 13px;
+      font-weight: 500;
+      line-height: 1.45;
+    }
+    .app-toast-dismiss {
+      display: inline-flex;
+      width: 30px;
+      height: 30px;
+      flex-shrink: 0;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      background: transparent;
+      color: inherit;
+      opacity: 0.72;
+      transition: background-color 120ms ease, border-color 120ms ease, opacity 120ms ease;
+    }
+    .app-toast-dismiss:hover,
+    .app-toast-dismiss:focus-visible {
+      opacity: 1;
+      outline: none;
+      background: rgba(255, 255, 255, 0.78);
+      border-color: rgba(226, 232, 240, 0.92);
+    }
+    .transient-hide {
+      opacity: 0 !important;
+      transform: translateY(-4px) !important;
+      max-height: 0 !important;
+      margin-top: 0 !important;
+      margin-bottom: 0 !important;
+      padding-top: 0 !important;
+      padding-bottom: 0 !important;
+      border-width: 0 !important;
+      pointer-events: none !important;
+    }
     .nav-item { border-radius: 8px; margin: 0 12px; padding: 10px 14px; transition: all 0.15s ease; }
     .nav-item:hover { background: rgba(93, 103, 223, 0.06); }
     .nav-item.active { background: linear-gradient(135deg, #5d67df 0%, #4b56c9 100%); color: white; box-shadow: 0 2px 8px rgba(93, 103, 223, 0.3); }
@@ -168,16 +245,12 @@
     <div class="min-w-0 flex-1 overflow-y-auto w-full pb-16">
       <div class="min-w-0 w-full px-8 py-6 space-y-6">
         {% if dashboard.notice %}
-        <div class="elevated-card px-5 py-4 border transition-all duration-200 {% if dashboard.notice_level == 'error' %}border-rose-200 bg-rose-50/80{% else %}border-emerald-200 bg-emerald-50/80{% endif %}">
-          <div class="flex items-start gap-3">
-            <div class="mt-0.5 {% if dashboard.notice_level == 'error' %}text-rose-600{% else %}text-emerald-600{% endif %}">
-              <i data-lucide="{% if dashboard.notice_level == 'error' %}shield-alert{% else %}circle-check{% endif %}" class="w-4 h-4"></i>
-            </div>
-            <div class="min-w-0 flex-1">
-              <p class="text-[13px] font-semibold {% if dashboard.notice_level == 'error' %}text-rose-700{% else %}text-emerald-700{% endif %}">{{ dashboard.notice | e }}</p>
-            </div>
-          </div>
-        </div>
+        <div
+          hidden
+          data-server-toast="true"
+          data-toast-message="{{ dashboard.notice | e }}"
+          data-toast-level="{{ (dashboard.notice_level or 'success') | e }}"
+        ></div>
         {% endif %}
 
         <div class="elevated-card grid grid-cols-5 divide-x divide-slate-200/70 overflow-hidden">
@@ -355,9 +428,91 @@
       </div>
     </div>
   </main>
+  <div id="toastStack" class="toast-stack" aria-live="polite" aria-atomic="false"></div>
 
   <script>
     if (window.lucide) window.lucide.createIcons();
+    const dismissTransientNode = (node) => {
+      if (!(node instanceof HTMLElement) || node.dataset.dismissed === 'true') return;
+      node.dataset.dismissed = 'true';
+      node.classList.add('transient-hide');
+      window.setTimeout(() => {
+        node.remove();
+        if (node.getAttribute('data-server-notice') === 'true') {
+          clearTransientNoticeParams();
+        }
+      }, 220);
+    };
+    const initTransientNotices = (root = document) => {
+      root.querySelectorAll('[data-transient-notice]').forEach((notice) => {
+        if (!(notice instanceof HTMLElement) || notice.dataset.noticeReady === 'true') return;
+        notice.dataset.noticeReady = 'true';
+        const dismiss = () => dismissTransientNode(notice);
+        notice.querySelector('[data-notice-close]')?.addEventListener('click', dismiss);
+        const autoHideMs = Number(notice.getAttribute('data-notice-autohide') || 5000);
+        if (autoHideMs > 0) {
+          window.setTimeout(dismiss, autoHideMs);
+        }
+      });
+    };
+    const ensureToastStack = () => document.getElementById('toastStack');
+    const showToast = (message, type = 'info', options = {}) => {
+      const stack = ensureToastStack();
+      const text = String(message || '').trim();
+      if (!(stack instanceof HTMLElement) || !text) return;
+      const toast = document.createElement('div');
+      toast.className = 'app-toast';
+      toast.dataset.type = type;
+      toast.setAttribute('data-transient-notice', '');
+      toast.setAttribute('data-notice-autohide', '5000');
+      if (options.serverNotice) {
+        toast.setAttribute('data-server-notice', 'true');
+      }
+      toast.innerHTML =
+        '<div class="app-toast-copy"></div>' +
+        '<button type="button" class="app-toast-dismiss" data-notice-close aria-label="Đóng thông báo"><i data-lucide="x" class="h-4 w-4" aria-hidden="true"></i></button>';
+      toast.querySelector('.app-toast-copy').textContent = text;
+      stack.appendChild(toast);
+      if (window.lucide) {
+        window.lucide.createIcons({ attrs: { 'stroke-width': 1.75 } });
+      }
+      initTransientNotices(stack);
+    };
+    const clearTransientNoticeParams = () => {
+      const url = new URL(window.location.href);
+      let changed = false;
+      ['notice', 'notice_level'].forEach((key) => {
+        if (url.searchParams.has(key)) {
+          url.searchParams.delete(key);
+          changed = true;
+        }
+      });
+      if (!changed) return;
+      const search = url.searchParams.toString();
+      const nextUrl = `${url.pathname}${search ? `?${search}` : ''}${url.hash}`;
+      window.history.replaceState({}, document.title, nextUrl);
+    };
+    const hydrateServerToastMarkers = (root = document) => {
+      let shown = false;
+      root.querySelectorAll('[data-server-toast="true"]').forEach((marker) => {
+        if (!(marker instanceof HTMLElement)) return;
+        const message = String(marker.getAttribute('data-toast-message') || '').trim();
+        if (!message) {
+          marker.remove();
+          return;
+        }
+        const level = String(marker.getAttribute('data-toast-level') || 'info').trim() || 'info';
+        shown = true;
+        showToast(message, level, { serverNotice: true });
+        marker.remove();
+      });
+      return shown;
+    };
+    const hadServerToast = hydrateServerToastMarkers();
+    initTransientNotices();
+    if (!hadServerToast && !document.querySelector('[data-server-notice="true"]')) {
+      clearTransientNoticeParams();
+    }
     if (window.flatpickr) {
       document.querySelectorAll('[data-live-datetime]').forEach((node) => {
         window.flatpickr(node, { enableTime: true, dateFormat: 'd/m/Y H:i', time_24hr: true, locale: window.flatpickr?.l10ns?.vn || 'vn' });

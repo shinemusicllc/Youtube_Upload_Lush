@@ -769,9 +769,7 @@
       }
       if (typeof window.showAdminToast === 'function') {
         window.showAdminToast(text, type || 'info');
-        return;
       }
-      window.alert(text);
     }
 
     function setSubmitLoading(button, isLoading, loadingLabel) {

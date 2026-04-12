@@ -117,11 +117,11 @@ def _enforce_user_scope(request: Request, user_id: str) -> None:
         return
     user = store._find_user(user_id)
     if user.role == "admin":
-        raise HTTPException(status_code=403, detail="Manager khong duoc thao tac admin.")
+        raise HTTPException(status_code=403, detail="Manager không được thao tác admin.")
     if user.role == "manager" and user.id != current_user.id:
-        raise HTTPException(status_code=403, detail="Khong du quyen thao tac manager nay.")
+        raise HTTPException(status_code=403, detail="Không đủ quyền thao tác manager này.")
     if user.role == "user" and user.manager_name != current_user.username:
-        raise HTTPException(status_code=403, detail="Khong du quyen thao tac user khac manager.")
+        raise HTTPException(status_code=403, detail="Không đủ quyền thao tác user khác manager.")
 
 
 def _enforce_worker_scope(request: Request, worker_id: str, *, workspace_mode: str = "upload") -> None:
@@ -130,7 +130,7 @@ def _enforce_worker_scope(request: Request, worker_id: str, *, workspace_mode: s
         return
     worker = store._find_live_worker(worker_id) if workspace_mode == "live" else store._find_worker(worker_id)
     if worker.manager_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Khong du quyen thao tac BOT ngoai scope manager.")
+        raise HTTPException(status_code=403, detail="Không đủ quyền thao tác BOT ngoài scope manager.")
 
 
 def _enforce_channel_scope(request: Request, channel_id: str) -> None:
@@ -139,7 +139,7 @@ def _enforce_channel_scope(request: Request, channel_id: str) -> None:
         return
     channel = store._find_channel(channel_id)
     if store._resolve_channel_manager_id(channel) != current_user.id:
-        raise HTTPException(status_code=403, detail="Khong du quyen thao tac kenh ngoai scope manager.")
+        raise HTTPException(status_code=403, detail="Không đủ quyền thao tác kênh ngoài scope manager.")
 
 
 def _enforce_job_scope(request: Request, job_id: str) -> None:
@@ -148,14 +148,14 @@ def _enforce_job_scope(request: Request, job_id: str) -> None:
         return
     job = store._find_job(job_id)
     if store._resolve_job_manager_id(job) != current_user.id:
-        raise HTTPException(status_code=403, detail="Khong du quyen thao tac job ngoai scope manager.")
+        raise HTTPException(status_code=403, detail="Không đủ quyền thao tác job ngoài scope manager.")
 
 
 def _enforce_user_bot_mapping_scope(request: Request, user_id: str, assignment_id: int) -> None:
     _enforce_user_scope(request, user_id)
     mapping = next((item for item in store.user_worker_links if int(item.get("id") or 0) == assignment_id), None)
     if mapping is None or str(mapping.get("user_id") or "").strip() != user_id:
-        raise HTTPException(status_code=403, detail="Khong du quyen thao tac mapping BOT nay.")
+        raise HTTPException(status_code=403, detail="Không đủ quyền thao tác mapping BOT này.")
 
 
 def _scoped_job_ids(request: Request, *, channel_id: str | None = None) -> list[str]:
@@ -556,7 +556,7 @@ async def delete_admin_bot(request: Request, bot_id: str, payload: AdminBotDecom
                 "deleted": False,
                 "operation_id": task["id"],
                 "mode": "ssh",
-                "message": f"Da bat dau go {'BOT live' if workspace_mode == 'live' else 'BOT'} bang credential da luu.",
+                "message": f"Đã bắt đầu gỡ {'BOT live' if workspace_mode == 'live' else 'BOT'} bằng credential đã lưu.",
             }
         if str(worker.status or "").strip() == "offline":
             if workspace_mode == "live":
@@ -569,13 +569,13 @@ async def delete_admin_bot(request: Request, bot_id: str, payload: AdminBotDecom
                 "deleted": True,
                 "mode": "local",
                 "message": (
-                    f"{'BOT live' if workspace_mode == 'live' else 'BOT'} dang offline va khong co credential da luu, "
-                    "nen he thong chi xoa BOT khoi control-plane."
+                    f"{'BOT live' if workspace_mode == 'live' else 'BOT'} đang offline và không có credential đã lưu, "
+                    "nên hệ thống chỉ xóa BOT khỏi control-plane."
                 ),
             }
         raise WorkerBootstrapError(
-            f"{'BOT live' if workspace_mode == 'live' else 'BOT'} nay chua co credential da luu de go tu dong. "
-            "Hay go thu cong tren VPS hoac them lai BOT roi xoa lai."
+            f"{'BOT live' if workspace_mode == 'live' else 'BOT'} này chưa có credential đã lưu để gỡ tự động. "
+            "Hãy gỡ thủ công trên VPS hoặc thêm lại BOT rồi xóa lại."
         )
     except (KeyError, ValueError, WorkerBootstrapError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -675,7 +675,7 @@ async def update_admin_channel_user(request: Request, channel_id: str, payload: 
     _assert_upload_workspace(payload.get("workspace") or request.query_params.get("workspace"))
     user_id = str(payload.get("user_id") or "").strip()
     if not user_id:
-        raise HTTPException(status_code=422, detail="user_id la bat buoc.")
+        raise HTTPException(status_code=422, detail="user_id là bắt buộc.")
     _enforce_channel_scope(request, channel_id)
     _enforce_user_scope(request, user_id)
     action = store.update_user_channel(user_id, channel_id)
