@@ -178,14 +178,29 @@ def _worker_install_max_concurrency() -> int:
     return max(1, value)
 
 
-def suggest_next_worker_id(existing_worker_ids: list[str] | tuple[str, ...] | set[str]) -> str:
-    max_suffix = 0
+def suggest_next_worker_id(
+    existing_worker_ids: list[str] | tuple[str, ...] | set[str],
+    *,
+    prefix: str = "worker",
+) -> str:
+    normalized_prefix = str(prefix or "").strip()
+    if not normalized_prefix:
+        raise ValueError("worker_id prefix is required")
+
+    used_suffixes: set[int] = set()
+    pattern = re.compile(rf"{re.escape(normalized_prefix)}-(\d+)", flags=re.IGNORECASE)
     for raw_value in existing_worker_ids:
-        match = re.fullmatch(r"worker-(\d+)", str(raw_value or "").strip(), flags=re.IGNORECASE)
+        match = pattern.fullmatch(str(raw_value or "").strip())
         if not match:
             continue
-        max_suffix = max(max_suffix, int(match.group(1)))
-    return f"worker-{max_suffix + 1:02d}"
+        suffix = int(match.group(1))
+        if suffix > 0:
+            used_suffixes.add(suffix)
+
+    next_suffix = 1
+    while next_suffix in used_suffixes:
+        next_suffix += 1
+    return f"{normalized_prefix}-{next_suffix:02d}"
 
 
 def build_worker_bootstrap_control_plane_url(fallback_url: str | None = None) -> str:

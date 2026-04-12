@@ -1028,14 +1028,25 @@ class AppStore:
         return bool(re.fullmatch(r"\d{1,3}(?:\.\d{1,3}){3}", normalized))
 
     def suggest_next_worker_bootstrap_id(self) -> str:
-        reserved_ids = [worker.id for worker in self.workers]
+        return self._suggest_next_workspace_worker_bootstrap_id(
+            [worker.id for worker in self.workers],
+            prefix="worker",
+        )
+
+    def _suggest_next_workspace_worker_bootstrap_id(
+        self,
+        current_worker_ids: list[str],
+        *,
+        prefix: str,
+    ) -> str:
+        reserved_ids = [str(worker_id or "").strip() for worker_id in current_worker_ids if str(worker_id or "").strip()]
         reserved_ids.extend(
             str(task.get("worker_id") or "").strip()
             for task in self.worker_operation_tasks
             if str(task.get("worker_id") or "").strip()
             and str(task.get("status") or "").strip() not in {"completed", "failed"}
         )
-        return suggest_next_worker_id(reserved_ids)
+        return suggest_next_worker_id(reserved_ids, prefix=prefix)
 
     def _remember_worker_connection_profile(
         self,
@@ -8859,13 +8870,10 @@ class AppStore:
         self._save_state()
 
     def suggest_next_live_worker_bootstrap_id(self) -> str:
-        existing_numbers = []
-        for worker in self.live_workers:
-            match = re.search(r"(\d+)$", str(worker.id or "").strip())
-            if match:
-                existing_numbers.append(int(match.group(1)))
-        next_number = (max(existing_numbers) + 1) if existing_numbers else 1
-        return f"live-worker-{next_number:02d}"
+        return self._suggest_next_workspace_worker_bootstrap_id(
+            [worker.id for worker in self.live_workers],
+            prefix="live-worker",
+        )
 
     def create_live_bot(
         self,
