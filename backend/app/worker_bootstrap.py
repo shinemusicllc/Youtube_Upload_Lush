@@ -760,8 +760,6 @@ def _install_request_from_task(store, task: dict[str, str]) -> WorkerBootstrapRe
         control_plane_url=build_worker_bootstrap_control_plane_url(None),
         worker_id=worker_id,
         manager_name=str(task.get("manager_name") or "").strip() or "system",
-        repo_url=DEFAULT_REPO_URL,
-        branch=DEFAULT_BRANCH,
         runtime_mode=workspace_mode,
     )
 
