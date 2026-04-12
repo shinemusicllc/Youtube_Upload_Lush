@@ -6,7 +6,7 @@ import os
 import re
 import shlex
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Lock, Thread, current_thread
 from typing import Callable
@@ -16,19 +16,19 @@ try:
 except ImportError:  # pragma: no cover - runtime dependency on deploy host
     paramiko = None
 
+from dotenv import load_dotenv
+
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 SCRIPT_DIR = ROOT_DIR / "scripts"
 BOOTSTRAP_SCRIPT_PATH = SCRIPT_DIR / "bootstrap_worker.sh"
 GIT_LAYOUT_SCRIPT_PATH = SCRIPT_DIR / "git_runtime_layout.sh"
 DECOMMISSION_SCRIPT_PATH = SCRIPT_DIR / "decommission_worker.sh"
+load_dotenv(ROOT_DIR / ".env")
 DEFAULT_REPO_URL = "https://github.com/shinemusicllc/Youtube_Upload_Lush.git"
 DEFAULT_BRANCH = "main"
-DEFAULT_APP_DIR = str(os.getenv("WORKER_BOOTSTRAP_APP_DIR", "/opt/youtube-upload-lush")).strip() or "/opt/youtube-upload-lush"
-DEFAULT_RUNTIME_DIR = (
-    str(os.getenv("WORKER_BOOTSTRAP_RUNTIME_DIR", "/opt/youtube-upload-lush-runtime")).strip()
-    or "/opt/youtube-upload-lush-runtime"
-)
+DEFAULT_APP_DIR = "/opt/youtube-upload-lush"
+DEFAULT_RUNTIME_DIR = "/opt/youtube-upload-lush-runtime"
 logger = logging.getLogger(__name__)
 _OPERATION_THREADS: dict[str, Thread] = {}
 _OPERATION_THREADS_LOCK = Lock()
@@ -36,6 +36,14 @@ _OPERATION_THREADS_LOCK = Lock()
 
 class WorkerBootstrapError(RuntimeError):
     pass
+
+
+def _resolve_default_app_dir() -> str:
+    return str(os.getenv("WORKER_BOOTSTRAP_APP_DIR", DEFAULT_APP_DIR)).strip() or DEFAULT_APP_DIR
+
+
+def _resolve_default_runtime_dir() -> str:
+    return str(os.getenv("WORKER_BOOTSTRAP_RUNTIME_DIR", DEFAULT_RUNTIME_DIR)).strip() or DEFAULT_RUNTIME_DIR
 
 
 @dataclass(slots=True)
@@ -53,8 +61,8 @@ class WorkerBootstrapRequest:
     ssh_private_key: str | None = None
     repo_url: str = DEFAULT_REPO_URL
     branch: str = DEFAULT_BRANCH
-    app_dir: str = DEFAULT_APP_DIR
-    runtime_dir: str = DEFAULT_RUNTIME_DIR
+    app_dir: str = field(default_factory=_resolve_default_app_dir)
+    runtime_dir: str = field(default_factory=_resolve_default_runtime_dir)
     browser_public_base_url: str | None = None
     capacity: int = 1
     threads: int = 1
@@ -78,8 +86,8 @@ class WorkerDecommissionRequest:
     ssh_user: str
     password: str | None = None
     ssh_private_key: str | None = None
-    app_dir: str = DEFAULT_APP_DIR
-    runtime_dir: str = DEFAULT_RUNTIME_DIR
+    app_dir: str = field(default_factory=_resolve_default_app_dir)
+    runtime_dir: str = field(default_factory=_resolve_default_runtime_dir)
     connect_timeout: int = 20
 
 
@@ -182,6 +190,8 @@ def build_worker_bootstrap_request(
         group="",
         repo_url=str(repo_url or os.getenv("WORKER_BOOTSTRAP_REPO_URL", DEFAULT_REPO_URL)).strip() or DEFAULT_REPO_URL,
         branch=str(branch or os.getenv("WORKER_BOOTSTRAP_BRANCH", DEFAULT_BRANCH)).strip() or DEFAULT_BRANCH,
+        app_dir=_resolve_default_app_dir(),
+        runtime_dir=_resolve_default_runtime_dir(),
         browser_public_base_url=f"http://{normalized_ip}",
     )
 
@@ -206,6 +216,8 @@ def build_worker_decommission_request(
         ssh_user=normalized_user,
         password=normalized_password or None,
         ssh_private_key=normalized_key or None,
+        app_dir=_resolve_default_app_dir(),
+        runtime_dir=_resolve_default_runtime_dir(),
     )
 
 
