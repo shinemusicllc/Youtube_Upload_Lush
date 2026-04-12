@@ -2,6 +2,10 @@
 
 {% block content %}
 <style>
+    .channel-page-shell {
+        margin-top: 0 !important;
+    }
+
     .admin-table-channel-list {
         width: 100%;
         table-layout: fixed;
@@ -66,7 +70,7 @@
         justify-content: flex-end;
     }
 </style>
-<section class="space-y-6">
+<section class="channel-page-shell space-y-6">
     {% include "admin/_admin_notice.html" %}
 
     <div class="panel p-5">

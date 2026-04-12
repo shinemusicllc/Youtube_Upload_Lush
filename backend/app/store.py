@@ -3200,6 +3200,20 @@ class AppStore:
             "Hay reconnect kenh tren mot VPS da duoc cap truoc khi render/upload."
         )
 
+    def _can_assign_channel_to_user(
+        self,
+        user: UserSummary,
+        channel: ChannelRecord,
+        *,
+        viewer_role: str = "admin",
+        viewer_id: str | None = None,
+    ) -> bool:
+        if user.role != "user":
+            return False
+        if viewer_role == "manager" and viewer_id and self._resolved_user_manager_id(user) != viewer_id:
+            return False
+        return self._channel_matches_user_worker(user, channel)
+
     @staticmethod
     def _worker_browser_base(worker: WorkerRecord) -> tuple[int, int, int, int]:
         return (
@@ -6347,12 +6361,13 @@ class AppStore:
         rows = []
         for index, user_id in enumerate(assigned_ids, start=1):
             user = self._find_user(user_id)
+            display_name = user.display_name or user.username
             rows.append(
                 {
                     "index": index,
                     "id": user.id,
                     "username": user.username,
-                    "display_name": user.display_name,
+                    "display_name": display_name,
                     "total_channels": self._user_channel_count(user),
                     "total_bots": self._user_worker_count(user),
                 }
@@ -7288,6 +7303,7 @@ class AppStore:
     ) -> dict[str, Any]:
         channel = self._find_channel(channel_id)
         assigned_ids = [link["user_id"] for link in self.channel_user_links if link["channel_id"] == channel.id]
+        assigned_id_set = set(assigned_ids)
         rows = []
         for index, user_id in enumerate(assigned_ids, start=1):
             user = self._find_user(user_id)
@@ -7302,11 +7318,56 @@ class AppStore:
                 }
             )
 
-        available_users = [
-            {"id": user.id, "username": user.username}
-            for user in self.users
-            if user.role == "user" and user.manager_id and user.manager_id == self._resolve_channel_manager_id(channel)
-        ]
+        available_users = []
+        for user in self.users:
+            if user.id in assigned_id_set:
+                continue
+            if not self._can_assign_channel_to_user(
+                user,
+                channel,
+                viewer_role=viewer_role,
+                viewer_id=viewer_id,
+            ):
+                continue
+            manager_name = self._manager_username_from_id(self._resolved_user_manager_id(user)) or user.manager_name or "-"
+            display_name = user.display_name or user.username
+            available_users.append(
+                {
+                    "id": user.id,
+                    "username": user.username,
+                    "display_name": display_name,
+                    "manager_name": manager_name,
+                    "search_text": " ".join(
+                        part
+                        for part in [
+                            display_name,
+                            user.username,
+                            manager_name,
+                        ]
+                        if str(part or "").strip()
+                    ),
+                }
+            )
+        available_users.sort(
+            key=lambda item: (
+                item["manager_name"].casefold(),
+                item["display_name"].casefold(),
+                item["username"].casefold(),
+            )
+        )
+
+        if viewer_role == "manager":
+            assignment_scope_label = "User do bạn quản lý"
+            assignment_scope_note = (
+                "Manager chỉ thấy user thuộc scope của mình, chưa được gán trước đó, "
+                "và đã được cấp đúng VPS của kênh."
+            )
+        else:
+            assignment_scope_label = "Toàn bộ user đủ điều kiện"
+            assignment_scope_note = (
+                "Admin thấy tất cả user chưa được gán trước đó và đã được cấp đúng VPS của kênh, "
+                "kể cả khác manager."
+            )
 
         context = self._admin_shell_context(
             page_title=f"Danh sách người dùng của kênh {channel.name}",
@@ -7323,6 +7384,13 @@ class AppStore:
                     "id": channel.id,
                     "name": channel.name,
                     "channel_id": channel.channel_id,
+                    "channel_link": self._channel_link(channel),
+                    "avatar_url": channel.avatar_url or "/static/admin-themes/assets/img/avatar/avatar-1.png",
+                    "manager_name": self._resolve_channel_manager_name(channel),
+                    "assigned_user_count": len(rows),
+                    "available_user_count": len(available_users),
+                    "assignment_scope_label": assignment_scope_label,
+                    "assignment_scope_note": assignment_scope_note,
                 },
                 "users": rows,
                 "available_users": available_users,
@@ -7330,16 +7398,16 @@ class AppStore:
         )
         return context
 
-    def update_user_channel(self, user_id: str, channel_id: str) -> str:
+    def update_user_channel(
+        self,
+        user_id: str,
+        channel_id: str,
+        *,
+        viewer_role: str = "admin",
+        viewer_id: str | None = None,
+    ) -> str:
         user = self._find_user(user_id)
         channel = self._find_channel(channel_id)
-        if user.role != "user":
-            raise ValueError("Chỉ user thường mới được gán vào kênh.")
-        if user.manager_id and self._resolve_channel_manager_id(channel) != user.manager_id:
-            raise ValueError("User không cùng manager với kênh này.")
-
-        self._assert_channel_matches_user_worker(user, channel)
-
         existing = next(
             (link for link in self.channel_user_links if link["user_id"] == user.id and link["channel_id"] == channel.id),
             None,
@@ -7349,13 +7417,32 @@ class AppStore:
             self._save_state()
             return "removed"
 
+        if user.role != "user":
+            raise ValueError("Chỉ user thường mới được gán vào kênh.")
+        if viewer_role == "manager" and viewer_id and self._resolved_user_manager_id(user) != viewer_id:
+            raise ValueError("Manager chỉ được gán kênh cho user mình quản lý.")
+
+        self._assert_channel_matches_user_worker(user, channel)
+
         next_id = max([item["id"] for item in self.channel_user_links], default=0) + 1
         self.channel_user_links.append({"id": next_id, "user_id": user.id, "channel_id": channel.id})
         self._save_state()
         return "added"
 
-    def add_user_to_channel(self, user_id: str, channel_id: str) -> str:
-        return self.update_user_channel(user_id, channel_id)
+    def add_user_to_channel(
+        self,
+        user_id: str,
+        channel_id: str,
+        *,
+        viewer_role: str = "admin",
+        viewer_id: str | None = None,
+    ) -> str:
+        return self.update_user_channel(
+            user_id,
+            channel_id,
+            viewer_role=viewer_role,
+            viewer_id=viewer_id,
+        )
 
     def update_channel_profile(self, channel_id: str) -> None:
         channel = self._find_channel(channel_id)

@@ -16,16 +16,32 @@
                 </div>
             </div>
 
-            <form method="post" action="/admin/channel/addUser" class="flex w-full max-w-[420px] flex-col gap-3 sm:flex-row">
+            <form method="post" action="/admin/channel/addUser" class="flex w-full max-w-[560px] flex-col gap-3 sm:ml-auto sm:flex-row sm:justify-end">
                 <input type="hidden" name="channelId" value="{{ dashboard.target_channel.id }}">
                 <input type="hidden" name="channelName" value="{{ dashboard.target_channel.name }}">
-                <select name="userId" class="toolbar-select" required>
+                <select
+                    name="userId"
+                    class="toolbar-select sm:min-w-[320px] sm:flex-1"
+                    data-admin-select-search="true"
+                    data-admin-select-search-placeholder="Tìm user theo tên, username..."
+                    {% if not dashboard.available_users %}disabled{% endif %}
+                    required
+                >
+                    {% if dashboard.available_users %}
                     <option value="">-- Chọn user --</option>
                     {% for user in dashboard.available_users %}
-                    <option value="{{ user.id }}">{{ user.username }}</option>
+                    <option
+                        value="{{ user.id }}"
+                        data-search-text="{{ user.search_text | lower }}"
+                    >
+                        {% if user.display_name != user.username %}{{ user.display_name }} - {{ user.username }}{% else %}{{ user.username }}{% endif %}
+                    </option>
                     {% endfor %}
+                    {% else %}
+                    <option value="">-- Không còn user khả dụng --</option>
+                    {% endif %}
                 </select>
-                <button type="submit" class="action-btn action-btn-primary h-11 shrink-0 justify-center px-4 text-[13px]">
+                <button type="submit" class="action-btn action-btn-primary h-11 shrink-0 justify-center px-4 text-[13px]" {% if not dashboard.available_users %}disabled{% endif %}>
                     <i data-lucide="plus" class="h-4 w-4"></i>
                     Thêm user
                 </button>

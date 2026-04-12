@@ -1380,7 +1380,12 @@ async def admin_channel_update_user(request: Request):
     _enforce_user_scope(current_admin, user_id)
 
     try:
-        action = store.update_user_channel(user_id, channel_id)
+        action = store.update_user_channel(
+            user_id,
+            channel_id,
+            viewer_role=current_admin.role,
+            viewer_id=current_admin.id,
+        )
         message = "Đã cấp quyền kênh cho user." if action == "added" else "Đã thu hồi quyền kênh của user."
         return _redirect_with_notice("/admin/channel/user", message, "success", userId=user_id, username=username)
     except (KeyError, ValueError) as exc:
@@ -1399,7 +1404,12 @@ async def admin_channel_add_user(request: Request):
     _enforce_user_scope(current_admin, user_id)
 
     try:
-        action = store.add_user_to_channel(user_id, channel_id)
+        action = store.add_user_to_channel(
+            user_id,
+            channel_id,
+            viewer_role=current_admin.role,
+            viewer_id=current_admin.id,
+        )
         message = "Đã thêm user vào kênh." if action == "added" else "Đã gỡ user khỏi kênh."
         return _redirect_with_notice("/admin/channel/users", message, "success", channelId=channel_id, channelName=channel_name)
     except (KeyError, ValueError) as exc:
