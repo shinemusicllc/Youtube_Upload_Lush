@@ -28,6 +28,18 @@
         line-height: 1.4;
     }
 
+    .worker-group-cell {
+        min-width: 0;
+    }
+
+    .worker-group-text {
+        display: block;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        white-space: normal;
+        line-height: 1.4;
+    }
+
     .bot-user-picker {
         position: relative;
     }
@@ -164,8 +176,12 @@
     .bot-user-picker-empty[hidden] {
         display: none;
     }
+
+    .worker-page-shell {
+        margin-top: 0 !important;
+    }
 </style>
-<section class="space-y-6">
+<section class="worker-page-shell space-y-6">
     {% set is_live_workspace = dashboard.workspace_mode == 'live' %}
     {% if is_live_workspace %}
     <style>
@@ -268,6 +284,22 @@
 
         <div class="table-shell {% if is_live_workspace %}overflow-x-hidden{% endif %}">
             <table class="admin-table {% if is_live_workspace %}admin-table-live-workers{% else %}admin-table-upload-workers{% endif %}" data-admin-list-table="worker-index">
+                {% if not is_live_workspace %}
+                <colgroup>
+                    <col style="width: 78px;">
+                    <col style="width: 224px;">
+                    <col style="width: 108px;">
+                    <col style="width: 132px;">
+                    <col style="width: 108px;">
+                    <col style="width: 102px;">
+                    <col style="width: 118px;">
+                    <col style="width: 120px;">
+                    <col style="width: 120px;">
+                    <col style="width: 110px;">
+                    <col style="width: 88px;">
+                    <col style="width: 250px;">
+                </colgroup>
+                {% endif %}
                 <thead>
                     <tr>
                         {% if is_live_workspace %}
@@ -348,7 +380,11 @@
                                 <p class="bot-cell-meta">{{ worker.manager_name or '--' }}</p>
                             </div>
                         </td>
-                        <td class="text-[12px] font-medium text-slate-700">{{ worker.group }}</td>
+                        <td>
+                            <div class="worker-group-cell">
+                                <p class="worker-group-text text-[12px] font-medium text-slate-700">{{ worker.group }}</p>
+                            </div>
+                        </td>
                         <td><span class="{{ worker.status_class }}">{{ worker.status_label }}</span></td>
                         <td class="table-mono text-slate-600">
                             <p>{{ created_parts[0] if created_parts and created_parts[0] else '--' }}</p>
@@ -1030,7 +1066,11 @@
         '      <p class="table-meta">', metaText, '</p>',
         '    </div>',
         '  </td>',
-        '  <td class="text-[12px] font-medium text-slate-700">', workerGroup, '</td>',
+        '  <td>',
+        '    <div class="worker-group-cell">',
+        '      <p class="worker-group-text text-[12px] font-medium text-slate-700">', workerGroup, '</p>',
+        '    </div>',
+        '  </td>',
         '  <td class="table-mono text-slate-600"><p>', escapeHtml(createdAt.date), '</p><p class="mt-1 text-[11px] text-slate-500">', escapeHtml(createdAt.time), '</p></td>',
         '  <td>', renderCountBadge(totalChannels, 'border-brand-100 bg-brand-50 text-brand-700', 'k&#234;nh'), '</td>',
         '  <td>', renderCountBadge(totalUsers, 'border-sky-100 bg-sky-50 text-sky-700', 'user'), '</td>',
