@@ -92,6 +92,18 @@ class AppStore:
             print(f"[worker_ops] scheduler resume failed: {exc}", flush=True)
 
     @classmethod
+    def _restore_worker_operation_workspace_mode(cls, task: dict[str, Any]) -> str:
+        explicit_workspace = str(task.get("workspace_mode") or "").strip()
+        if explicit_workspace:
+            return cls._normalize_workspace_mode(explicit_workspace)
+        worker_id = str(task.get("worker_id") or "").strip().lower()
+        runtime_dir = str(task.get("runtime_dir") or "").strip().lower()
+        app_dir = str(task.get("app_dir") or "").strip().lower()
+        if worker_id.startswith("live-worker-") or "live-worker" in runtime_dir or "live-worker" in app_dir:
+            return "live"
+        return "upload"
+
+    @classmethod
     def _live_demo_seed_enabled(cls) -> bool:
         default_enabled = any(
             cls._url_points_to_localhost(candidate)
@@ -884,15 +896,18 @@ class AppStore:
             worker_id = str(task.get("worker_id") or "").strip()
             if not task_id or not worker_id:
                 continue
+            workspace_mode = self._restore_worker_operation_workspace_mode(task)
             tasks.append(
                 {
                     "id": task_id,
                     "worker_id": worker_id,
                     "worker_name": str(task.get("worker_name") or "").strip(),
                     "vps_ip": str(task.get("vps_ip") or "").strip(),
+                    "control_plane_url": str(task.get("control_plane_url") or "").strip() or None,
                     "manager_id": str(task.get("manager_id") or "").strip() or None,
                     "manager_name": str(task.get("manager_name") or "").strip(),
                     "group": str(task.get("group") or "").strip(),
+                    "workspace_mode": workspace_mode,
                     "kind": str(task.get("kind") or "install").strip(),
                     "transport": str(task.get("transport") or "").strip() or ("ssh" if str(task.get("kind") or "").strip() == "decommission" else ""),
                     "status": str(task.get("status") or "queued").strip(),
@@ -909,6 +924,43 @@ class AppStore:
                 }
             )
         return tasks
+
+    def _reconcile_registered_worker_operation_tasks(self) -> bool:
+        changed = False
+        remaining_tasks: list[dict[str, Any]] = []
+        for raw_task in self.worker_operation_tasks:
+            task = dict(raw_task)
+            workspace_mode = self._restore_worker_operation_workspace_mode(task)
+            if str(task.get("workspace_mode") or "").strip() != workspace_mode:
+                task["workspace_mode"] = workspace_mode
+                changed = True
+            normalized_control_plane_url = str(task.get("control_plane_url") or "").strip() or None
+            if task.get("control_plane_url") != normalized_control_plane_url:
+                task["control_plane_url"] = normalized_control_plane_url
+                changed = True
+
+            worker_id = str(task.get("worker_id") or "").strip()
+            if (
+                str(task.get("kind") or "").strip() == "install"
+                and str(task.get("status") or "").strip() == "awaiting_registration"
+                and worker_id
+            ):
+                worker = next(
+                    (
+                        item
+                        for item in self._workspace_worker_pool(workspace_mode)
+                        if str(item.id or "").strip() == worker_id and str(item.status or "").strip() in {"online", "busy"}
+                    ),
+                    None,
+                )
+                if worker is not None:
+                    changed = True
+                    continue
+            remaining_tasks.append(task)
+        if changed:
+            self.worker_operation_tasks = remaining_tasks
+            self._save_state()
+        return changed
 
     def _restore_deleted_workers(self, payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
         restored: dict[str, dict[str, Any]] = {}
@@ -1594,7 +1646,7 @@ class AppStore:
                     for task in self.worker_operation_tasks
                     if str(task.get("kind") or "").strip() == "install"
                     and str(task.get("worker_id") or "").strip() == normalized_worker_id
-                    and self._normalize_workspace_mode(task.get("workspace_mode")) == resolved_workspace_mode
+                    and self._restore_worker_operation_workspace_mode(task) == resolved_workspace_mode
                 ),
                 None,
             )
@@ -1605,7 +1657,7 @@ class AppStore:
                 if not (
                     str(task.get("kind") or "").strip() == "install"
                     and str(task.get("worker_id") or "").strip() == normalized_worker_id
-                    and self._normalize_workspace_mode(task.get("workspace_mode")) == resolved_workspace_mode
+                    and self._restore_worker_operation_workspace_mode(task) == resolved_workspace_mode
                 )
             ]
             changed = len(self.worker_operation_tasks) != before
@@ -1680,6 +1732,7 @@ class AppStore:
             if self._monitor_thread and self._monitor_thread.is_alive():
                 return
             self._reconcile_worker_connectivity(now=self._now(trim=False))
+            self._reconcile_registered_worker_operation_tasks()
             self._monitor_stop_event.clear()
             self._monitor_thread = Thread(
                 target=self._worker_monitor_loop,
@@ -3143,10 +3196,12 @@ class AppStore:
     @classmethod
     def _default_worker_display_name(cls, worker_id: str | None, fallback: str | None = None) -> str:
         normalized_id = str(worker_id or "").strip()
+        normalized_fallback = str(fallback or "").strip()
+        if normalized_fallback:
+            return normalized_fallback
         if normalized_id and normalized_id in cls.KNOWN_WORKER_DISPLAY_NAMES:
             return cls.KNOWN_WORKER_DISPLAY_NAMES[normalized_id]
-        normalized_fallback = str(fallback or "").strip()
-        return normalized_fallback or normalized_id or "-"
+        return normalized_id or "-"
 
     def _normalize_known_worker_names(self) -> bool:
         changed = False
@@ -3351,7 +3406,7 @@ class AppStore:
                     for task in self.worker_operation_tasks
                     if str(task.get("kind") or "").strip() == "install"
                     and str(task.get("worker_id") or "").strip() == payload.worker_id
-                    and self._normalize_workspace_mode(task.get("workspace_mode")) == "upload"
+                    and self._restore_worker_operation_workspace_mode(task) == "upload"
                 ),
                 None,
             )
@@ -3451,7 +3506,7 @@ class AppStore:
                 if not (
                     str(task.get("kind") or "").strip() == "install"
                     and str(task.get("worker_id") or "").strip() == payload.worker_id
-                    and self._normalize_workspace_mode(task.get("workspace_mode")) == "upload"
+                    and self._restore_worker_operation_workspace_mode(task) == "upload"
                 )
             ]
 
@@ -3982,7 +4037,7 @@ class AppStore:
                     for task in self.worker_operation_tasks
                     if str(task.get("kind") or "").strip() == "install"
                     and str(task.get("worker_id") or "").strip() == payload.worker_id
-                    and self._normalize_workspace_mode(task.get("workspace_mode")) == "live"
+                    and self._restore_worker_operation_workspace_mode(task) == "live"
                 ),
                 None,
             )
@@ -4061,7 +4116,7 @@ class AppStore:
                 if not (
                     str(task.get("kind") or "").strip() == "install"
                     and str(task.get("worker_id") or "").strip() == payload.worker_id
-                    and self._normalize_workspace_mode(task.get("workspace_mode")) == "live"
+                    and self._restore_worker_operation_workspace_mode(task) == "live"
                 )
             ]
             self._save_state()

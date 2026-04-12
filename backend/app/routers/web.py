@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import csv
-import os
 from datetime import datetime
 from io import StringIO
 from pathlib import Path
@@ -11,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
+from ..request_urls import resolve_external_base_url, resolve_worker_bootstrap_control_plane_url
 from ..auth import (
     AdminSessionUser,
     AppSessionUser,
@@ -56,7 +56,7 @@ def _admin_identity_payload(current_user: AdminSessionUser) -> dict:
 
 
 def _public_shell_payload(*, request: Request, page_title: str, active_page: str) -> dict[str, object]:
-    base_url = str(request.base_url).rstrip("/")
+    base_url = resolve_external_base_url(request)
     return {
         "request": request,
         "page_title": page_title,
@@ -228,10 +228,7 @@ def _live_channel_json_error():
 
 
 def _resolve_worker_bootstrap_control_plane_url(request: Request) -> str:
-    configured = str(os.getenv("WORKER_BOOTSTRAP_CONTROL_PLANE_URL", "")).strip()
-    if configured:
-        return configured.rstrip("/")
-    return str(request.base_url).rstrip("/")
+    return resolve_worker_bootstrap_control_plane_url(request)
 
 
 def _parse_live_form_datetime(value: str | None) -> datetime | None:

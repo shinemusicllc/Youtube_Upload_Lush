@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
+from ..request_urls import resolve_worker_bootstrap_control_plane_url
 from ..auth import normalize_manager_filter_ids, require_admin_access, require_admin_only
 from ..store import store
 from ..worker_bootstrap import (
@@ -410,7 +411,7 @@ async def install_admin_bot(request: Request, payload: AdminBotInstallPayload):
             password=payload.password if auth_mode != "ssh_key" else None,
             ssh_private_key=payload.ssh_private_key if auth_mode == "ssh_key" else None,
             shared_secret=store.get_worker_shared_secret(),
-            control_plane_url=str(request.base_url).rstrip("/"),
+            control_plane_url=resolve_worker_bootstrap_control_plane_url(request),
             worker_id=worker_id,
             manager_name=manager_name,
             runtime_mode=workspace_mode,

@@ -203,7 +203,9 @@ def _request_with_retry(
     while True:
         attempt += 1
         try:
-            response = client.request(method, url, **kwargs)
+            request_kwargs = dict(kwargs)
+            request_kwargs.setdefault("follow_redirects", True)
+            response = client.request(method, url, **request_kwargs)
             response.raise_for_status()
             return response
         except Exception as exc:
