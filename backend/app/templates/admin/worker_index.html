@@ -744,6 +744,7 @@
     const pollMs = 3000;
     const recentNotices = new Map();
     let initialEditBotManagerId = '';
+    let initialEditBotUserIds = [];
     let pollingController = null;
     let pollingTimer = null;
     let lastPayloadSignature = '';
@@ -793,6 +794,7 @@
 
     function resetEditBotDialogState() {
       initialEditBotManagerId = '';
+      initialEditBotUserIds = [];
       if (editBotManagerTransferCleanupInput) {
         editBotManagerTransferCleanupInput.value = '0';
       }
@@ -1243,6 +1245,54 @@
       syncBotUserPickerSummary();
     }
 
+    function currentBotUserIds() {
+      return editBotUserPickerOptions
+        .map(function (option) {
+          const input = option.querySelector('[data-bot-user-input]');
+          return input && input.checked ? String(input.value || '').trim() : '';
+        })
+        .filter(Boolean);
+    }
+
+    function describeBotUsers(userIds) {
+      const labels = userIds
+        .map(function (userId) {
+          const matchedOption = editBotUserPickerOptions.find(function (option) {
+            const input = option.querySelector('[data-bot-user-input]');
+            return !!input && String(input.value || '').trim() === userId;
+          });
+          return String(matchedOption && matchedOption.dataset.userLabel ? matchedOption.dataset.userLabel : userId).trim();
+        })
+        .filter(Boolean);
+      if (!labels.length) {
+        return '';
+      }
+      if (labels.length === 1) {
+        return labels[0];
+      }
+      if (labels.length === 2) {
+        return labels[0] + ', ' + labels[1];
+      }
+      return labels.slice(0, 2).join(', ') + ' +' + String(labels.length - 2);
+    }
+
+    function buildUploadUserRemovalConfirmMessage(removedUserIds) {
+      const removedCount = removedUserIds.length;
+      const removedLabel = describeBotUsers(removedUserIds);
+      const intro = removedCount === 1
+        ? 'Bạn đang bỏ 1 user khỏi BOT upload này.'
+        : 'Bạn đang bỏ ' + String(removedCount) + ' user khỏi BOT upload này.';
+      const subject = removedLabel
+        ? '\n\nUser bị gỡ: ' + removedLabel
+        : '';
+      return [
+        intro,
+        subject,
+        '\n\nHệ thống sẽ gỡ các kênh đang gắn giữa những user này với VPS/BOT này, đóng browser session liên quan, và xóa các kênh, profile Chrome, job render không còn user nào giữ trên VPS này.',
+        '\n\nBạn có chắc muốn tiếp tục không?'
+      ].join('');
+    }
+
     function fillDialogFields(button) {
       if (!button) {
         return;
@@ -1264,7 +1314,8 @@
           editManagerSelect.dispatchEvent(new Event('change', { bubbles: true }));
         }
         if (editBotUserPicker) {
-          setBotUserSelections(parseAssignedUserIds(button.dataset.userIds || button.dataset.userId || ''));
+          initialEditBotUserIds = parseAssignedUserIds(button.dataset.userIds || button.dataset.userId || '');
+          setBotUserSelections(initialEditBotUserIds);
           syncBotUserPickerOptions({ pruneInvalid: false, resetSearch: true });
           closeBotUserPicker();
         }
@@ -1360,34 +1411,53 @@
 
     if (editBotForm) {
       editBotForm.addEventListener('submit', function (event) {
-        if (!editManagerSelect || !editBotManagerTransferCleanupInput) {
+        if (!editBotManagerTransferCleanupInput) {
           return;
         }
-        const selectedManagerValue = String(editManagerSelect.value || '').trim();
-        const nextManagerId = selectedManagerValue === EMPTY_MANAGER_OPTION_VALUE ? '' : selectedManagerValue;
+        const nextManagerId = currentBotUserManagerId();
         const managerChanged = initialEditBotManagerId !== nextManagerId;
-        if (!managerChanged) {
-          editBotManagerTransferCleanupInput.value = '0';
+        if (managerChanged) {
+          const confirmMessage = isLiveWorkspace
+            ? (
+                nextManagerId
+                  ? 'Chuyển BOT sang manager khác sẽ xóa sạch gán user và các luồng live hiện tại đang dùng BOT này.\n\nBạn có chắc muốn tiếp tục không?'
+                  : 'Chọn BOT trống sẽ gỡ manager khỏi BOT live này và xóa sạch gán user cùng các luồng live hiện tại đang dùng BOT này.\n\nBạn có chắc muốn tiếp tục không?'
+              )
+            : (
+                nextManagerId
+                  ? 'Chuyển BOT sang manager khác sẽ xóa sạch user, kênh, profile Chrome và job đang gắn với manager hiện tại trên VPS này.\n\nBạn có chắc muốn tiếp tục không?'
+                  : 'Chọn BOT trống sẽ gỡ manager khỏi BOT này và xóa sạch user, kênh, profile Chrome và job đang gắn với manager hiện tại trên VPS này.\n\nBạn có chắc muốn tiếp tục không?'
+              );
+          const confirmed = window.confirm(confirmMessage);
+          if (!confirmed) {
+            event.preventDefault();
+            editBotManagerTransferCleanupInput.value = '0';
+            return;
+          }
+          editBotManagerTransferCleanupInput.value = '1';
           return;
         }
-        const confirmMessage = isLiveWorkspace
-          ? (
-              nextManagerId
-                ? 'Chuyển BOT sang manager khác sẽ xóa sạch gán user và các luồng live hiện tại đang dùng BOT này.\n\nBạn có chắc muốn tiếp tục không?'
-                : 'Chọn BOT trống sẽ gỡ manager khỏi BOT live này và xóa sạch gán user cùng các luồng live hiện tại đang dùng BOT này.\n\nBạn có chắc muốn tiếp tục không?'
-            )
-          : (
-              nextManagerId
-                ? 'Chuyển BOT sang manager khác sẽ xóa sạch user, kênh, profile Chrome và job đang gắn với manager hiện tại trên VPS này.\n\nBạn có chắc muốn tiếp tục không?'
-                : 'Chọn BOT trống sẽ gỡ manager khỏi BOT này và xóa sạch user, kênh, profile Chrome và job đang gắn với manager hiện tại trên VPS này.\n\nBạn có chắc muốn tiếp tục không?'
-            );
-        const confirmed = window.confirm(confirmMessage);
+
+        editBotManagerTransferCleanupInput.value = '0';
+        if (isLiveWorkspace) {
+          return;
+        }
+
+        const initialUserSet = new Set(initialEditBotUserIds);
+        const currentUserSet = new Set(currentBotUserIds());
+        const removedUserIds = Array.from(initialUserSet).filter(function (userId) {
+          return !currentUserSet.has(userId);
+        });
+        if (!removedUserIds.length) {
+          return;
+        }
+
+        const confirmed = window.confirm(buildUploadUserRemovalConfirmMessage(removedUserIds));
         if (!confirmed) {
           event.preventDefault();
           editBotManagerTransferCleanupInput.value = '0';
           return;
         }
-        editBotManagerTransferCleanupInput.value = '1';
       });
     }
 
