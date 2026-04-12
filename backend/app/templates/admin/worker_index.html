@@ -28,6 +28,18 @@
         line-height: 1.4;
     }
 
+    .worker-group-cell {
+        min-width: 0;
+    }
+
+    .worker-group-text {
+        display: block;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        white-space: normal;
+        line-height: 1.4;
+    }
+
     .bot-user-picker {
         position: relative;
     }
@@ -164,8 +176,12 @@
     .bot-user-picker-empty[hidden] {
         display: none;
     }
+
+    .worker-page-shell {
+        margin-top: 0 !important;
+    }
 </style>
-<section class="space-y-6">
+<section class="worker-page-shell space-y-6">
     {% include "admin/_admin_notice.html" %}
 
     <div class="panel p-5">
@@ -207,20 +223,34 @@
 
         <div class="table-shell">
             <table class="admin-table admin-table-upload-workers" data-admin-list-table="worker-index">
+                <colgroup>
+                    <col style="width: 78px;">
+                    <col style="width: 224px;">
+                    <col style="width: 108px;">
+                    <col style="width: 132px;">
+                    <col style="width: 108px;">
+                    <col style="width: 102px;">
+                    <col style="width: 118px;">
+                    <col style="width: 120px;">
+                    <col style="width: 120px;">
+                    <col style="width: 110px;">
+                    <col style="width: 88px;">
+                    <col style="width: 250px;">
+                </colgroup>
                 <thead>
                     <tr>
-                        <th class="w-14">STT</th>
-                        <th class="w-[200px]">BOT</th>
+                        <th>STT</th>
+                        <th>BOT</th>
                         <th>Group</th>
                         <th>Ng&#224;y t&#7841;o</th>
                         <th>S&#7889; k&#234;nh</th>
                         <th>S&#7889; user</th>
                         <th>Tr&#7841;ng th&#225;i</th>
                         <th>RAM</th>
-                        <th class="w-[98px]">Disk</th>
-                        <th class="w-[86px]">Bandwith</th>
+                        <th>Disk</th>
+                        <th>Bandwith</th>
                         <th>Lu&#7891;ng</th>
-                        <th class="w-[250px] text-right">T&#225;c v&#7909;</th>
+                        <th class="text-right">T&#225;c v&#7909;</th>
                     </tr>
                 </thead>
                 <tbody data-worker-live-body data-live-endpoint="/api/admin/bots" data-initial-event-cursor="{{ dashboard.worker_event_cursor or '' }}">
@@ -266,7 +296,11 @@
                                 <p class="table-meta">{{ worker.meta_text or worker.manager_name }}</p>
                             </div>
                         </td>
-                        <td class="text-[12px] font-medium text-slate-700">{{ worker.group }}</td>
+                        <td>
+                            <div class="worker-group-cell">
+                                <p class="worker-group-text text-[12px] font-medium text-slate-700">{{ worker.group }}</p>
+                            </div>
+                        </td>
                         <td class="table-mono text-slate-600">
                             <p>{{ created_parts[0] if created_parts and created_parts[0] else '--' }}</p>
                             <p class="mt-1 text-[11px] text-slate-500">{{ ' '.join(created_parts[1:]) if created_parts|length > 1 else '--' }}</p>
@@ -808,7 +842,11 @@
         '      <p class="table-meta">', metaText, '</p>',
         '    </div>',
         '  </td>',
-        '  <td class="text-[12px] font-medium text-slate-700">', workerGroup, '</td>',
+        '  <td>',
+        '    <div class="worker-group-cell">',
+        '      <p class="worker-group-text text-[12px] font-medium text-slate-700">', workerGroup, '</p>',
+        '    </div>',
+        '  </td>',
         '  <td class="table-mono text-slate-600"><p>', escapeHtml(createdAt.date), '</p><p class="mt-1 text-[11px] text-slate-500">', escapeHtml(createdAt.time), '</p></td>',
         '  <td>', renderCountBadge(totalChannels, 'border-brand-100 bg-brand-50 text-brand-700', 'k&#234;nh'), '</td>',
         '  <td>', renderCountBadge(totalUsers, 'border-sky-100 bg-sky-50 text-sky-700', 'user'), '</td>',
