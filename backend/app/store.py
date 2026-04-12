@@ -5215,7 +5215,7 @@ class AppStore:
                     "manager_id": row_manager_id,
                     "telegram": meta.get("telegram") or "",
                     "telegram_manager": manager_meta.get("telegram") or "",
-                    "updated_meta": f"{meta.get('updated_by') or '-'} | {self._format_compact_datetime(meta.get('updated_at'))}",
+                    "updated_meta": f"{meta.get('updated_by') or '-'} • {self._format_compact_datetime(meta.get('updated_at'))}",
                     "total_channels": self._user_channel_count(user),
                     "total_workers": self._user_worker_count(user),
                     "live_threads_total": live_metrics["threads_live_total"],
@@ -5268,7 +5268,7 @@ class AppStore:
                     "username": user.username,
                     "display_name": user.display_name,
                     "credential_status": self._credential_status_label(meta),
-                    "updated_meta": f"{meta.get('updated_by') or '-'} | {self._format_compact_datetime(meta.get('updated_at'))}",
+                    "updated_meta": f"{meta.get('updated_by') or '-'} • {self._format_compact_datetime(meta.get('updated_at'))}",
                 }
             )
 
