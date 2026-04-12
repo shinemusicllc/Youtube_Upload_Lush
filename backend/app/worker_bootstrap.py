@@ -24,8 +24,11 @@ GIT_LAYOUT_SCRIPT_PATH = SCRIPT_DIR / "git_runtime_layout.sh"
 DECOMMISSION_SCRIPT_PATH = SCRIPT_DIR / "decommission_worker.sh"
 DEFAULT_REPO_URL = "https://github.com/shinemusicllc/Youtube_Upload_Lush.git"
 DEFAULT_BRANCH = "main"
-DEFAULT_APP_DIR = "/opt/youtube-upload-lush"
-DEFAULT_RUNTIME_DIR = "/opt/youtube-upload-lush-runtime"
+DEFAULT_APP_DIR = str(os.getenv("WORKER_BOOTSTRAP_APP_DIR", "/opt/youtube-upload-lush")).strip() or "/opt/youtube-upload-lush"
+DEFAULT_RUNTIME_DIR = (
+    str(os.getenv("WORKER_BOOTSTRAP_RUNTIME_DIR", "/opt/youtube-upload-lush-runtime")).strip()
+    or "/opt/youtube-upload-lush-runtime"
+)
 logger = logging.getLogger(__name__)
 _OPERATION_THREADS: dict[str, Thread] = {}
 _OPERATION_THREADS_LOCK = Lock()
