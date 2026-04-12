@@ -31,7 +31,21 @@ APP_DIR=/opt/youtube-upload-lush \
 RUNTIME_DIR=/opt/youtube-upload-lush-runtime \
 REPO_URL=https://github.com/shinemusicllc/Youtube_Upload_Lush.git \
 BRANCH=main \
+SYSTEMD_SERVICE_NAME=youtube-upload-web.service \
+SERVICE_PORT=8000 \
 bash /opt/youtube-upload-lush/scripts/bootstrap_host.sh
+```
+
+### Control-plane live preview
+```bash
+APP_DIR=/opt/youtube-upload-lush-live \
+RUNTIME_DIR=/opt/youtube-upload-lush-live-runtime \
+REPO_URL=https://github.com/shinemusicllc/Youtube_Upload_Lush.git \
+BRANCH=live-youtube \
+SYSTEMD_SERVICE_NAME=youtube-upload-web-live.service \
+SYSTEMD_SERVICE_DESCRIPTION="Youtube Upload Lush Live Preview Web App" \
+SERVICE_PORT=8010 \
+bash /opt/youtube-upload-lush-live/scripts/bootstrap_host.sh
 ```
 
 ### Worker
@@ -45,7 +59,7 @@ bash /opt/youtube-upload-lush/scripts/bootstrap_worker.sh
 
 ## Local -> GitHub -> VPS
 1. Tren may local: `git pull`, sua code, test, `git commit`, `git push origin main`.
-2. Tren control-plane: chay `bootstrap_host.sh` de `fetch/reset` ve `origin/main`, giu nguyen runtime va restart service.
+2. Tren control-plane: chay `bootstrap_host.sh` de `fetch/reset` ve branch dich, giu nguyen runtime, render lai unit systemd theo env deploy, va restart dung service dich.
 3. Tren tung worker: chay `bootstrap_worker.sh` de `fetch/reset` ve `origin/main`, giu nguyen runtime va restart service.
 
 ## Safety Rules

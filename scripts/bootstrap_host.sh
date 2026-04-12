@@ -6,9 +6,36 @@ RUNTIME_DIR="${RUNTIME_DIR:-/opt/youtube-upload-lush-runtime}"
 REPO_URL="${REPO_URL:-https://github.com/shinemusicllc/Youtube_Upload_Lush.git}"
 BRANCH="${BRANCH:-main}"
 DEPLOY_MODE="${DEPLOY_MODE:-systemd}"
+SYSTEMD_SERVICE_NAME="${SYSTEMD_SERVICE_NAME:-youtube-upload-web.service}"
+SYSTEMD_SERVICE_DESCRIPTION="${SYSTEMD_SERVICE_DESCRIPTION:-Youtube Upload Lush Web App}"
+SERVICE_USER="${SERVICE_USER:-root}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/git_runtime_layout.sh"
+
+render_systemd_service() {
+  local service_unit_path="$1"
+  local service_port="$2"
+
+  {
+    printf '%s\n' '[Unit]'
+    printf 'Description=%s\n' "$SYSTEMD_SERVICE_DESCRIPTION"
+    printf '%s\n' 'After=network-online.target'
+    printf '%s\n' 'Wants=network-online.target'
+    printf '\n'
+    printf '%s\n' '[Service]'
+    printf '%s\n' 'Type=simple'
+    printf 'WorkingDirectory=%s\n' "$APP_DIR"
+    printf 'ExecStart=%s/.venv/bin/python -m uvicorn backend.app.main:app --host 0.0.0.0 --port %s\n' "$APP_DIR" "$service_port"
+    printf '%s\n' 'Restart=always'
+    printf '%s\n' 'RestartSec=5'
+    printf '%s\n' 'Environment=PYTHONUNBUFFERED=1'
+    printf 'User=%s\n' "$SERVICE_USER"
+    printf '\n'
+    printf '%s\n' '[Install]'
+    printf '%s\n' 'WantedBy=multi-user.target'
+  } >"$service_unit_path"
+}
 
 mkdir -p "$RUNTIME_DIR"
 
@@ -33,6 +60,8 @@ fi
 set +u
 . "$RUNTIME_DIR/.env"
 set -u
+
+SERVICE_PORT="${SERVICE_PORT:-${PORT:-8000}}"
 
 if [ "${BROWSER_SESSION_ENABLED:-0}" = "1" ]; then
   apt-get update
@@ -66,6 +95,8 @@ fi
 ./.venv/bin/pip install --upgrade pip
 ./.venv/bin/pip install -r backend/requirements.txt
 
-cp infra/systemd/youtube-upload-web.service /etc/systemd/system/youtube-upload-web.service
+render_systemd_service "/etc/systemd/system/$SYSTEMD_SERVICE_NAME" "$SERVICE_PORT"
 systemctl daemon-reload
-systemctl enable --now youtube-upload-web.service
+systemctl enable "$SYSTEMD_SERVICE_NAME"
+systemctl restart "$SYSTEMD_SERVICE_NAME"
+systemctl --no-pager --full status "$SYSTEMD_SERVICE_NAME" | sed -n '1,12p'

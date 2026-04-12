@@ -31,6 +31,7 @@
 - Infra khong chua business logic.
 - Runtime artifact (`.env`, `.venv`, data, backups`) phai tach khoi source checkout.
 - Production deploy uu tien `git-first checkout` + runtime symlink, khong tro lai copy tay source vo tinh.
+- `scripts/bootstrap_host.sh` la canonical host deploy entrypoint cho mode `systemd`: script phai render unit theo `APP_DIR + SERVICE_PORT + SYSTEMD_SERVICE_NAME` va restart dung service sau moi lan sync code.
 
 ## Known Pitfalls
 - Drift local/GitHub/VPS tung la pain point lon; task deploy/sync can ghi ro source of truth.
@@ -41,3 +42,4 @@
 - `DEC-001`
 - `DEC-003`
 - `DEC-004`
+- `DEC-028`

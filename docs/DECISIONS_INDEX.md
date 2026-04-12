@@ -30,6 +30,7 @@
 | DEC-025 | Worker service bootstrap khong duoc phu thuoc `network-online.target`; unit worker chi can `After=network.target` va worker tu retry/re-register control-plane sau khi start | Active | worker bootstrap + systemd unit | Medium |
 | DEC-026 | Bootstrap/decommission BOT phai duoc persist qua app restart: task SSH dang do se duoc resume tu `worker_operation_tasks`, task `awaiting_registration` co timeout ro rang, va remote command phai co timeout/log excerpt de debug | Active | worker bootstrap + control-plane ops | High |
 | DEC-027 | App host chi duoc phep chay toi da 2 install BOT song song; install task vuot nguong o lai hang doi cho toi khi co slot trong | Active | worker bootstrap + app host stability | High |
+| DEC-028 | Host bootstrap o mode `systemd` phai render/reload/restart dung unit dich theo `APP_DIR + SERVICE_PORT + SYSTEMD_SERVICE_NAME`, de deploy code Python luon nap process moi va khong lech giua env `main` voi `live` | Active | infra deploy + production sync | High |
 
 ## Notes
 - `docs/DECISIONS.md` van giu full history va ly do chi tiet.
