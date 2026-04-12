@@ -344,6 +344,8 @@ def _upload_remote_script(sftp, local_path: Path, remote_path: str) -> None:
 def _build_worker_env_file(request: WorkerBootstrapRequest) -> str:
     browser_public_base_url = str(request.browser_public_base_url or f"http://{request.vps_ip}").rstrip("/")
     runtime_mode = str(request.runtime_mode or "upload").strip().lower() or "upload"
+    runtime_dir = str(request.runtime_dir or _resolve_default_runtime_dir()).strip().rstrip("/") or _resolve_default_runtime_dir()
+    worker_data_dir = f"{runtime_dir}/worker-data"
     browser_session_enabled = runtime_mode != "live"
     youtube_upload_enabled = runtime_mode != "live"
     return "\n".join(
@@ -363,6 +365,7 @@ def _build_worker_env_file(request: WorkerBootstrapRequest) -> str:
             "WORKER_EXECUTE_JOBS=true",
             "WORKER_SIMULATE_STEP_SECONDS=2.5",
             f"WORKER_UPLOAD_TO_YOUTUBE={'true' if youtube_upload_enabled else 'false'}",
+            f"WORKER_DATA_DIR={worker_data_dir}",
             "WORKER_KEEP_JOB_DIRS=false",
             "YOUTUBE_UPLOAD_CHUNK_BYTES=8388608",
             f"BROWSER_SESSION_ENABLED={1 if browser_session_enabled else 0}",

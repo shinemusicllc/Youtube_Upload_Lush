@@ -1680,6 +1680,8 @@ class AppStore:
                     now = self._now(trim=False)
                     self._reconcile_worker_connectivity(now=now)
                     self._reconcile_expired_worker_jobs(now=now)
+                    self._reconcile_expired_live_streams(now=now)
+                    self._reconcile_live_worker_connectivity(now=now)
             except Exception as exc:
                 print(f"[worker_monitor] reconcile failed: {exc}", flush=True)
 
@@ -1995,6 +1997,17 @@ class AppStore:
             "Trạng thái: BOT chưa tự kết nối lại với control-plane"
         )
 
+    def _live_worker_offline_message(self, worker: WorkerRecord, *, now: datetime) -> str:
+        worker_name = worker.name or worker.id
+        manager_name = worker.manager_name or "không rõ"
+        return (
+            "[CẢNH BÁO] BOT live mất kết nối quá 3 phút\n"
+            f"BOT: {worker_name}\n"
+            f"BOT ID: {worker.id}\n"
+            f"Manager: {manager_name}\n"
+            "Trạng thái: BOT live chưa tự kết nối lại với control-plane"
+        )
+
     def _reconcile_worker_connectivity(self, *, now: datetime) -> bool:
         changed = False
         alert_seconds = self._worker_offline_alert_seconds()
@@ -2026,6 +2039,44 @@ class AppStore:
             if worker.offline_alert_sent_at is not None:
                 continue
             message = self._worker_offline_message(worker, now=now)
+            if self._notify_telegram_chat_ids(self._worker_alert_recipient_chat_ids(worker), message):
+                worker.offline_alert_sent_at = now
+                changed = True
+        if changed:
+            self._save_state()
+        return changed
+
+    def _reconcile_live_worker_connectivity(self, *, now: datetime) -> bool:
+        changed = False
+        alert_seconds = self._worker_offline_alert_seconds()
+        stale_cutoff = timedelta(seconds=alert_seconds)
+        for worker in self.live_workers:
+            last_seen = worker.last_seen_at
+            running_threads = self._count_live_worker_running_streams(worker)
+            is_online = last_seen is not None and (now - last_seen) < stale_cutoff
+            if is_online:
+                desired_status = "busy" if running_threads > 0 else "online"
+                if worker.status != desired_status:
+                    worker.status = desired_status
+                    changed = True
+                if worker.offline_since_at is not None:
+                    worker.offline_since_at = None
+                    changed = True
+                if worker.offline_alert_sent_at is not None:
+                    worker.offline_alert_sent_at = None
+                    changed = True
+                continue
+
+            if worker.status != "offline":
+                worker.status = "offline"
+                changed = True
+            offline_since_at = last_seen or now
+            if worker.offline_since_at != offline_since_at:
+                worker.offline_since_at = offline_since_at
+                changed = True
+            if worker.offline_alert_sent_at is not None:
+                continue
+            message = self._live_worker_offline_message(worker, now=now)
             if self._notify_telegram_chat_ids(self._worker_alert_recipient_chat_ids(worker), message):
                 worker.offline_alert_sent_at = now
                 changed = True
@@ -5641,6 +5692,27 @@ class AppStore:
             changed = True
         if changed:
             self._refresh_queue_positions()
+            self._save_state()
+        return changed
+
+    def _reconcile_expired_live_streams(self, *, now: datetime) -> bool:
+        changed = False
+        active_statuses = self._live_worker_active_statuses()
+        for stream in self.live_streams:
+            if stream.status not in active_statuses:
+                continue
+            if not stream.claimed_by_worker_id:
+                continue
+            if stream.lease_expires_at is None or stream.lease_expires_at > now:
+                continue
+            self._handle_interrupted_live_stream(
+                stream,
+                now=now,
+                reason="Control-plane không nhận được heartbeat/progress của live worker trong thời gian grace.",
+            )
+            changed = True
+        if changed:
+            self._sync_live_backup_policy(now=now)
             self._save_state()
         return changed
 

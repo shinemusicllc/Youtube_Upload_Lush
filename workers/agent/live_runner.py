@@ -222,7 +222,8 @@ def _prepare_rendered_media(
     render_dir.mkdir(parents=True, exist_ok=True)
     rendered_path = render_dir / "rendered.flv"
     video_info = probe_media(config.ffprobe_bin, video_path)
-    total_duration = max(1.0, float(video_info.duration_seconds or 1.0))
+    video_duration = max(1.0, float(video_info.duration_seconds or 1.0))
+    total_duration = video_duration
 
     def _on_progress(ratio: float, _current_seconds: float) -> None:
         report_progress(
@@ -232,12 +233,14 @@ def _prepare_rendered_media(
         )
 
     if audio_path is not None:
+        audio_info = probe_media(config.ffprobe_bin, audio_path)
+        total_duration = max(1.0, float(audio_info.duration_seconds or video_duration))
         arguments = [
             "-y",
-            "-i",
-            str(video_path),
             "-stream_loop",
             "-1",
+            "-i",
+            str(video_path),
             "-i",
             str(audio_path),
             "-map",
