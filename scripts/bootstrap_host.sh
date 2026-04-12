@@ -89,7 +89,7 @@ if [ "$DEPLOY_MODE" = "docker" ]; then
 fi
 
 if [ ! -d "$RUNTIME_DIR/.venv" ]; then
-  python3 -m venv .venv
+  python3 -m venv "$RUNTIME_DIR/.venv"
 fi
 
 ./.venv/bin/pip install --upgrade pip
