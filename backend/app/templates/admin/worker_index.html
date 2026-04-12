@@ -177,9 +177,6 @@
         display: none;
     }
 
-    .worker-page-shell {
-        margin-top: 0 !important;
-    }
 </style>
 <section class="worker-page-shell space-y-6">
     {% set is_live_workspace = dashboard.workspace_mode == 'live' %}
@@ -548,17 +545,17 @@
             {% endif %}
 
             <div class="border-b border-slate-200 px-5 py-4">
-                <h3 class="section-title">{% if dashboard.workspace_mode == 'live' %}Th&#234;m BOT live m&#7899;i{% else %}Th&#234;m BOT m&#7899;i{% endif %}</h3>
-                <p class="section-note">{% if dashboard.workspace_mode == 'live' %}Th&#234;m nhanh BOT live v&#224;o live pool chung. Admin c&#243; th&#7875; g&#225;n manager/user v&#224; ch&#7885;n ch&#7913;c n&#259;ng `live ch&#237;nh` ho&#7863;c `backup` ngay sau &#273;&#243;.{% else %}Control-plane sẽ SSH sang VPS, clone repo, cài worker service và hiển thị tiến trình cài đặt trực tiếp ngay trong danh sách BOT.{% endif %}</p>
+                <h3 class="section-title">{% if dashboard.workspace_mode == 'live' %}C&#224;i BOT live m&#7899;i{% else %}Th&#234;m BOT m&#7899;i{% endif %}</h3>
+                <p class="section-note">{% if dashboard.workspace_mode == 'live' %}Control-plane s&#7869; SSH sang VPS, clone repo, c&#224;i worker service theo ch&#7871; &#273;&#7897; Live Stream v&#224; hi&#7875;n th&#7883; ti&#7871;n tr&#236;nh ngay trong danh s&#225;ch BOT.{% else %}Control-plane sẽ SSH sang VPS, clone repo, cài worker service và hiển thị tiến trình cài đặt trực tiếp ngay trong danh sách BOT.{% endif %}</p>
             </div>
             <div class="space-y-4 px-5 py-5">
                 <div class="rounded-2xl border border-brand-100 bg-brand-50/70 px-4 py-3 text-[12px] leading-5 text-brand-700">
                     <p class="font-semibold">BOT ID tự cấp: {{ dashboard.new_worker_defaults.worker_id }}</p>
-                    <p class="mt-1">{% if dashboard.workspace_mode == 'live' %}T&#234;n BOT live s&#7869; d&#249;ng &#273;&#7883;a ch&#7881; IP VPS. Manager t&#7841;o BOT s&#7869; s&#7903; h&#7919;u BOT ngay trong scope c&#7911;a m&#236;nh; admin c&#243; th&#7875; g&#225;n manager ho&#7863;c user sau t&#7841;i n&#250;t Sửa.{% else %}Tên BOT sẽ dùng IP VPS. Browser session/noVNC được bật sẵn để đăng nhập Google và thêm channel sau khi cài xong. Manager và group có thể chỉnh sau.{% endif %}</p>
+                    <p class="mt-1">{% if dashboard.workspace_mode == 'live' %}BOT live s&#7869; d&#249;ng IP VPS l&#224;m t&#234;n hi&#7875;n th&#7883;, l&#432;u credential SSH cho vi&#7879;c g&#7905; BOT sau n&#224;y v&#224; t&#7921; kh&#7903;i &#273;&#7897;ng worker v&#7899;i `runtime_mode=live`.{% else %}Tên BOT sẽ dùng IP VPS. Browser session/noVNC được bật sẵn để đăng nhập Google và thêm channel sau khi cài xong. Manager và group có thể chỉnh sau.{% endif %}</p>
                 </div>
 
                 <div>
-                    <label class="field-label" for="create-bot-vps-ip">{% if dashboard.workspace_mode == 'live' %}IP VPS / T&#234;n BOT live{% else %}VPS IP{% endif %}</label>
+                    <label class="field-label" for="create-bot-vps-ip">VPS IP</label>
                     <input
                         class="toolbar-input"
                         id="create-bot-vps-ip"
@@ -569,7 +566,6 @@
                         placeholder="109.123.233.131"
                     >
                 </div>
-                {% if dashboard.workspace_mode != 'live' %}
                 <div>
                     <label class="field-label" for="create-bot-ssh-user">Root user</label>
                     <input
@@ -596,11 +592,10 @@
                         spellcheck="false"
                     >
                 </div>
-                {% endif %}
             </div>
             <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
                 <button type="button" class="action-btn action-btn-slate" data-dialog-close>&#272;&#243;ng</button>
-                <button type="submit" class="action-btn action-btn-brand" data-create-bot-submit>{% if dashboard.workspace_mode == 'live' %}Th&#234;m BOT live{% else %}C&#224;i worker{% endif %}</button>
+                <button type="submit" class="action-btn action-btn-brand" data-create-bot-submit>{% if dashboard.workspace_mode == 'live' %}C&#224;i BOT live{% else %}C&#224;i worker{% endif %}</button>
             </div>
         </form>
     </div>
@@ -834,7 +829,7 @@
       if (createBotPasswordInput) {
         createBotPasswordInput.value = '';
       }
-      setSubmitLoading(createBotSubmit, false, isLiveWorkspace ? 'Đang thêm BOT live...' : 'Đang cài đặt...');
+      setSubmitLoading(createBotSubmit, false, isLiveWorkspace ? 'Đang cài BOT live...' : 'Đang cài đặt...');
     }
 
     function escapeHtml(value) {
@@ -1460,7 +1455,7 @@
       if (!createBotForm) {
         return;
       }
-      const loadingLabel = isLiveWorkspace ? 'Đang thêm BOT live...' : 'Đang cài đặt...';
+      const loadingLabel = isLiveWorkspace ? 'Đang cài BOT live...' : 'Đang cài đặt...';
       setSubmitLoading(createBotSubmit, true, loadingLabel);
       const formData = new FormData(createBotForm);
       const payload = {
@@ -1493,7 +1488,7 @@
         showSystemNotice(
           responsePayload && typeof responsePayload.message === 'string' && responsePayload.message.trim()
             ? responsePayload.message.trim()
-            : (isLiveWorkspace ? 'Đã thêm BOT live mới.' : 'Đã bắt đầu cài worker mới.'),
+            : (isLiveWorkspace ? 'Đã bắt đầu cài BOT live.' : 'Đã bắt đầu cài worker mới.'),
           'success'
         );
         await fetchLiveWorkers();
@@ -1501,45 +1496,11 @@
         showSystemNotice(
           error && error.message
             ? error.message
-            : (isLiveWorkspace ? 'Không thể thêm BOT live lúc này.' : 'Không thể cài worker lúc này.'),
+            : (isLiveWorkspace ? 'Không thể cài BOT live lúc này.' : 'Không thể cài worker lúc này.'),
           'error'
         );
       } finally {
         setSubmitLoading(createBotSubmit, false, loadingLabel);
-      }
-    }
-
-    async function requestDeleteBot(workerId, workerName) {
-      const normalizedWorkerId = String(workerId || '').trim();
-      if (!normalizedWorkerId) {
-        return;
-      }
-      if (!window.confirm('Bạn có chắc chắn muốn xoá BOT này không?')) {
-        return;
-      }
-      try {
-        const response = await fetch('/api/admin/bots/' + encodeURIComponent(normalizedWorkerId), {
-          method: 'DELETE',
-          credentials: 'same-origin',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Requested-With': 'XMLHttpRequest'
-          },
-          body: JSON.stringify({ workspace: isLiveWorkspace ? 'live' : 'upload' })
-        });
-        if (!response.ok) {
-          throw new Error(await parseResponseError(response));
-        }
-        showSystemNotice(
-          (workerName ? ('Đã bắt đầu xóa BOT ' + workerName + '.') : 'Đã bắt đầu xóa BOT.') + ' Hệ thống sẽ tự dọn VPS và cập nhật danh sách.',
-          'success'
-        );
-        await fetchLiveWorkers();
-      } catch (error) {
-        showSystemNotice(
-          error && error.message ? error.message : 'Không thể xóa BOT lúc này.',
-          'error'
-        );
       }
     }
 
@@ -1574,7 +1535,7 @@
             ? responsePayload.message.trim()
             : (
                 isLiveWorkspace
-                  ? (workerName ? ('Đã xóa BOT live ' + workerName + '.') : 'Đã xóa BOT live.')
+                  ? ((workerName ? ('Đã bắt đầu gỡ BOT live ' + workerName + '.') : 'Đã bắt đầu gỡ BOT live.') + ' Hệ thống sẽ tự dọn VPS và cập nhật danh sách.')
                   : ((workerName ? ('Đã bắt đầu xóa BOT ' + workerName + '.') : 'Đã bắt đầu xóa BOT.') + ' Hệ thống sẽ tự dọn VPS và cập nhật danh sách.')
               ),
           'success'

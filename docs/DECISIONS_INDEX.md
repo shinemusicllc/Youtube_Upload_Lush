@@ -31,6 +31,8 @@
 | DEC-026 | Runtime live phase 1 dung namespace `/api/live-workers/*` rieng va bam 4 pha `download -> pre-render -> wait -> RTMP stream`; worker entrypoint lazy-import theo `runtime_mode` de live khong phu thuoc upload stack | Active | live runtime + worker architecture | High |
 
 | DEC-027 | Backup policy cua live phai bam sat app cu: luong co `EndTimeLive` chay song song primary + backup ngay tu dau, con luong `24/7` chi start backup sau khi primary mat ket noi qua `backup delay` va se huy backup neu primary hoi phuc | Active | live runtime + failover policy | High |
+| DEC-028 | Route canon cua live app la `/app/live` cho moi role; `admin/manager` dung live app bang chinh account cua minh, con `/admin/live` chi giu de redirect tuong thich va cac man quan tri live van o cum `/admin/*?workspace=live` | Active | live workspace + route/auth model | High |
+| DEC-029 | BOT live phai di qua cung SSH bootstrap/decommission pipeline voi upload va chon runtime bang `WORKER_RUNTIME_MODE=live`; khong cho local-create BOT live trong control-plane | Active | live worker bootstrap + admin ops | High |
 
 ## Notes
 - `docs/DECISIONS.md` van giu full history va ly do chi tiet.

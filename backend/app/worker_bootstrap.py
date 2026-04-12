@@ -43,6 +43,7 @@ class WorkerBootstrapRequest:
     shared_secret: str
     worker_id: str
     worker_name: str
+    runtime_mode: str = "upload"
     manager_name: str = "system"
     group: str = ""
     password: str | None = None
@@ -154,6 +155,7 @@ def build_worker_bootstrap_request(
     ssh_private_key: str | None = None,
     repo_url: str | None = None,
     branch: str | None = None,
+    runtime_mode: str = "upload",
 ) -> WorkerBootstrapRequest:
     normalized_ip = str(vps_ip or "").strip()
     if not normalized_ip:
@@ -172,6 +174,7 @@ def build_worker_bootstrap_request(
         shared_secret=str(shared_secret or "").strip(),
         worker_id=str(worker_id or "").strip(),
         worker_name=normalized_ip,
+        runtime_mode="live" if str(runtime_mode or "").strip().lower() == "live" else "upload",
         manager_name=str(manager_name or "").strip() or "system",
         group="",
         repo_url=str(repo_url or os.getenv("WORKER_BOOTSTRAP_REPO_URL", DEFAULT_REPO_URL)).strip() or DEFAULT_REPO_URL,
@@ -331,6 +334,7 @@ def _build_worker_env_file(request: WorkerBootstrapRequest) -> str:
             f"WORKER_SHARED_SECRET={request.shared_secret}",
             f"WORKER_ID={request.worker_id}",
             f"WORKER_NAME={request.worker_name}",
+            f"WORKER_RUNTIME_MODE={request.runtime_mode}",
             f"WORKER_MANAGER={request.manager_name}",
             "WORKER_GROUP=",
             f"WORKER_CAPACITY={request.capacity}",
@@ -689,6 +693,7 @@ def start_worker_install_operation(
         manager_id=manager_id,
         manager_name=manager_name,
         group=group,
+        workspace_mode=request.runtime_mode,
         requested_by=requested_by,
         requested_role=requested_role,
     )
@@ -702,6 +707,7 @@ def start_worker_decommission_operation(
     worker_id: str,
     request: WorkerDecommissionRequest,
     ssh_user: str,
+    workspace_mode: str = "upload",
     requested_by: str = "system",
     requested_role: str = "system",
 ) -> dict:
@@ -712,6 +718,7 @@ def start_worker_decommission_operation(
         transport="ssh",
         app_dir=request.app_dir,
         runtime_dir=request.runtime_dir,
+        workspace_mode=workspace_mode,
         requested_by=requested_by,
         requested_role=requested_role,
     )
@@ -726,7 +733,8 @@ def start_worker_decommission_operation(
 
 def _install_request_from_task(store, task: dict[str, str]) -> WorkerBootstrapRequest:
     worker_id = str(task.get("worker_id") or "").strip()
-    profile = store.get_worker_connection_profile(worker_id)
+    workspace_mode = str(task.get("workspace_mode") or "").strip() or "upload"
+    profile = store.get_worker_connection_profile(worker_id, workspace_mode=workspace_mode)
     auth_mode = str(profile.get("auth_mode") or "password").strip().lower() or "password"
     return build_worker_bootstrap_request(
         vps_ip=str(profile.get("vps_ip") or task.get("vps_ip") or "").strip(),
@@ -739,12 +747,14 @@ def _install_request_from_task(store, task: dict[str, str]) -> WorkerBootstrapRe
         manager_name=str(task.get("manager_name") or "").strip() or "system",
         repo_url=DEFAULT_REPO_URL,
         branch=DEFAULT_BRANCH,
+        runtime_mode=workspace_mode,
     )
 
 
 def _decommission_request_from_task(store, task: dict[str, str]) -> WorkerDecommissionRequest:
     worker_id = str(task.get("worker_id") or "").strip()
-    profile = store.get_worker_connection_profile(worker_id)
+    workspace_mode = str(task.get("workspace_mode") or "").strip() or "upload"
+    profile = store.get_worker_connection_profile(worker_id, workspace_mode=workspace_mode)
     auth_mode = str(profile.get("auth_mode") or "password").strip().lower() or "password"
     return build_worker_decommission_request(
         vps_ip=str(profile.get("vps_ip") or task.get("vps_ip") or "").strip(),

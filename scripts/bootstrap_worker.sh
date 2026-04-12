@@ -42,6 +42,7 @@ CONTROL_PLANE_URL=https://your-domain.example
 WORKER_SHARED_SECRET=replace-with-a-long-random-worker-secret
 WORKER_ID=worker-01
 WORKER_NAME=worker-01
+WORKER_RUNTIME_MODE=upload
 WORKER_MANAGER=system
 WORKER_GROUP=workers
 WORKER_CAPACITY=1

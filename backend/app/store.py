@@ -1065,14 +1065,17 @@ class AppStore:
             return
         raise ValueError("BOT này đã bị xoá khỏi hệ thống. Hãy thêm BOT lại nếu muốn kết nối lại VPS này.")
 
-    def get_worker_connection_profile(self, worker_id: str) -> dict[str, Any]:
+    def get_worker_connection_profile(self, worker_id: str, *, workspace_mode: str = "upload") -> dict[str, Any]:
         normalized_worker_id = str(worker_id or "").strip()
         if not normalized_worker_id:
             raise KeyError(worker_id)
+        resolved_workspace_mode = self._normalize_workspace_mode(workspace_mode)
         profile = dict(self.worker_connection_profiles.get(normalized_worker_id) or {})
         if not profile:
-            worker = self._find_worker(normalized_worker_id)
-            worker_name = str(self._resolve_worker_display_name(worker.id) or "").strip()
+            worker = self._find_workspace_worker(normalized_worker_id, workspace_mode=resolved_workspace_mode)
+            worker_name = str(
+                self._resolve_workspace_worker_display_name(worker.id, workspace_mode=resolved_workspace_mode) or ""
+            ).strip()
             if self._looks_like_ipv4(worker_name):
                 profile = {
                     "worker_id": normalized_worker_id,
@@ -1271,25 +1274,55 @@ class AppStore:
         manager_id: str | None,
         manager_name: str,
         group: str = "",
+        workspace_mode: str = "upload",
         requested_by: str = "system",
         requested_role: str = "system",
     ) -> dict[str, Any]:
         with self._worker_state_lock:
             normalized_worker_id = str(worker_id or "").strip()
             normalized_ip = str(vps_ip or "").strip()
+            resolved_workspace_mode = self._normalize_workspace_mode(workspace_mode)
+            workspace_workers = self._workspace_worker_pool(resolved_workspace_mode)
+            other_workspace_mode = "upload" if resolved_workspace_mode == "live" else "live"
+            other_workspace_workers = self._workspace_worker_pool(other_workspace_mode)
             if not normalized_worker_id or not normalized_ip:
                 raise ValueError("Worker bootstrap task thiếu worker_id hoặc VPS IP.")
             self._clear_deleted_worker(normalized_worker_id)
-            if any(str(worker.id or "").strip() == normalized_worker_id for worker in self.workers):
+            if any(str(worker.id or "").strip() == normalized_worker_id for worker in workspace_workers):
                 raise ValueError("Worker ID này đã tồn tại trong control-plane.")
-            if any(str(self._resolve_worker_display_name(worker.id) or "").strip() == normalized_ip for worker in self.workers):
+            if any(
+                str(
+                    self._resolve_workspace_worker_display_name(
+                        worker.id,
+                        workspace_mode=resolved_workspace_mode,
+                    )
+                    or ""
+                ).strip()
+                == normalized_ip
+                for worker in workspace_workers
+            ):
                 raise ValueError("VPS này đã tồn tại trong danh sách BOT.")
+            if any(
+                str(
+                    self._resolve_workspace_worker_display_name(
+                        worker.id,
+                        workspace_mode=other_workspace_mode,
+                    )
+                    or ""
+                ).strip()
+                == normalized_ip
+                for worker in other_workspace_workers
+            ):
+                raise ValueError(
+                    "VPS này đang được dùng ở workspace còn lại. Hãy gỡ BOT ở workspace kia trước khi cài lại."
+                )
             removed_failed_worker_ids: set[str] = set()
             remaining_tasks: list[dict[str, Any]] = []
             for task in self.worker_operation_tasks:
                 is_replaceable_failed_install = (
                     str(task.get("kind") or "").strip() == "install"
                     and str(task.get("status") or "").strip() == "failed"
+                    and self._normalize_workspace_mode(task.get("workspace_mode")) == resolved_workspace_mode
                     and (
                         str(task.get("worker_id") or "").strip() == normalized_worker_id
                         or str(task.get("vps_ip") or "").strip() == normalized_ip
@@ -1303,10 +1336,12 @@ class AppStore:
                 remaining_tasks.append(task)
             self.worker_operation_tasks = remaining_tasks
             for failed_worker_id in removed_failed_worker_ids:
-                if not any(str(worker.id or "").strip() == failed_worker_id for worker in self.workers):
+                if not any(str(worker.id or "").strip() == failed_worker_id for worker in workspace_workers):
                     self.worker_connection_profiles.pop(failed_worker_id, None)
             for task in self.worker_operation_tasks:
                 if self._worker_operation_is_finished(task):
+                    continue
+                if self._normalize_workspace_mode(task.get("workspace_mode")) != resolved_workspace_mode:
                     continue
                 if (
                     str(task.get("worker_id") or "").strip() == normalized_worker_id
@@ -1322,6 +1357,7 @@ class AppStore:
                 "manager_id": str(manager_id or "").strip() or None,
                 "manager_name": str(manager_name or "").strip() or "system",
                 "group": str(group or "").strip(),
+                "workspace_mode": resolved_workspace_mode,
                 "kind": "install",
                 "status": "queued",
                 "message": "Đang chờ control-plane kết nối SSH vào VPS...",
@@ -1352,11 +1388,13 @@ class AppStore:
         transport: str = "ssh",
         app_dir: str = "/opt/youtube-upload-lush",
         runtime_dir: str = "/opt/youtube-upload-lush-runtime",
+        workspace_mode: str = "upload",
         requested_by: str = "system",
         requested_role: str = "system",
     ) -> dict[str, Any]:
         with self._worker_state_lock:
-            worker = self._find_worker(worker_id)
+            resolved_workspace_mode = self._normalize_workspace_mode(workspace_mode)
+            worker = self._find_workspace_worker(worker_id, workspace_mode=resolved_workspace_mode)
             normalized_worker_id = str(worker.id or "").strip()
             normalized_ip = str(vps_ip or "").strip()
             if not normalized_ip:
@@ -1364,17 +1402,20 @@ class AppStore:
             for task in self.worker_operation_tasks:
                 if self._worker_operation_is_finished(task):
                     continue
+                if self._normalize_workspace_mode(task.get("workspace_mode")) != resolved_workspace_mode:
+                    continue
                 if str(task.get("worker_id") or "").strip() == normalized_worker_id:
                     raise ValueError("BOT này đang có một tiến trình cài đặt hoặc gỡ BOT khác chưa xong.")
             now = self._now(trim=False)
             task = {
                 "id": f"worker-op-{uuid4().hex[:10]}",
                 "worker_id": normalized_worker_id,
-                "worker_name": self._resolve_worker_display_name(worker.id),
+                "worker_name": self._resolve_workspace_worker_display_name(worker.id, workspace_mode=resolved_workspace_mode),
                 "vps_ip": normalized_ip,
                 "manager_id": worker.manager_id,
                 "manager_name": worker.manager_name,
                 "group": str(worker.group or "").strip(),
+                "workspace_mode": resolved_workspace_mode,
                 "kind": "decommission",
                 "transport": str(transport or "ssh").strip() or "ssh",
                 "status": "queued",
@@ -1480,16 +1521,18 @@ class AppStore:
             self._save_state()
             return deepcopy(task)
 
-    def clear_install_operation_after_register(self, worker_id: str) -> bool:
+    def clear_install_operation_after_register(self, worker_id: str, *, workspace_mode: str = "upload") -> bool:
         completed_task: dict[str, Any] | None = None
         with self._worker_state_lock:
             normalized_worker_id = str(worker_id or "").strip()
+            resolved_workspace_mode = self._normalize_workspace_mode(workspace_mode)
             completed_task = next(
                 (
                     deepcopy(task)
                     for task in self.worker_operation_tasks
                     if str(task.get("kind") or "").strip() == "install"
                     and str(task.get("worker_id") or "").strip() == normalized_worker_id
+                    and self._normalize_workspace_mode(task.get("workspace_mode")) == resolved_workspace_mode
                 ),
                 None,
             )
@@ -1500,14 +1543,15 @@ class AppStore:
                 if not (
                     str(task.get("kind") or "").strip() == "install"
                     and str(task.get("worker_id") or "").strip() == normalized_worker_id
+                    and self._normalize_workspace_mode(task.get("workspace_mode")) == resolved_workspace_mode
                 )
             ]
             changed = len(self.worker_operation_tasks) != before
             if changed:
                 self._save_state()
         if changed and completed_task is not None:
-            worker = self._find_worker(normalized_worker_id)
-            worker_name = self._resolve_worker_display_name(worker.id)
+            worker = self._find_workspace_worker(normalized_worker_id, workspace_mode=resolved_workspace_mode)
+            worker_name = self._resolve_workspace_worker_display_name(worker.id, workspace_mode=resolved_workspace_mode)
             vps_ip = str(completed_task.get("vps_ip") or "").strip() or worker_name
             self._notify_telegram_chat_ids(
                 self._bot_operation_recipient_chat_ids(completed_task),
@@ -1525,7 +1569,6 @@ class AppStore:
         worker_name = ""
         vps_ip = ""
         with self._worker_state_lock:
-            worker = self._find_worker(worker_id)
             task = next(
                 (
                     item
@@ -1534,8 +1577,10 @@ class AppStore:
                 ),
                 {},
             )
+            resolved_workspace_mode = self._normalize_workspace_mode(task.get("workspace_mode"))
+            worker = self._find_workspace_worker(worker_id, workspace_mode=resolved_workspace_mode)
             completed_task = deepcopy(task) if task else None
-            worker_name = self._resolve_worker_display_name(worker.id)
+            worker_name = self._resolve_workspace_worker_display_name(worker.id, workspace_mode=resolved_workspace_mode)
             vps_ip = str(task.get("vps_ip") or "").strip() or worker_name
             self._remember_deleted_worker(
                 worker.id,
@@ -1544,7 +1589,10 @@ class AppStore:
                 deleted_by=str(task.get("requested_by") or "").strip() or "system",
                 reason=str(task.get("transport") or "").strip() or "decommission",
             )
-            self._delete_bot_state(worker_id)
+            if resolved_workspace_mode == "live":
+                self._delete_live_bot_state(worker_id)
+            else:
+                self._delete_bot_state(worker_id)
             self.worker_operation_tasks = [
                 task
                 for task in self.worker_operation_tasks
@@ -2962,6 +3010,18 @@ class AppStore:
                 return worker
         raise KeyError(worker_id)
 
+    @staticmethod
+    def _normalize_workspace_mode(value: str | None = None) -> str:
+        return "live" if str(value or "").strip().lower() == "live" else "upload"
+
+    def _workspace_worker_pool(self, workspace_mode: str = "upload") -> list[WorkerRecord]:
+        return self.live_workers if self._normalize_workspace_mode(workspace_mode) == "live" else self.workers
+
+    def _find_workspace_worker(self, worker_id: str, *, workspace_mode: str = "upload") -> WorkerRecord:
+        if self._normalize_workspace_mode(workspace_mode) == "live":
+            return self._find_live_worker(worker_id)
+        return self._find_worker(worker_id)
+
     @classmethod
     def _default_worker_display_name(cls, worker_id: str | None, fallback: str | None = None) -> str:
         normalized_id = str(worker_id or "").strip()
@@ -3016,6 +3076,11 @@ class AppStore:
             return normalized
         display_name = str(worker.name or "").strip()
         return display_name or str(worker.id or normalized).strip() or normalized
+
+    def _resolve_workspace_worker_display_name(self, worker_ref: str | None, *, workspace_mode: str = "upload") -> str:
+        if self._normalize_workspace_mode(workspace_mode) == "live":
+            return self._resolve_live_worker_display_name(worker_ref)
+        return self._resolve_worker_display_name(worker_ref)
 
     def _resolve_channel_worker_display_name(self, channel: ChannelRecord) -> str:
         return self._resolve_worker_display_name(channel.worker_id or channel.worker_name)
@@ -3168,6 +3233,7 @@ class AppStore:
                     for task in self.worker_operation_tasks
                     if str(task.get("kind") or "").strip() == "install"
                     and str(task.get("worker_id") or "").strip() == payload.worker_id
+                    and self._normalize_workspace_mode(task.get("workspace_mode")) == "upload"
                 ),
                 None,
             )
@@ -3267,6 +3333,7 @@ class AppStore:
                 if not (
                     str(task.get("kind") or "").strip() == "install"
                     and str(task.get("worker_id") or "").strip() == payload.worker_id
+                    and self._normalize_workspace_mode(task.get("workspace_mode")) == "upload"
                 )
             ]
 
@@ -3780,22 +3847,50 @@ class AppStore:
             )
 
     def register_live_worker(self, payload: LiveWorkerRegisterPayload) -> LiveWorkerControlResponse:
+        completed_task: dict[str, Any] | None = None
+        worker_snapshot: WorkerRecord | None = None
+        vps_ip = ""
         with self._worker_state_lock:
             if payload.shared_secret != self.get_worker_shared_secret():
                 raise ValueError("Worker shared secret không hợp lệ.")
+            self._ensure_worker_not_deleted(payload.worker_id)
             now = self._now(trim=False)
             existing = next((worker for worker in self.live_workers if worker.id == payload.worker_id), None)
             worker_display_name = self._default_worker_display_name(payload.worker_id, payload.name)
+            install_task = next(
+                (
+                    task
+                    for task in self.worker_operation_tasks
+                    if str(task.get("kind") or "").strip() == "install"
+                    and str(task.get("worker_id") or "").strip() == payload.worker_id
+                    and self._normalize_workspace_mode(task.get("workspace_mode")) == "live"
+                ),
+                None,
+            )
+            install_task_manager_id = str(install_task.get("manager_id") or "").strip() if install_task else ""
+            install_task_manager_name = str(install_task.get("manager_name") or "").strip() if install_task else ""
+            install_task_group = str(install_task.get("group") or "").strip() if install_task else ""
             manager = next(
                 (
                     user
                     for user in self.users
-                    if user.role == "manager" and user.username == str(payload.manager_name or "").strip()
+                    if user.role == "manager" and user.id == install_task_manager_id
                 ),
                 None,
             )
-            resolved_manager_name = manager.username if manager else (str(payload.manager_name or "").strip() or "system")
-            resolved_group = str(payload.group or "").strip() or "S - Việt 3"
+            if manager is None:
+                manager = next(
+                    (
+                        user
+                        for user in self.users
+                        if user.role == "manager" and user.username == str(payload.manager_name or "").strip()
+                    ),
+                    None,
+                )
+            resolved_manager_name = (
+                manager.username if manager else (install_task_manager_name or str(payload.manager_name or "").strip() or "system")
+            )
+            resolved_group = install_task_group or str(payload.group or "").strip() or "S - Việt 3"
             normalized_threads = self._normalize_requested_worker_threads(payload.threads)
             if existing is None:
                 worker = WorkerRecord(
@@ -3832,8 +3927,37 @@ class AppStore:
                 existing.offline_since_at = None
                 existing.offline_alert_sent_at = None
                 worker = existing
+            if self._looks_like_ipv4(worker_display_name):
+                existing_profile = self.worker_connection_profiles.get(payload.worker_id) or {}
+                self._remember_worker_connection_profile(
+                    payload.worker_id,
+                    vps_ip=worker_display_name,
+                    ssh_user=str(existing_profile.get("ssh_user") or "root"),
+                )
+            completed_task = deepcopy(install_task) if install_task is not None else None
+            vps_ip = str(payload.name or "").strip() or worker_display_name
+            self.worker_operation_tasks = [
+                task
+                for task in self.worker_operation_tasks
+                if not (
+                    str(task.get("kind") or "").strip() == "install"
+                    and str(task.get("worker_id") or "").strip() == payload.worker_id
+                    and self._normalize_workspace_mode(task.get("workspace_mode")) == "live"
+                )
+            ]
             self._save_state()
-            return LiveWorkerControlResponse(ok=True, worker=deepcopy(worker))
+            worker_snapshot = deepcopy(worker)
+        if completed_task is not None and worker_snapshot is not None:
+            self._notify_telegram_chat_ids(
+                self._bot_operation_recipient_chat_ids(completed_task),
+                self._bot_install_completed_message(
+                    completed_task,
+                    worker_name=self._resolve_live_worker_display_name(worker_snapshot.id),
+                    worker_id=worker_snapshot.id,
+                    vps_ip=vps_ip or self._resolve_live_worker_display_name(worker_snapshot.id),
+                ),
+            )
+        return LiveWorkerControlResponse(ok=True, worker=worker_snapshot)
 
     def heartbeat_live_worker(self, payload: LiveWorkerHeartbeatPayload) -> LiveWorkerControlResponse:
         with self._worker_state_lock:
@@ -4849,28 +4973,16 @@ class AppStore:
     ) -> str:
         if target_workspace == "live":
             if active_page == "users":
-                if user_section == "create":
-                    return "/admin/user/create?workspace=live"
-                if user_section == "managers":
-                    return "/admin/user/manager?workspace=live"
-                if user_section == "admins":
-                    return "/admin/user/admins?workspace=live"
                 return "/admin/user/index?workspace=live"
             if active_page == "workers":
                 return "/admin/ManagerBOT/index?workspace=live"
             if active_page == "channels":
-                return "/admin/live"
+                return "/app/live"
             if active_page == "renders":
                 return "/admin/render/index?workspace=live"
-            return "/admin/live"
+            return "/app/live"
 
         if active_page == "users":
-            if user_section == "create":
-                return "/admin/user/create"
-            if user_section == "managers":
-                return "/admin/user/manager"
-            if user_section == "admins":
-                return "/admin/user/admins"
             return "/admin/user/index"
         if active_page == "workers":
             return "/admin/ManagerBOT/index"
@@ -4891,6 +5003,7 @@ class AppStore:
     ) -> list[dict[str, str | bool]]:
         if active_page == "channels":
             return []
+        workspace_tab_active = not (active_page == "users" and user_section in {"create", "managers", "admins"})
         return [
             {
                 "label": "Upload",
@@ -4899,7 +5012,7 @@ class AppStore:
                     active_page=active_page,
                     user_section=user_section,
                 ),
-                "active": workspace_mode != "live",
+                "active": workspace_tab_active and workspace_mode != "live",
             },
             {
                 "label": "Live Stream",
@@ -4908,7 +5021,7 @@ class AppStore:
                     active_page=active_page,
                     user_section=user_section,
                 ),
-                "active": workspace_mode == "live",
+                "active": workspace_tab_active and workspace_mode == "live",
             },
         ]
 
@@ -4918,7 +5031,7 @@ class AppStore:
             {"key": "workers", "label": "Danh sách BOT", "href": self._admin_workspace_href("/admin/ManagerBOT/index", workspace_mode), "icon": "server"},
             {"key": "renders", "label": "Danh sách Render", "href": self._admin_workspace_href("/admin/render/index", workspace_mode), "icon": "video"},
             {"key": "render_workspace", "label": "Điều phối Upload", "href": "/app", "icon": "clapperboard"},
-            {"key": "live_workspace", "label": "Điều phối Live Stream", "href": "/admin/live", "icon": "radio-tower"},
+            {"key": "live_workspace", "label": "Điều phối Live Stream", "href": "/app/live", "icon": "radio-tower"},
         ]
         if workspace_mode != "live":
             items.insert(
@@ -5859,30 +5972,41 @@ class AppStore:
             detail_stream = self.get_live_stream(detail_stream_id, viewer_role=user.role, viewer_id=user.id)
         effective_form_values = live_form_values or (self._build_live_form_values_from_stream(editing_stream) if editing_stream else None)
         live_form_state = self._build_live_form_state(effective_form_values)
+        is_admin_shell = user.role in {"admin", "manager"}
 
         return {
             "page_title": "Điều phối live",
-            "app_name": "Upload Youtube",
-            "admin_shell": False,
+            "app_name": "Youtube Upload" if is_admin_shell else "Upload Youtube",
+            "admin_shell": is_admin_shell,
             "active_page": "live_workspace",
-            "nav_items": [
-                {
-                    "key": "render_workspace",
-                    "label": "Điều phối Upload",
-                    "href": "/app",
-                    "icon": "layers",
-                },
-                {
-                    "key": "live_workspace",
-                    "label": "Điều phối Live Stream",
-                    "href": "/app/live",
-                    "icon": "radio-tower",
-                },
-            ],
-            "workspace_label": "User workspace",
+            "nav_items": (
+                self._admin_nav_items("live")
+                if is_admin_shell
+                else [
+                    {
+                        "key": "render_workspace",
+                        "label": "Điều phối Upload",
+                        "href": "/app",
+                        "icon": "layers",
+                    },
+                    {
+                        "key": "live_workspace",
+                        "label": "Điều phối Live Stream",
+                        "href": "/app/live",
+                        "icon": "radio-tower",
+                    },
+                ]
+            ),
+            "workspace_label": {
+                "admin": "Admin workspace",
+                "manager": "Manager workspace",
+            }.get(user.role, "User workspace"),
             "user_name": user.display_name,
-            "user_role": user.manager_name or user.role,
-            "logout_path": "/logout",
+            "user_role": {
+                "admin": "control plane",
+                "manager": "manager scope",
+            }.get(user.role, user.manager_name or user.role),
+            "logout_path": "/admin/logout" if is_admin_shell else "/logout",
             "notice": notice,
             "notice_level": notice_level,
             "kpis": [
@@ -5901,6 +6025,9 @@ class AppStore:
             "live_form_submit_label": "Cập nhật luồng live" if editing_stream else "Tạo luồng live",
             "live_form_reset_label": "Hủy chỉnh sửa" if editing_stream else "Đặt lại",
             "live_form_cancel_href": "/app/live" if editing_stream else "",
+            "live_index_href": "/app/live",
+            "live_delete_action": "/app/live/delete",
+            "live_stop_action": "/app/live/stop",
             "live_form": live_form_state,
             "primary_live_workers": self._build_live_worker_picker_cards(primary_workers),
             "backup_live_workers": self._build_live_worker_picker_cards(backup_workers),
@@ -7773,11 +7900,19 @@ class AppStore:
         )
         return context
 
-    def _filtered_worker_operation_tasks(self, manager_ids: list[str] | None = None) -> list[dict[str, Any]]:
+    def _filtered_worker_operation_tasks(
+        self,
+        manager_ids: list[str] | None = None,
+        *,
+        workspace_mode: str = "upload",
+    ) -> list[dict[str, Any]]:
         selected_ids = set(self._selected_manager_ids(manager_ids))
+        resolved_workspace_mode = self._normalize_workspace_mode(workspace_mode)
         tasks: list[dict[str, Any]] = []
         for task in self.worker_operation_tasks:
             if self._worker_operation_is_finished(task):
+                continue
+            if self._normalize_workspace_mode(task.get("workspace_mode")) != resolved_workspace_mode:
                 continue
             manager_id = str(task.get("manager_id") or "").strip()
             if selected_ids and manager_id not in selected_ids:
@@ -7853,7 +7988,7 @@ class AppStore:
     def _build_bot_rows(self, manager_ids: list[str] | None = None, *, workspace_mode: str = "upload") -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
         is_live_workspace = workspace_mode == "live"
-        operation_tasks = [] if is_live_workspace else self._filtered_worker_operation_tasks(manager_ids)
+        operation_tasks = self._filtered_worker_operation_tasks(manager_ids, workspace_mode=workspace_mode)
         operation_by_worker_id = {
             str(task.get("worker_id") or "").strip(): task
             for task in operation_tasks
@@ -8380,7 +8515,7 @@ class AppStore:
             "workspace_label": "Admin workspace",
             "active_page": "live_workspace",
             "nav_items": self._admin_nav_items("live"),
-            "user_name": "admin" if viewer_role == "admin" else "manager",
+            "user_name": "Admin" if viewer_role == "admin" else "Manager",
             "user_role": "Control plane",
             "logout_path": "/admin/logout",
             "notice": notice,
@@ -8815,14 +8950,61 @@ class AppStore:
 
         self._save_state()
 
-    def delete_live_bot(self, worker_id: str) -> None:
+    def _delete_live_bot_state(self, worker_id: str) -> None:
         self._find_live_worker(worker_id)
         self._purge_live_worker_assignment_scope(worker_id)
         self.live_workers = [worker for worker in self.live_workers if worker.id != worker_id]
+
+    def delete_live_bot(self, worker_id: str) -> None:
+        self._delete_live_bot_state(worker_id)
         self._save_state()
 
     def delete_live_bot_without_ssh(self, worker_id: str, *, deleted_by: str = "system") -> None:
-        self.delete_live_bot(worker_id)
+        completed_task: dict[str, Any] | None = None
+        worker_name = ""
+        vps_ip = ""
+        with self._worker_state_lock:
+            worker = self._find_live_worker(worker_id)
+            profile = dict(self.worker_connection_profiles.get(worker.id) or {})
+            worker_name = self._resolve_live_worker_display_name(worker.id)
+            vps_ip = str(profile.get("vps_ip") or "").strip()
+            if not vps_ip and self._looks_like_ipv4(worker_name):
+                vps_ip = worker_name
+            actor = self._find_user_by_username(deleted_by)
+            completed_task = {
+                "worker_id": worker.id,
+                "worker_name": worker_name,
+                "vps_ip": vps_ip,
+                "manager_name": str(worker.manager_name or "").strip() or "system",
+                "workspace_mode": "live",
+                "requested_by": str(deleted_by or "").strip() or "system",
+                "requested_role": actor.role if actor else "system",
+            }
+            self._remember_deleted_worker(
+                worker.id,
+                worker_name=worker_name,
+                vps_ip=vps_ip or None,
+                deleted_by=deleted_by,
+                reason="delete_without_ssh",
+            )
+            self._delete_live_bot_state(worker.id)
+            self.worker_connection_profiles.pop(str(worker.id or "").strip(), None)
+            self.worker_operation_tasks = [
+                task
+                for task in self.worker_operation_tasks
+                if str(task.get("worker_id") or "").strip() != str(worker.id or "").strip()
+            ]
+            self._save_state()
+        if completed_task is not None:
+            self._notify_telegram_chat_ids(
+                self._bot_operation_recipient_chat_ids(completed_task),
+                self._bot_decommission_completed_message(
+                    completed_task,
+                    worker_name=worker_name,
+                    worker_id=str(worker_id or "").strip(),
+                    vps_ip=vps_ip or worker_name,
+                ),
+            )
 
     def update_live_bot_thread(self, worker_id: str, thread: int) -> None:
         worker = self._find_live_worker(worker_id)

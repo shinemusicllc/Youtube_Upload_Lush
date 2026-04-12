@@ -93,6 +93,11 @@ def _resolve_workspace_mode(value: str | None) -> str:
     return "live" if normalized == "live" else "upload"
 
 
+def _assert_upload_workspace(workspace: str | None, *, detail: str = "Workspace Live Stream không có Danh sách Kênh.") -> None:
+    if _resolve_workspace_mode(workspace) == "live":
+        raise HTTPException(status_code=400, detail=detail)
+
+
 def _current_user_payload(request: Request) -> dict[str, Any]:
     current_user = require_admin_access(request)
     return {
@@ -399,20 +404,6 @@ async def install_admin_bot(request: Request, payload: AdminBotInstallPayload):
     )
     auth_mode = str(payload.auth_mode or "password").strip().lower() or "password"
     try:
-        if workspace_mode == "live":
-            worker = store.create_live_bot(
-                name=payload.vps_ip,
-                manager_id=manager_id,
-                viewer_role=current_user.role,
-                viewer_id=current_user.id,
-            )
-            return {
-                "ok": True,
-                "operation_id": None,
-                "worker_id": worker.id,
-                "vps_ip": worker.name,
-                "message": f"Đã thêm BOT live {worker.id} với địa chỉ {worker.name}.",
-            }
         bootstrap_request = build_worker_bootstrap_request(
             vps_ip=payload.vps_ip,
             ssh_user=payload.ssh_user,
@@ -422,6 +413,7 @@ async def install_admin_bot(request: Request, payload: AdminBotInstallPayload):
             control_plane_url=str(request.base_url).rstrip("/"),
             worker_id=worker_id,
             manager_name=manager_name,
+            runtime_mode=workspace_mode,
         )
         task = start_worker_install_operation(
             store=store,
@@ -440,6 +432,10 @@ async def install_admin_bot(request: Request, payload: AdminBotInstallPayload):
             "operation_id": task["id"],
             "worker_id": task["worker_id"],
             "vps_ip": task["vps_ip"],
+            "message": (
+                f"Đã xếp hàng cài {'BOT live' if workspace_mode == 'live' else 'BOT'} "
+                f"{task['worker_id']} trên {task['vps_ip']}."
+            ),
         }
     except (ValueError, WorkerBootstrapError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -519,21 +515,13 @@ async def delete_admin_bot(request: Request, bot_id: str, payload: AdminBotDecom
     _enforce_worker_scope(request, bot_id, workspace_mode=workspace_mode)
     try:
         current_user = require_admin_access(request)
-        if workspace_mode == "live":
-            store.delete_live_bot_without_ssh(bot_id, deleted_by=current_user.username)
-            return {
-                "ok": True,
-                "worker_id": bot_id,
-                "deleted": True,
-                "mode": "local",
-                "message": "Đã xóa BOT live khỏi control-plane.",
-            }
-        worker = next((item for item in store.workers if item.id == bot_id), None)
+        worker_pool = store.live_workers if workspace_mode == "live" else store.workers
+        worker = next((item for item in worker_pool if item.id == bot_id), None)
         if worker is None:
             raise KeyError(bot_id)
         connection_profile: dict[str, object] | None = None
         try:
-            connection_profile = store.get_worker_connection_profile(bot_id)
+            connection_profile = store.get_worker_connection_profile(bot_id, workspace_mode=workspace_mode)
         except (KeyError, ValueError):
             connection_profile = None
         has_saved_credential = bool(
@@ -556,6 +544,7 @@ async def delete_admin_bot(request: Request, bot_id: str, payload: AdminBotDecom
                 worker_id=bot_id,
                 request=decommission_request,
                 ssh_user=str(connection_profile.get("ssh_user") or payload.ssh_user or "root").strip() or "root",
+                workspace_mode=workspace_mode,
                 requested_by=current_user.username,
                 requested_role=current_user.role,
             )
@@ -565,19 +554,26 @@ async def delete_admin_bot(request: Request, bot_id: str, payload: AdminBotDecom
                 "deleted": False,
                 "operation_id": task["id"],
                 "mode": "ssh",
-                "message": "Da bat dau go BOT bang credential da luu.",
+                "message": f"Da bat dau go {'BOT live' if workspace_mode == 'live' else 'BOT'} bang credential da luu.",
             }
         if str(worker.status or "").strip() == "offline":
-            store.delete_bot_without_ssh(bot_id, deleted_by=current_user.username)
+            if workspace_mode == "live":
+                store.delete_live_bot_without_ssh(bot_id, deleted_by=current_user.username)
+            else:
+                store.delete_bot_without_ssh(bot_id, deleted_by=current_user.username)
             return {
                 "ok": True,
                 "worker_id": bot_id,
                 "deleted": True,
                 "mode": "local",
-                "message": "BOT dang offline va khong co credential da luu, nen he thong chi xoa BOT khoi control-plane.",
+                "message": (
+                    f"{'BOT live' if workspace_mode == 'live' else 'BOT'} dang offline va khong co credential da luu, "
+                    "nen he thong chi xoa BOT khoi control-plane."
+                ),
             }
         raise WorkerBootstrapError(
-            "BOT nay chua co credential da luu de go tu dong. Hay go thu cong tren VPS hoac them lai BOT roi xoa lai."
+            f"{'BOT live' if workspace_mode == 'live' else 'BOT'} nay chua co credential da luu de go tu dong. "
+            "Hay go thu cong tren VPS hoac them lai BOT roi xoa lai."
         )
     except (KeyError, ValueError, WorkerBootstrapError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -617,6 +613,7 @@ async def get_admin_channels(
     bot_id: str | None = None,
     workspace: str = "upload",
 ):
+    _assert_upload_workspace(workspace)
     selected_manager_ids = _manager_ids_from_request(request, manager_ids)
     current_user = require_admin_access(request)
     workspace_mode = _resolve_workspace_mode(workspace)
@@ -635,7 +632,8 @@ async def get_admin_channels(
 
 
 @router.get("/admin/channels/of-user/{user_id}")
-async def get_admin_channels_of_user(request: Request, user_id: str):
+async def get_admin_channels_of_user(request: Request, user_id: str, workspace: str = "upload"):
+    _assert_upload_workspace(workspace)
     _enforce_user_scope(request, user_id)
     current_user = require_admin_access(request)
     return store.get_admin_channels_of_user_context(
@@ -646,7 +644,8 @@ async def get_admin_channels_of_user(request: Request, user_id: str):
 
 
 @router.get("/admin/channels/of-bot/{bot_id}")
-async def get_admin_channels_of_bot(request: Request, bot_id: str):
+async def get_admin_channels_of_bot(request: Request, bot_id: str, workspace: str = "upload"):
+    _assert_upload_workspace(workspace)
     current_user = require_admin_access(request)
     _enforce_worker_scope(request, bot_id)
     return store.get_admin_channel_index_context(
@@ -658,7 +657,8 @@ async def get_admin_channels_of_bot(request: Request, bot_id: str):
 
 
 @router.get("/admin/channels/{channel_id}/users")
-async def get_admin_channel_users(request: Request, channel_id: str):
+async def get_admin_channel_users(request: Request, channel_id: str, workspace: str = "upload"):
+    _assert_upload_workspace(workspace)
     current_user = require_admin_access(request)
     _enforce_channel_scope(request, channel_id)
     return store.get_admin_users_of_channel_context(
@@ -670,6 +670,7 @@ async def get_admin_channel_users(request: Request, channel_id: str):
 
 @router.post("/admin/channels/{channel_id}/users")
 async def update_admin_channel_user(request: Request, channel_id: str, payload: dict[str, str]):
+    _assert_upload_workspace(payload.get("workspace") or request.query_params.get("workspace"))
     user_id = str(payload.get("user_id") or "").strip()
     if not user_id:
         raise HTTPException(status_code=422, detail="user_id la bat buoc.")
@@ -680,14 +681,16 @@ async def update_admin_channel_user(request: Request, channel_id: str, payload: 
 
 
 @router.patch("/admin/channels/{channel_id}/profile")
-async def update_admin_channel_profile(request: Request, channel_id: str):
+async def update_admin_channel_profile(request: Request, channel_id: str, workspace: str = "upload"):
+    _assert_upload_workspace(workspace)
     _enforce_channel_scope(request, channel_id)
     store.update_channel_profile(channel_id)
     return {"ok": True}
 
 
 @router.delete("/admin/channels/{channel_id}")
-async def delete_admin_channel(request: Request, channel_id: str):
+async def delete_admin_channel(request: Request, channel_id: str, workspace: str = "upload"):
+    _assert_upload_workspace(workspace)
     _enforce_channel_scope(request, channel_id)
     store.delete_channel(channel_id)
     return {"ok": True}
@@ -724,7 +727,9 @@ async def get_admin_renders_of_channel(
     request: Request,
     channel_id: str,
     manager_ids: list[str] | None = Query(default=None),
+    workspace: str = "upload",
 ):
+    _assert_upload_workspace(workspace)
     selected_manager_ids = _manager_ids_from_request(request, manager_ids)
     current_user = require_admin_access(request)
     _enforce_channel_scope(request, channel_id)

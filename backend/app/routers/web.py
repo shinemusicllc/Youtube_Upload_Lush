@@ -191,7 +191,40 @@ def _redirect_live_page_with_scope(
     for manager_id in manager_ids or []:
         if manager_id:
             query.append(("manager_ids", manager_id))
-    return RedirectResponse(url=f"/admin/live?{urlencode(query, doseq=True)}", status_code=303)
+    return RedirectResponse(url=f"/app/live?{urlencode(query, doseq=True)}", status_code=303)
+
+
+def _resolve_channel_workspace_request(
+    request: Request,
+    *,
+    workspace: str | None = None,
+    form=None,
+    redirect_to: str | None = None,
+) -> str:
+    candidates = [workspace, request.query_params.get("workspace")]
+    if form is not None:
+        candidates.append(form.get("workspace"))
+        if redirect_to is None:
+            redirect_to = str(form.get("redirect_to") or "").strip()
+    referer = str(request.headers.get("referer") or "").strip().lower()
+    redirect_hint = str(redirect_to or "").strip().lower()
+    if "workspace=live" in referer or "workspace=live" in redirect_hint:
+        return "live"
+    for candidate in candidates:
+        if _resolve_admin_workspace(candidate) == "live":
+            return "live"
+    return "upload"
+
+
+def _redirect_live_channel_notice():
+    return _redirect_with_notice("/app/live", "Workspace Live Stream không có Danh sách Kênh.", "info")
+
+
+def _live_channel_json_error():
+    return JSONResponse(
+        {"ok": False, "error": "Workspace Live Stream không có Danh sách Kênh."},
+        status_code=400,
+    )
 
 
 def _resolve_worker_bootstrap_control_plane_url(request: Request) -> str:
@@ -598,10 +631,15 @@ async def user_live_dashboard(
     current_user = get_app_session_user(request)
     admin_user = get_admin_session_user(request)
     if admin_user:
-        query = request.url.query
-        return RedirectResponse(
-            url=f"/admin/live?{query}" if query else "/admin/live",
-            status_code=302,
+        store.assert_admin_session_user(admin_user.id, admin_user.role)
+        if current_user:
+            clear_app_session(request)
+        current_user = AppSessionUser(
+            id=admin_user.id,
+            username=admin_user.username,
+            display_name=admin_user.display_name,
+            role=admin_user.role,
+            manager_name=admin_user.manager_name,
         )
     if not current_user:
         return RedirectResponse(url="/login?next=/app/live", status_code=302)
@@ -1385,20 +1423,6 @@ async def admin_bot_create(request: Request):
     )
 
     try:
-        if workspace_mode == "live":
-            worker = store.create_live_bot(
-                name=vps_ip,
-                manager_id=manager_id,
-                viewer_role=current_admin.role,
-                viewer_id=current_admin.id,
-            )
-            return _redirect_bot_page_with_scope(
-                f"Đã thêm BOT live {worker.id} với địa chỉ {worker.name}.",
-                "success",
-                manager_ids=return_manager_ids,
-                user_id=return_user_id,
-                workspace=workspace_mode,
-            )
         bootstrap_request = build_worker_bootstrap_request(
             vps_ip=vps_ip,
             ssh_user=ssh_user,
@@ -1408,6 +1432,7 @@ async def admin_bot_create(request: Request):
             control_plane_url=_resolve_worker_bootstrap_control_plane_url(request),
             worker_id=worker_id,
             manager_name=manager_name,
+            runtime_mode=workspace_mode,
         )
         task = start_worker_install_operation(
             store=store,
@@ -1423,7 +1448,7 @@ async def admin_bot_create(request: Request):
         )
         return _redirect_bot_page_with_scope(
             (
-                f"Da xep hang cai dat BOT {task['worker_id']} tren {task['vps_ip']}. "
+                f"Da xep hang cai dat {'BOT live' if workspace_mode == 'live' else 'BOT'} {task['worker_id']} tren {task['vps_ip']}. "
                 "Bang BOT se tu cap nhat khi worker duoc cai dat va ket noi lai."
             ),
             "success",
@@ -1451,21 +1476,13 @@ async def admin_bot_delete(request: Request):
     return_user_id = str(form.get("return_user_id") or "").strip() or None
     return_manager_ids = [str(value).strip() for value in form.getlist("return_manager_ids") if str(value).strip()]
     try:
-        if workspace_mode == "live":
-            store.delete_live_bot_without_ssh(worker_id, deleted_by=current_admin.username)
-            return _redirect_bot_page_with_scope(
-                f"Đã xóa BOT live {worker_id}.",
-                "success",
-                manager_ids=return_manager_ids,
-                user_id=return_user_id,
-                workspace=workspace_mode,
-            )
-        worker = next((item for item in store.workers if item.id == worker_id), None)
+        worker_pool = store.live_workers if workspace_mode == "live" else store.workers
+        worker = next((item for item in worker_pool if item.id == worker_id), None)
         if worker is None:
             raise KeyError(worker_id)
         connection_profile: dict[str, object] | None = None
         try:
-            connection_profile = store.get_worker_connection_profile(worker_id)
+            connection_profile = store.get_worker_connection_profile(worker_id, workspace_mode=workspace_mode)
         except (KeyError, ValueError):
             connection_profile = None
         has_saved_credential = bool(
@@ -1488,22 +1505,27 @@ async def admin_bot_delete(request: Request):
                 worker_id=worker_id,
                 request=decommission_request,
                 ssh_user=str(connection_profile.get("ssh_user") or "").strip() or "root",
+                workspace_mode=workspace_mode,
                 requested_by=current_admin.username,
                 requested_role=current_admin.role,
             )
             notice = (
-                f"Da bat dau go BOT {worker_id} khoi VPS {task['vps_ip']} bang credential da luu. "
+                f"Da bat dau go {'BOT live' if workspace_mode == 'live' else 'BOT'} {worker_id} khoi VPS {task['vps_ip']} bang credential da luu. "
                 "BOT se bien mat khoi danh sach sau khi service va du lieu tren may duoc don xong."
             )
         elif str(worker.status or "").strip() == "offline":
-            store.delete_bot_without_ssh(worker_id, deleted_by=current_admin.username)
+            if workspace_mode == "live":
+                store.delete_live_bot_without_ssh(worker_id, deleted_by=current_admin.username)
+            else:
+                store.delete_bot_without_ssh(worker_id, deleted_by=current_admin.username)
             notice = (
-                f"Da xoa BOT {worker_id} khoi he thong. "
+                f"Da xoa {'BOT live' if workspace_mode == 'live' else 'BOT'} {worker_id} khoi he thong. "
                 "BOT nay dang offline va khong co credential da luu, nen du lieu con lai tren VPS can don thu cong neu may van con chay."
             )
         else:
             raise WorkerBootstrapError(
-                "BOT nay chua co credential da luu de go tu dong. Hay go thu cong tren VPS hoac them lai BOT roi xoa lai."
+                f"{'BOT live' if workspace_mode == 'live' else 'BOT'} nay chua co credential da luu de go tu dong. "
+                "Hay go thu cong tren VPS hoac them lai BOT roi xoa lai."
             )
         return _redirect_bot_page_with_scope(
             notice,
@@ -1551,18 +1573,11 @@ async def admin_live_index(
     edit: str | None = None,
     detail: str | None = None,
 ):
-    current_admin = require_admin_access(request)
-    selected_manager_ids = _resolve_manager_ids(request, manager_ids)
-    dashboard = store.get_admin_live_workspace_context(
-        manager_ids=selected_manager_ids,
-        viewer_role=current_admin.role,
-        viewer_id=current_admin.id,
-        notice=notice,
-        notice_level=notice_level,
-        editing_stream_id=edit,
-        detail_stream_id=detail,
+    query = request.url.query
+    return RedirectResponse(
+        url=f"/app/live?{query}" if query else "/app/live",
+        status_code=302,
     )
-    return _render(request, dashboard)
 
 
 @router.post("/admin/live/create")
@@ -1694,7 +1709,7 @@ async def admin_live_stop(request: Request):
 async def admin_live_index_legacy(request: Request):
     query = request.url.query
     return RedirectResponse(
-        url=f"/admin/live?{query}" if query else "/admin/live",
+        url=f"/app/live?{query}" if query else "/app/live",
         status_code=302,
     )
 
@@ -1763,7 +1778,7 @@ async def admin_channel_index(
         _enforce_user_scope(current_admin, userId)
     workspace_mode = _resolve_admin_workspace(workspace)
     if workspace_mode == "live":
-        return RedirectResponse(url="/admin/live", status_code=status.HTTP_303_SEE_OTHER)
+        return _redirect_live_channel_notice()
     if botId:
         _enforce_worker_scope(current_admin, botId, workspace_mode=workspace_mode)
     selected_manager_ids = _resolve_manager_ids(request, manager_ids)
@@ -1787,9 +1802,12 @@ async def admin_channel_of_user(
     request: Request,
     userId: str,
     username: str | None = None,
+    workspace: str | None = None,
     notice: str | None = None,
     notice_level: str = "success",
 ):
+    if _resolve_channel_workspace_request(request, workspace=workspace) == "live":
+        return _redirect_live_channel_notice()
     current_admin = require_admin_access(request)
     _enforce_user_scope(current_admin, userId)
     return _render(
@@ -1809,9 +1827,12 @@ async def admin_channel_of_bot(
     request: Request,
     botId: str,
     botName: str | None = None,
+    workspace: str | None = None,
     notice: str | None = None,
     notice_level: str = "success",
 ):
+    if _resolve_channel_workspace_request(request, workspace=workspace) == "live":
+        return _redirect_live_channel_notice()
     current_admin = require_admin_access(request)
     _enforce_worker_scope(current_admin, botId)
     return _render(
@@ -1832,9 +1853,12 @@ async def admin_users_of_channel(
     request: Request,
     channelId: str,
     channelName: str | None = None,
+    workspace: str | None = None,
     notice: str | None = None,
     notice_level: str = "success",
 ):
+    if _resolve_channel_workspace_request(request, workspace=workspace) == "live":
+        return _redirect_live_channel_notice()
     current_admin = require_admin_access(request)
     _enforce_channel_scope(current_admin, channelId)
     return _render(
@@ -1854,6 +1878,8 @@ async def admin_users_of_channel(
 async def admin_channel_update_user(request: Request):
     current_admin = require_admin_access(request)
     form = await request.form()
+    if _resolve_channel_workspace_request(request, form=form) == "live":
+        return _redirect_live_channel_notice()
     user_id = str(form.get("userId") or form.get("user_id") or "").strip()
     channel_id = str(form.get("channelId") or form.get("channel_id") or "").strip()
     username = str(form.get("username") or form.get("userName") or "").strip()
@@ -1878,6 +1904,8 @@ async def admin_channel_update_user(request: Request):
 async def admin_channel_add_user(request: Request):
     current_admin = require_admin_access(request)
     form = await request.form()
+    if _resolve_channel_workspace_request(request, form=form) == "live":
+        return _redirect_live_channel_notice()
     user_id = str(form.get("userId") or form.get("user_id") or "").strip()
     channel_id = str(form.get("channelId") or form.get("channel_id") or "").strip()
     channel_name = str(form.get("channelName") or form.get("channel_name") or "").strip()
@@ -1901,6 +1929,8 @@ async def admin_channel_add_user(request: Request):
 async def admin_channel_update_profile(request: Request):
     current_admin = require_admin_access(request)
     form = await request.form()
+    if _resolve_channel_workspace_request(request, form=form) == "live":
+        return _redirect_live_channel_notice()
     channel_id = str(form.get("id") or form.get("channelId") or form.get("channel_id") or "").strip()
     _enforce_channel_scope(current_admin, channel_id)
     redirect_to = str(form.get("redirect_to") or "/admin/channel/index").strip() or "/admin/channel/index"
@@ -1928,7 +1958,9 @@ async def admin_channel_update_profile(request: Request):
 
 
 @router.get("/admin/channel/export")
-async def admin_channel_export(request: Request):
+async def admin_channel_export(request: Request, workspace: str | None = None):
+    if _resolve_channel_workspace_request(request, workspace=workspace) == "live":
+        return _redirect_live_channel_notice()
     current_admin = require_admin_access(request)
     selected_manager_ids = _resolve_manager_ids(request, [])
     rows = store.get_channel_export_rows_filtered(
@@ -1962,7 +1994,14 @@ async def admin_channel_export(request: Request):
 
 
 @router.get("/admin/channel/delete")
-async def admin_channel_delete(request: Request, channelId: str, botId: str | None = None):
+async def admin_channel_delete(
+    request: Request,
+    channelId: str,
+    botId: str | None = None,
+    workspace: str | None = None,
+):
+    if _resolve_channel_workspace_request(request, workspace=workspace) == "live":
+        return _redirect_live_channel_notice()
     current_admin = require_admin_access(request)
     _enforce_channel_scope(current_admin, channelId)
     if botId:
@@ -1982,9 +2021,13 @@ async def admin_channel_delete(request: Request, channelId: str, botId: str | No
 @router.post("/admin/channel/deleteajax")
 async def admin_channel_delete_ajax(request: Request, id: str | None = None):
     current_admin = require_admin_access(request)
+    workspace_mode = _resolve_channel_workspace_request(request)
     if request.method == "POST":
         form = await request.form()
+        workspace_mode = _resolve_channel_workspace_request(request, form=form)
         id = str(form.get("id") or form.get("channelId") or "").strip() or id
+    if workspace_mode == "live":
+        return _live_channel_json_error()
     if not id:
         return JSONResponse({"ok": False, "error": "Missing channel id"}, status_code=400)
     try:
@@ -2030,8 +2073,15 @@ async def admin_render_of_channel(
     notice_level: str = "success",
 ):
     current_admin = require_admin_access(request)
-    _enforce_channel_scope(current_admin, channelId)
     workspace_mode = _resolve_admin_workspace(workspace)
+    if workspace_mode == "live":
+        return _redirect_with_notice(
+            "/admin/render/index",
+            "Workspace Live Stream không có Danh sách Kênh.",
+            "info",
+            workspace="live",
+        )
+    _enforce_channel_scope(current_admin, channelId)
     selected_manager_ids = _resolve_manager_ids(request, manager_ids)
     return _render(
         request,

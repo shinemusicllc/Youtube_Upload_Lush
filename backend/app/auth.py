@@ -88,6 +88,22 @@ def get_app_session_user(request: Request) -> AppSessionUser | None:
         return None
 
 
+def get_effective_app_session_user(request: Request) -> AppSessionUser | None:
+    admin_session_user = getattr(request.state, "admin_user", None) or get_admin_session_user(request)
+    if isinstance(admin_session_user, AdminSessionUser):
+        return AppSessionUser(
+            id=admin_session_user.id,
+            username=admin_session_user.username,
+            display_name=admin_session_user.display_name,
+            role=admin_session_user.role,
+            manager_name=admin_session_user.manager_name,
+        )
+    session_user = getattr(request.state, "app_user", None) or get_app_session_user(request)
+    if isinstance(session_user, AppSessionUser):
+        return session_user
+    return None
+
+
 def set_admin_session_user(request: Request, user: AdminSessionUser) -> None:
     request.session[ADMIN_SESSION_KEY] = user.to_session()
 
@@ -121,7 +137,7 @@ def require_admin_only(request: Request) -> AdminSessionUser:
 
 
 def require_app_access(request: Request, *roles: str) -> AppSessionUser:
-    session_user = getattr(request.state, "app_user", None) or get_app_session_user(request)
+    session_user = get_effective_app_session_user(request)
     if not isinstance(session_user, AppSessionUser):
         raise HTTPException(status_code=401, detail="User session required.")
     allowed_roles = set(roles or ("user", "manager", "admin"))

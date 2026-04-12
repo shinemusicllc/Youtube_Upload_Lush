@@ -427,8 +427,8 @@
 
     <div class="min-w-0 flex-1 overflow-y-auto w-full pb-16">
       <div class="min-w-0 w-full px-8 py-6 space-y-6">
-        {% set live_index_href = '/admin/live' if dashboard.admin_shell else '/app/live' %}
-        {% set live_delete_action = '/admin/live/delete' if dashboard.admin_shell else '/app/live/delete' %}
+        {% set live_index_href = dashboard.live_index_href | default('/app/live') %}
+        {% set live_delete_action = dashboard.live_delete_action | default('/app/live/delete') %}
         {% if dashboard.notice %}
         <div class="elevated-card px-5 py-4 border transition-all duration-200 {% if dashboard.notice_level == 'error' %}border-rose-200 bg-rose-50/80{% else %}border-emerald-200 bg-emerald-50/80{% endif %}">
           <div class="flex items-start gap-3">
@@ -729,7 +729,7 @@
                   <td class="px-4 py-5 align-top">
                     <div class="live-table-action-grid">
                       {% if stream.can_stop %}
-                      <form method="post" action="{{ '/admin/live/stop' if dashboard.admin_shell else '/app/live/stop' }}" class="live-table-action-form" onsubmit="return window.confirm('Bạn có chắc chắn muốn dừng luồng live này không?');">
+                      <form method="post" action="{{ dashboard.live_stop_action | default('/app/live/stop') }}" class="live-table-action-form" onsubmit="return window.confirm('Bạn có chắc chắn muốn dừng luồng live này không?');">
                         <input type="hidden" name="stream_id" value="{{ stream.id | e }}">
                         {% for manager_id in dashboard.live_form_manager_ids | default([], true) %}
                         <input type="hidden" name="manager_ids" value="{{ manager_id | e }}">
