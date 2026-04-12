@@ -262,6 +262,10 @@ class AppStore:
     def _telegram_alert_chat_id() -> str:
         return str(os.getenv("TELEGRAM_ALERT_CHAT_ID", "")).strip()
 
+    @classmethod
+    def _bot_operation_telegram_enabled(cls) -> bool:
+        return cls._env_flag("TELEGRAM_BOT_OPERATION_NOTIFICATIONS_ENABLED", default=True)
+
     @staticmethod
     def _telegram_link_ttl_seconds() -> int:
         raw_value = str(os.getenv("TELEGRAM_LINK_TTL_SECONDS", "600")).strip()
@@ -1936,6 +1940,8 @@ class AppStore:
         return self._telegram_recipient_chat_ids_for_users(manager_users)
 
     def _bot_operation_recipient_chat_ids(self, task: dict[str, Any]) -> list[str]:
+        if not self._bot_operation_telegram_enabled():
+            return []
         recipient_chat_ids = self._all_admin_telegram_recipient_chat_ids()
         seen_ids = set(recipient_chat_ids)
         manager_usernames: set[str] = set()
