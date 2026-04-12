@@ -45,6 +45,11 @@ adopt_runtime_path "$APP_DIR" "$RUNTIME_DIR" ".venv" ".venv"
 adopt_runtime_path "$APP_DIR" "$RUNTIME_DIR" ".backup" ".backup"
 adopt_runtime_path "$APP_DIR" "$RUNTIME_DIR" "backend/data" "backend-data"
 ensure_git_checkout "$APP_DIR" "$REPO_URL" "$BRANCH"
+
+if [ ! -d "$RUNTIME_DIR/.venv" ]; then
+  python3 -m venv "$RUNTIME_DIR/.venv"
+fi
+
 link_runtime_path "$APP_DIR" "$RUNTIME_DIR" ".env" ".env"
 link_runtime_path "$APP_DIR" "$RUNTIME_DIR" ".venv" ".venv"
 link_runtime_path "$APP_DIR" "$RUNTIME_DIR" ".backup" ".backup"
@@ -86,10 +91,6 @@ if [ "$DEPLOY_MODE" = "docker" ]; then
 
   docker compose -f infra/docker/host/docker-compose.yml up -d --build
   exit 0
-fi
-
-if [ ! -d "$RUNTIME_DIR/.venv" ]; then
-  python3 -m venv "$RUNTIME_DIR/.venv"
 fi
 
 ./.venv/bin/pip install --upgrade pip
