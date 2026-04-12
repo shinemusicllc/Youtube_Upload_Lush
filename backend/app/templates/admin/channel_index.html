@@ -1,6 +1,71 @@
 {% extends "admin/_layout.html" %}
 
 {% block content %}
+<style>
+    .admin-table-channel-list {
+        width: 100%;
+        table-layout: fixed;
+    }
+
+    /* Width tuning for Danh sách kênh: chỉnh các giá trị này khi cần. */
+    .channel-col-stt { width: 64px; }
+    .channel-col-name { width: 250px; }
+    .channel-col-manager { width: 100px; }
+    .channel-col-users { width: 115px; }
+    .channel-col-bot { width: 124px; }
+    .channel-col-group { width: 98px; }
+    .channel-col-status { width: 108px; }
+    .channel-col-connected-at { width: 156px; }
+    .channel-col-actions { width: 292px; }
+
+    .admin-table-channel-list thead th,
+    .admin-table-channel-list tbody td {
+        white-space: normal;
+        vertical-align: middle;
+    }
+
+    .admin-table-channel-list .channel-name-cell,
+    .admin-table-channel-list .channel-manager-cell,
+    .admin-table-channel-list .channel-user-cell,
+    .admin-table-channel-list .channel-worker-cell,
+    .admin-table-channel-list .channel-group-cell,
+    .admin-table-channel-list .channel-actions-cell {
+        white-space: normal;
+    }
+
+    .channel-name-shell,
+    .channel-title-text,
+    .channel-manager-text,
+    .channel-user-list,
+    .channel-worker-text,
+    .channel-group-text,
+    .channel-link-text {
+        min-width: 0;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        white-space: normal;
+        line-height: 1.4;
+    }
+
+    .channel-link-meta {
+        display: inline-flex;
+        max-width: 100%;
+        align-items: flex-start;
+        gap: 4px;
+        white-space: normal;
+    }
+
+    .channel-link-meta i,
+    .channel-link-meta svg {
+        flex-shrink: 0;
+        margin-top: 1px;
+    }
+
+    .channel-actions-wrap {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+</style>
 <section class="space-y-6">
     {% include "admin/_admin_notice.html" %}
 
@@ -52,61 +117,76 @@
         </div>
 
         <div class="table-shell">
-            <table class="admin-table" data-admin-list-table>
+            <table class="admin-table admin-table-channel-list" data-admin-list-table="channel-index">
+                <colgroup>
+                    <col class="channel-col-stt">
+                    <col class="channel-col-name">
+                    <col class="channel-col-manager">
+                    <col class="channel-col-users">
+                    <col class="channel-col-bot">
+                    <col class="channel-col-group">
+                    <col class="channel-col-status">
+                    <col class="channel-col-connected-at">
+                    <col class="channel-col-actions">
+                </colgroup>
                 <thead>
                     <tr>
-                        <th class="w-14">STT</th>
-                        <th>K&#234;nh</th>
-                        <th>Manager</th>
-                        <th>User &#273;&#432;&#7907;c g&#225;n</th>
-                        <th>BOT</th>
-                        <th>Nh&#243;m</th>
-                        <th>Tr&#7841;ng th&#225;i</th>
-                        <th>K&#7871;t n&#7889;i l&#250;c</th>
-                        <th class="text-right">T&#225;c v&#7909;</th>
+                        <th class="channel-col-stt">STT</th>
+                        <th class="channel-col-name">K&#234;nh</th>
+                        <th class="channel-col-manager">Manager</th>
+                        <th class="channel-col-users">User &#273;&#432;&#7907;c g&#225;n</th>
+                        <th class="channel-col-bot">BOT</th>
+                        <th class="channel-col-group">Nh&#243;m</th>
+                        <th class="channel-col-status">Tr&#7841;ng th&#225;i</th>
+                        <th class="channel-col-connected-at">K&#7871;t n&#7889;i l&#250;c</th>
+                        <th class="channel-col-actions text-right">T&#225;c v&#7909;</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for channel in dashboard.channels %}
                     <tr>
                         <td class="table-mono text-slate-500">{{ channel.index }}</td>
-                        <td>
-                            <div class="min-w-[260px]">
+                        <td class="channel-name-cell">
+                            <div class="channel-name-shell">
                                 <div class="flex items-center gap-3">
                                     <div class="avatar-tile">
                                         <img src="{{ channel.avatar_url }}" alt="{{ channel.name }}">
                                     </div>
                                     <div class="min-w-0">
-                                        <p class="truncate text-[13px] font-semibold text-slate-900">{{ channel.name }}</p>
-                                        <a href="{{ channel.channel_link }}" target="_blank" rel="noreferrer" class="table-meta table-mono inline-flex max-w-full items-center gap-1 truncate text-brand-700 hover:text-brand-800">
+                                        <p class="channel-title-text text-[13px] font-semibold text-slate-900">{{ channel.name }}</p>
+                                        <a href="{{ channel.channel_link }}" target="_blank" rel="noreferrer" class="channel-link-meta table-meta table-mono text-brand-700 hover:text-brand-800">
                                             <i data-lucide="external-link" class="h-3.5 w-3.5"></i>
-                                            {{ channel.channel_id }}
+                                            <span class="channel-link-text">{{ channel.channel_id }}</span>
                                         </a>
                                     </div>
                                 </div>
                             </div>
                         </td>
-                        <td class="text-[12px] font-medium text-slate-700">{{ channel.manager_name }}</td>
-                        <td>
-                            <div class="max-w-[240px] whitespace-normal text-[12px] leading-5 text-slate-700">
+                        <td class="channel-manager-cell">
+                            <span class="channel-manager-text text-[12px] font-medium text-slate-700">{{ channel.manager_name }}</span>
+                        </td>
+                        <td class="channel-user-cell">
+                            <div class="channel-user-list max-w-[240px] text-[12px] leading-5 text-slate-700">
                                 {% if channel.users %}
                                     {% for username in channel.users %}
-                                    <span class="mb-1 mr-1 inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-medium text-slate-600">{{ username }}</span>
+                                    <span class="block">{{ username }}</span>
                                     {% endfor %}
                                 {% else %}
                                     <span class="text-slate-400">Ch&#432;a c&#243; user</span>
                                 {% endif %}
                             </div>
                         </td>
-                        <td>
-                            <p class="text-[12px] font-semibold text-slate-800">{{ channel.worker_name }}</p>
+                        <td class="channel-worker-cell">
+                            <p class="channel-worker-text text-[12px] font-semibold text-slate-800">{{ channel.worker_name }}</p>
                             <p class="table-meta">{{ channel.total_users }} user</p>
                         </td>
-                        <td class="text-[12px] text-slate-600">{{ channel.group }}</td>
+                        <td class="channel-group-cell">
+                            <span class="channel-group-text text-[12px] text-slate-600">{{ channel.group }}</span>
+                        </td>
                         <td><span class="{{ channel.status_class }}">{{ channel.status_label }}</span></td>
                         <td class="table-mono text-slate-600">{{ channel.created_at }}</td>
-                        <td>
-                            <div class="flex items-center justify-end gap-2">
+                        <td class="channel-actions-cell">
+                            <div class="channel-actions-wrap flex items-center gap-2">
                                 <a href="/admin/channel/users?channelId={{ channel.id }}&channelName={{ channel.name | urlencode }}" class="action-btn action-btn-primary">
                                     <i data-lucide="users" class="h-3.5 w-3.5"></i>
                                     DS User

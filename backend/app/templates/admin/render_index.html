@@ -1,6 +1,71 @@
 {% extends "admin/_layout.html" %}
 
 {% block content %}
+<style>
+    .admin-table-render-list {
+        width: 100%;
+        table-layout: fixed;
+    }
+
+    /* Width tuning for Danh sách render: chỉnh các giá trị này khi cần. */
+    .render-col-stt { width: 72px; }
+    .render-col-job { width: 248px; }
+    .render-col-channel { width: 178px; }
+    .render-col-bot { width: 130px; }
+    .render-col-timeline { width: 196px; }
+    .render-col-duration { width: 100px; }
+    .render-col-status { width: 100px; }
+    .render-col-queue { width: 76px; }
+    .render-col-actions { width: 138px; }
+
+    .admin-table-render-list thead th,
+    .admin-table-render-list tbody td {
+        white-space: normal;
+        vertical-align: middle;
+    }
+
+    .admin-table-render-list .render-job-cell,
+    .admin-table-render-list .render-channel-cell,
+    .admin-table-render-list .render-worker-cell,
+    .admin-table-render-list .render-timeline-cell,
+    .admin-table-render-list .render-actions-cell {
+        white-space: normal;
+    }
+
+    .render-job-shell,
+    .render-job-title,
+    .render-channel-title,
+    .render-channel-link-text,
+    .render-worker-text,
+    .render-group-text,
+    .render-timeline-block,
+    .render-duration-text {
+        min-width: 0;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        white-space: normal;
+        line-height: 1.4;
+    }
+
+    .render-channel-link {
+        display: inline-flex;
+        max-width: 100%;
+        align-items: flex-start;
+        gap: 4px;
+        white-space: normal;
+    }
+
+    .render-channel-link i,
+    .render-channel-link svg {
+        flex-shrink: 0;
+        margin-top: 1px;
+    }
+
+    .render-actions-wrap {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+</style>
 <section class="space-y-6">
     {% include "admin/_admin_notice.html" %}
 
@@ -37,6 +102,7 @@
     {% include "admin/_summary_strip.html" %}
 
     <div class="panel overflow-hidden">
+        {% set show_local_render_demo = (not dashboard.renders) and (request.url.hostname in ['127.0.0.1', 'localhost', '::1']) %}
         <div class="border-b border-slate-200/80 px-5 py-4">
             <div>
                 <h3 class="section-title">Danh sách job render</h3>
@@ -45,33 +111,42 @@
         </div>
 
         <div class="table-shell">
-            <table class="admin-table" data-admin-list-table>
+            <table class="admin-table admin-table-render-list" data-admin-list-table="render-index">
+                <colgroup>
+                    <col class="render-col-stt">
+                    <col class="render-col-job">
+                    <col class="render-col-channel">
+                    <col class="render-col-bot">
+                    <col class="render-col-timeline">
+                    <col class="render-col-duration">
+                    <col class="render-col-status">
+                    <col class="render-col-queue">
+                    <col class="render-col-actions">
+                </colgroup>
                 <thead>
                     <tr>
-                        <th class="w-14">STT</th>
-                        <th>Thông tin job</th>
-                        <th>Kênh</th>
-                        <th>BOT</th>
-                        <th>Link nguồn</th>
-                        <th>Timeline</th>
-                        <th>Thời lượng</th>
-                        <th>Trạng thái</th>
-                        <th>Queue</th>
-                        <th class="text-right">Tác vụ</th>
+                        <th class="render-col-stt">STT</th>
+                        <th class="render-col-job">Thông tin job</th>
+                        <th class="render-col-channel">Kênh</th>
+                        <th class="render-col-bot">BOT</th>
+                        <th class="render-col-timeline">Timeline</th>
+                        <th class="render-col-duration">Thời lượng</th>
+                        <th class="render-col-status">Trạng thái</th>
+                        <th class="render-col-queue">Queue</th>
+                        <th class="render-col-actions text-right">Tác vụ</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for render in dashboard.renders %}
                     <tr>
                         <td class="table-mono text-slate-500">{{ render.index }}</td>
-                        <td>
-                            <div class="min-w-[280px]">
-                                <p class="text-[13px] font-semibold text-slate-900">{{ render.title }}</p>
+                        <td class="render-job-cell">
+                            <div class="render-job-shell">
+                                <p class="render-job-title text-[13px] font-semibold text-slate-900">{{ render.title }}</p>
                                 <p class="table-meta">Manager {{ render.manager_name }} • User {{ render.username }}</p>
-                                <p class="table-meta table-mono">Tạo lúc {{ render.created_at }}</p>
                             </div>
                         </td>
-                        <td>
+                        <td class="render-channel-cell">
                             <div class="flex items-center gap-3">
                                 <div class="avatar-tile h-9 w-9 rounded-lg bg-emerald-800 text-[10px] font-bold text-white">
                                     {% if render.avatar_url %}
@@ -80,34 +155,36 @@
                                     {{ render.channel_name[:1] }}
                                     {% endif %}
                                 </div>
-                                <div>
-                                    <p class="text-[12px] font-semibold text-slate-900">{{ render.channel_name }}</p>
-                                    <p class="table-meta table-mono">{{ render.channel_id }}</p>
+                                <div class="min-w-0">
+                                    <p class="render-channel-title text-[12px] font-semibold text-slate-900">{{ render.channel_name }}</p>
+                                    {% if render.channel_link %}
+                                    <a href="{{ render.channel_link }}" target="_blank" rel="noreferrer" class="render-channel-link table-meta table-mono text-slate-500 hover:text-brand-700">
+                                        <i data-lucide="external-link" class="h-3.5 w-3.5"></i>
+                                        <span class="render-channel-link-text">{{ render.channel_id }}</span>
+                                    </a>
+                                    {% else %}
+                                    <p class="render-channel-link-text table-meta table-mono">{{ render.channel_id }}</p>
+                                    {% endif %}
                                 </div>
                             </div>
                         </td>
-                        <td>
-                            <p class="text-[12px] font-semibold text-slate-900">{{ render.worker_name }}</p>
-                            <p class="table-meta">{{ render.group }}</p>
+                        <td class="render-worker-cell">
+                            <p class="render-worker-text text-[12px] font-semibold text-slate-900">{{ render.worker_name }}</p>
+                            <p class="render-group-text table-meta">{{ render.group }}</p>
                         </td>
-                        <td>
-                            <a class="inline-flex max-w-[260px] items-center gap-1.5 truncate text-[12px] font-semibold text-brand-700 hover:text-brand-800" href="https://www.youtube.com/channel/{{ render.channel_id }}" target="_blank" rel="noreferrer">
-                                <i data-lucide="external-link" class="h-3.5 w-3.5"></i>
-                                {{ render.video_link }}
-                            </a>
-                            <p class="table-meta table-mono mt-2">{{ render.channel_id }}</p>
+                        <td class="render-timeline-cell table-mono text-slate-600">
+                            <div class="render-timeline-block">
+                                <p>Tạo: {{ render.created_at }}</p>
+                                <p class="mt-1">Tải: {{ render.download_started_at }}</p>
+                                <p class="mt-1">Upload: {{ render.upload_started_at }}</p>
+                                <p class="mt-1">Xong: {{ render.completed_at }}</p>
+                            </div>
                         </td>
-                        <td class="table-mono text-slate-600">
-                            <p>Tạo: {{ render.created_at }}</p>
-                            <p class="mt-1">Tải: {{ render.download_started_at }}</p>
-                            <p class="mt-1">Upload: {{ render.upload_started_at }}</p>
-                            <p class="mt-1">Xong: {{ render.completed_at }}</p>
-                        </td>
-                        <td class="table-mono text-slate-700">{{ render.time_render_string }}</td>
+                        <td class="render-duration-text table-mono text-slate-700">{{ render.time_render_string }}</td>
                         <td><span class="{{ render.status_class }}">{{ render.status_label }}</span></td>
                         <td class="table-mono text-slate-500">{{ render.queue_order }}</td>
-                        <td>
-                            <div class="flex items-center justify-end gap-2">
+                        <td class="render-actions-cell">
+                            <div class="render-actions-wrap flex items-center gap-2">
                                 <a href="/admin/render/renderinfo?id={{ render.id }}" class="action-btn action-btn-slate">
                                     <i data-lucide="eye" class="h-3.5 w-3.5"></i>
                                     Chi tiết
@@ -126,6 +203,52 @@
                         </td>
                     </tr>
                     {% endfor %}
+                    {% if show_local_render_demo %}
+                    <tr data-local-render-demo="true">
+                        <td class="table-mono text-slate-500">1</td>
+                        <td class="render-job-cell">
+                            <div class="render-job-shell">
+                                <p class="render-job-title text-[13px] font-semibold text-slate-900">demo-render-job-width-check-local</p>
+                                <p class="table-meta">Manager demo-manager-alpha • User demo-user-width-check</p>
+                            </div>
+                        </td>
+                        <td class="render-channel-cell">
+                            <div class="flex items-center gap-3">
+                                <div class="avatar-tile h-9 w-9 rounded-lg bg-emerald-800 text-[10px] font-bold text-white">D</div>
+                                <div class="min-w-0">
+                                    <p class="render-channel-title text-[12px] font-semibold text-slate-900">Demo Channel Width Review Local</p>
+                                    <a href="https://www.youtube.com/channel/UCdemo00000000000000001" target="_blank" rel="noreferrer" class="render-channel-link table-meta table-mono text-slate-500 hover:text-brand-700">
+                                        <i data-lucide="external-link" class="h-3.5 w-3.5"></i>
+                                        <span class="render-channel-link-text">UCdemo00000000000000001-width-check</span>
+                                    </a>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="render-worker-cell">
+                            <p class="render-worker-text text-[12px] font-semibold text-slate-900">Y-Us-West-89.117.22.183-render-local-demo-bot</p>
+                            <p class="render-group-text table-meta">demo-manager-group-width-check</p>
+                        </td>
+                        <td class="render-timeline-cell table-mono text-slate-600">
+                            <div class="render-timeline-block">
+                                <p>Tạo: 12/04/2026 14:45:00</p>
+                                <p class="mt-1">Tải: 12/04/2026 14:47:10</p>
+                                <p class="mt-1">Upload: 12/04/2026 15:02:30</p>
+                                <p class="mt-1">Xong: 12/04/2026 15:06:20</p>
+                            </div>
+                        </td>
+                        <td class="render-duration-text table-mono text-slate-700">00:18:42</td>
+                        <td>
+                            <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold border-amber-200 bg-amber-50 text-amber-700">Demo local</span>
+                        </td>
+                        <td class="table-mono text-slate-500">1/3</td>
+                        <td class="render-actions-cell">
+                            <div class="render-actions-wrap flex items-center gap-2">
+                                <span class="action-btn action-btn-slate opacity-60">Chi tiết</span>
+                                <span class="action-btn action-btn-rose opacity-60">Xóa</span>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endif %}
                 </tbody>
             </table>
         </div>

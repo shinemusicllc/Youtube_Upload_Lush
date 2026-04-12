@@ -7558,6 +7558,7 @@ class AppStore:
                     "avatar_url": job.channel_avatar_url or "/static/admin-themes/assets/img/avatar/avatar-1.png",
                     "channel_name": job.channel_name,
                     "channel_id": channel.channel_id if channel else job.channel_id,
+                    "channel_link": self._channel_link(channel) if channel else "",
                     "video_link": primary_asset.url if primary_asset and primary_asset.url else (primary_asset.file_name if primary_asset else "-"),
                     "time_render_string": job.time_render_string,
                     "download_started_at": self._format_full_datetime(job.download_started_at),
