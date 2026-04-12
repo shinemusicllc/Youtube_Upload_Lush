@@ -54,7 +54,22 @@ fi
 pip install --upgrade pip
 pip install -r workers/agent/requirements.txt
 
-cp infra/systemd/youtube-upload-worker.service /etc/systemd/system/youtube-upload-worker.service
+cat >/etc/systemd/system/youtube-upload-worker.service <<EOF
+[Unit]
+Description=Youtube Upload Lush Worker Agent
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=$APP_DIR
+EnvironmentFile=/etc/youtube-upload-worker.env
+ExecStart=$APP_DIR/.venv/bin/python -m workers.agent.main
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
 
 if [ ! -f /etc/youtube-upload-worker.env ]; then
   cat >/etc/youtube-upload-worker.env <<'EOF'
