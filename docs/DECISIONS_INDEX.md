@@ -34,6 +34,7 @@
 | DEC-028 | Route canon cua live app la `/app/live` cho moi role; `admin/manager` dung live app bang chinh account cua minh, con `/admin/live` chi giu de redirect tuong thich va cac man quan tri live van o cum `/admin/*?workspace=live` | Active | live workspace + route/auth model | High |
 | DEC-029 | BOT live phai di qua cung SSH bootstrap/decommission pipeline voi upload va chon runtime bang `WORKER_RUNTIME_MODE=live`; khong cho local-create BOT live trong control-plane | Active | live worker bootstrap + admin ops | High |
 | DEC-030 | Live worker bootstrap phai toi gian theo runtime live: tat browser session va YouTube upload flags de khong cai Chrome/noVNC stack cua upload tren VPS live | Active | live worker bootstrap + runtime isolation | High |
+| DEC-031 | Trong control-plane hop nhat, upload va live worker phai mac dinh bootstrap/decommission vao path rieng theo workspace (`/opt/youtube-upload-lush*` cho upload, `/opt/youtube-upload-lush-live-worker*` cho live) thay vi dung chung mot bien global | Active | worker bootstrap + merged main deploy | High |
 
 ## Notes
 - `docs/DECISIONS.md` van giu full history va ly do chi tiet.

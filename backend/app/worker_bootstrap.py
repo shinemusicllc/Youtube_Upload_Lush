@@ -29,6 +29,8 @@ DEFAULT_REPO_URL = "https://github.com/shinemusicllc/Youtube_Upload_Lush.git"
 DEFAULT_BRANCH = "main"
 DEFAULT_APP_DIR = "/opt/youtube-upload-lush"
 DEFAULT_RUNTIME_DIR = "/opt/youtube-upload-lush-runtime"
+DEFAULT_LIVE_APP_DIR = "/opt/youtube-upload-lush-live-worker"
+DEFAULT_LIVE_RUNTIME_DIR = "/opt/youtube-upload-lush-live-worker-runtime"
 logger = logging.getLogger(__name__)
 _OPERATION_THREADS: dict[str, Thread] = {}
 _OPERATION_THREADS_LOCK = Lock()
@@ -38,12 +40,54 @@ class WorkerBootstrapError(RuntimeError):
     pass
 
 
-def _resolve_default_app_dir() -> str:
-    return str(os.getenv("WORKER_BOOTSTRAP_APP_DIR", DEFAULT_APP_DIR)).strip() or DEFAULT_APP_DIR
+def _normalize_runtime_mode(value: str | None) -> str:
+    return "live" if str(value or "").strip().lower() == "live" else "upload"
 
 
-def _resolve_default_runtime_dir() -> str:
-    return str(os.getenv("WORKER_BOOTSTRAP_RUNTIME_DIR", DEFAULT_RUNTIME_DIR)).strip() or DEFAULT_RUNTIME_DIR
+def _resolve_default_app_dir(runtime_mode: str = "upload") -> str:
+    normalized_runtime_mode = _normalize_runtime_mode(runtime_mode)
+    if normalized_runtime_mode == "live":
+        return (
+            str(
+                os.getenv(
+                    "WORKER_BOOTSTRAP_LIVE_APP_DIR",
+                    os.getenv("WORKER_BOOTSTRAP_APP_DIR", DEFAULT_LIVE_APP_DIR),
+                )
+            ).strip()
+            or DEFAULT_LIVE_APP_DIR
+        )
+    return (
+        str(
+            os.getenv(
+                "WORKER_BOOTSTRAP_UPLOAD_APP_DIR",
+                os.getenv("WORKER_BOOTSTRAP_APP_DIR", DEFAULT_APP_DIR),
+            )
+        ).strip()
+        or DEFAULT_APP_DIR
+    )
+
+
+def _resolve_default_runtime_dir(runtime_mode: str = "upload") -> str:
+    normalized_runtime_mode = _normalize_runtime_mode(runtime_mode)
+    if normalized_runtime_mode == "live":
+        return (
+            str(
+                os.getenv(
+                    "WORKER_BOOTSTRAP_LIVE_RUNTIME_DIR",
+                    os.getenv("WORKER_BOOTSTRAP_RUNTIME_DIR", DEFAULT_LIVE_RUNTIME_DIR),
+                )
+            ).strip()
+            or DEFAULT_LIVE_RUNTIME_DIR
+        )
+    return (
+        str(
+            os.getenv(
+                "WORKER_BOOTSTRAP_UPLOAD_RUNTIME_DIR",
+                os.getenv("WORKER_BOOTSTRAP_RUNTIME_DIR", DEFAULT_RUNTIME_DIR),
+            )
+        ).strip()
+        or DEFAULT_RUNTIME_DIR
+    )
 
 
 @dataclass(slots=True)
@@ -61,8 +105,8 @@ class WorkerBootstrapRequest:
     ssh_private_key: str | None = None
     repo_url: str = DEFAULT_REPO_URL
     branch: str = DEFAULT_BRANCH
-    app_dir: str = field(default_factory=_resolve_default_app_dir)
-    runtime_dir: str = field(default_factory=_resolve_default_runtime_dir)
+    app_dir: str = field(default_factory=lambda: _resolve_default_app_dir("upload"))
+    runtime_dir: str = field(default_factory=lambda: _resolve_default_runtime_dir("upload"))
     browser_public_base_url: str | None = None
     capacity: int = 1
     threads: int = 1
@@ -86,8 +130,8 @@ class WorkerDecommissionRequest:
     ssh_user: str
     password: str | None = None
     ssh_private_key: str | None = None
-    app_dir: str = field(default_factory=_resolve_default_app_dir)
-    runtime_dir: str = field(default_factory=_resolve_default_runtime_dir)
+    app_dir: str = field(default_factory=lambda: _resolve_default_app_dir("upload"))
+    runtime_dir: str = field(default_factory=lambda: _resolve_default_runtime_dir("upload"))
     connect_timeout: int = 20
 
 
@@ -168,6 +212,7 @@ def build_worker_bootstrap_request(
     branch: str | None = None,
     runtime_mode: str = "upload",
 ) -> WorkerBootstrapRequest:
+    normalized_runtime_mode = _normalize_runtime_mode(runtime_mode)
     normalized_ip = str(vps_ip or "").strip()
     if not normalized_ip:
         raise WorkerBootstrapError("VPS IP là bắt buộc.")
@@ -185,13 +230,13 @@ def build_worker_bootstrap_request(
         shared_secret=str(shared_secret or "").strip(),
         worker_id=str(worker_id or "").strip(),
         worker_name=normalized_ip,
-        runtime_mode="live" if str(runtime_mode or "").strip().lower() == "live" else "upload",
+        runtime_mode=normalized_runtime_mode,
         manager_name=str(manager_name or "").strip() or "system",
         group="",
         repo_url=str(repo_url or os.getenv("WORKER_BOOTSTRAP_REPO_URL", DEFAULT_REPO_URL)).strip() or DEFAULT_REPO_URL,
         branch=str(branch or os.getenv("WORKER_BOOTSTRAP_BRANCH", DEFAULT_BRANCH)).strip() or DEFAULT_BRANCH,
-        app_dir=_resolve_default_app_dir(),
-        runtime_dir=_resolve_default_runtime_dir(),
+        app_dir=_resolve_default_app_dir(normalized_runtime_mode),
+        runtime_dir=_resolve_default_runtime_dir(normalized_runtime_mode),
         browser_public_base_url=f"http://{normalized_ip}",
     )
 
@@ -202,7 +247,9 @@ def build_worker_decommission_request(
     ssh_user: str,
     password: str | None = None,
     ssh_private_key: str | None = None,
+    runtime_mode: str = "upload",
 ) -> WorkerDecommissionRequest:
+    normalized_runtime_mode = _normalize_runtime_mode(runtime_mode)
     normalized_ip = str(vps_ip or "").strip()
     if not normalized_ip:
         raise WorkerBootstrapError("VPS IP là bắt buộc.")
@@ -216,8 +263,8 @@ def build_worker_decommission_request(
         ssh_user=normalized_user,
         password=normalized_password or None,
         ssh_private_key=normalized_key or None,
-        app_dir=_resolve_default_app_dir(),
-        runtime_dir=_resolve_default_runtime_dir(),
+        app_dir=_resolve_default_app_dir(normalized_runtime_mode),
+        runtime_dir=_resolve_default_runtime_dir(normalized_runtime_mode),
     )
 
 
@@ -780,6 +827,7 @@ def _decommission_request_from_task(store, task: dict[str, str]) -> WorkerDecomm
         ssh_user=str(profile.get("ssh_user") or "root").strip() or "root",
         password=(str(profile.get("password") or "").strip() or None) if auth_mode != "ssh_key" else None,
         ssh_private_key=(str(profile.get("ssh_private_key") or "").strip() or None) if auth_mode == "ssh_key" else None,
+        runtime_mode=workspace_mode,
     )
 
 

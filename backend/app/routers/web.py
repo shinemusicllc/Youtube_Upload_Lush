@@ -1499,6 +1499,7 @@ async def admin_bot_delete(request: Request):
                 ssh_user=str(connection_profile.get("ssh_user") or "").strip() or "root",
                 password=(str(connection_profile.get("password") or "").strip() or None) if resolved_auth_mode != "ssh_key" else None,
                 ssh_private_key=(str(connection_profile.get("ssh_private_key") or "").strip() or None) if resolved_auth_mode == "ssh_key" else None,
+                runtime_mode=workspace_mode,
             )
             task = start_worker_decommission_operation(
                 store=store,
