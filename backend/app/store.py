@@ -5381,6 +5381,7 @@ class AppStore:
         )
         context = {
             "page_title": page_title,
+            "app_name": "Youtube Lush",
             "active_page": active_page,
             "workspace_mode": workspace_mode,
             "workspace_heading": "Live Stream" if workspace_mode == "live" else "Upload",
