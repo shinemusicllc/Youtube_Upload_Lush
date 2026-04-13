@@ -3806,18 +3806,26 @@ class AppStore:
     def _is_live_stream_runtime_locked(self, stream: LiveStreamRecord) -> bool:
         effective_runtime = self._effective_live_runtime_stream(stream)
         effective_status = str(effective_runtime.status or "").strip().lower() or "scheduled"
-        if effective_status in {"downloading", "preparing", "waiting", "streaming", "disconnected"}:
-            return True
-        if effective_status == "scheduled" and str(effective_runtime.claimed_by_worker_id or "").strip():
+        if effective_status in {"streaming", "disconnected"}:
             return True
         primary_status = str(stream.status or "").strip().lower() or "scheduled"
-        if primary_status == "scheduled" and str(stream.claimed_by_worker_id or "").strip():
+        if primary_status in {"streaming", "disconnected"}:
             return True
         return False
 
     def _assert_live_stream_editable(self, stream: LiveStreamRecord) -> None:
         if self._is_live_stream_runtime_locked(stream):
             raise ValueError("Luồng đang được worker xử lý hoặc đang live. Hãy dùng Dừng trước khi chỉnh sửa.")
+
+    def _is_live_stream_prestream_active(self, stream: LiveStreamRecord) -> bool:
+        effective_runtime = self._effective_live_runtime_stream(stream)
+        effective_status = str(effective_runtime.status or "").strip().lower() or "scheduled"
+        if effective_status in self._live_pre_stream_statuses():
+            return bool(str(effective_runtime.claimed_by_worker_id or "").strip()) or effective_status != "scheduled"
+        primary_status = str(stream.status or "").strip().lower() or "scheduled"
+        if primary_status in self._live_pre_stream_statuses():
+            return bool(str(stream.claimed_by_worker_id or "").strip()) or primary_status != "scheduled"
+        return False
 
     @staticmethod
     def _has_live_stream_started(stream: LiveStreamRecord) -> bool:
@@ -4234,8 +4242,8 @@ class AppStore:
 
     def _find_claimed_live_stream(self, stream_id: str, worker_id: str) -> LiveStreamRecord:
         stream = self._find_live_stream(stream_id)
-        if stream.claimed_by_worker_id not in {None, worker_id} and stream.status not in {"ended", "stopped", "error"}:
-            raise ValueError("Luồng live đang thuộc worker khác.")
+        if stream.claimed_by_worker_id != worker_id:
+            raise ValueError("Luồng live không còn thuộc worker hiện tại.")
         return stream
 
     @staticmethod
@@ -6798,6 +6806,7 @@ class AppStore:
         owner = self._require_workspace_user(stream.owner_user_id)
         self._assert_live_stream_owner_scope(owner, viewer_role=viewer_role, viewer_id=viewer_id)
         self._assert_live_stream_editable(stream)
+        restart_prestream_runtime = self._is_live_stream_prestream_active(stream)
         normalized_name = self._normalize_live_text(stream_name, field_label="Tên luồng live")
         normalized_stream_key = self._normalize_live_text(stream_key, field_label="Stream key")
         normalized_video_url = self._normalize_live_source_url(
@@ -6848,6 +6857,7 @@ class AppStore:
             status_override=status,
             log_override=log_label,
         )
+        now = self._now(trim=False)
 
         stream.manager_id = manager_id
         stream.manager_name = manager_name
@@ -6890,9 +6900,8 @@ class AppStore:
         stream.waiting_started_at = None
         stream.streaming_started_at = None
         stream.disconnected_at = None
-        stream.stop_requested_at = None
+        stream.stop_requested_at = now if restart_prestream_runtime else None
         stream.ended_at = None
-        now = self._now(trim=False)
         stream.updated_at = now
         self._sync_live_backup_policy(now=now)
         self._save_state()
