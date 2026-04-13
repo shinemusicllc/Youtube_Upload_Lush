@@ -626,14 +626,24 @@
           {% endif %}
           <div class="p-6 flex flex-col relative bg-white rounded-2xl">
             <div class="absolute top-0 left-6 h-1 w-16 bg-brand-500 rounded-b-full"></div>
-            <div class="flex items-start gap-3 pb-4 border-b border-slate-100/80 mb-6">
-              <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-50 to-white border border-brand-100/50 shadow-sm flex items-center justify-center shrink-0">
-                <i data-lucide="radio" class="w-5 h-5 text-brand-600"></i>
+            <div class="flex items-start justify-between gap-3 pb-4 border-b border-slate-100/80 mb-6">
+              <div class="flex items-start gap-3 min-w-0">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-50 to-white border border-brand-100/50 shadow-sm flex items-center justify-center shrink-0">
+                  <i data-lucide="radio" class="w-5 h-5 text-brand-600"></i>
+                </div>
+                <div>
+                  <h3 class="font-display font-bold text-[16px] text-slate-900 tracking-tight">{{ dashboard.live_config.title | e }}</h3>
+                  <p class="text-[11px] text-slate-500 mt-0.5">{{ dashboard.live_config.description | e }}</p>
+                </div>
               </div>
-              <div>
-                <h3 class="font-display font-bold text-[16px] text-slate-900 tracking-tight">{{ dashboard.live_config.title | e }}</h3>
-                <p class="text-[11px] text-slate-500 mt-0.5">{{ dashboard.live_config.description | e }}</p>
-              </div>
+              <button
+                id="liveTelegramConnectButton"
+                type="button"
+                class="shrink-0 -mr-1 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-semibold text-brand-600 transition-all hover:bg-brand-50 hover:text-brand-700"
+              >
+                <i data-lucide="send" class="h-3.5 w-3.5"></i>
+                K&#7871;t n&#7889;i Telegram
+              </button>
             </div>
 
             <div class="live-config-flat flex-1">
@@ -985,6 +995,69 @@
       </div>
     </div>
   </div>
+  <div id="liveTelegramModal" class="fixed inset-0 z-[125] hidden" aria-hidden="true">
+    <div class="absolute inset-0 bg-slate-950/45" data-live-telegram-close></div>
+    <div class="relative flex min-h-full items-center justify-center p-4">
+      <div class="w-full max-w-[580px] rounded-2xl border border-slate-200 bg-white shadow-[0_18px_48px_rgba(15,23,42,0.18)]">
+        <div class="border-b border-slate-200 px-5 py-4">
+          <h3 class="text-[16px] font-bold text-slate-900">K&#7871;t n&#7889;i Telegram live</h3>
+          <p class="mt-1 text-[12px] text-slate-500">
+            App s&#7869; d&ugrave;ng bot live &#273;&#7875; g&#7917;i th&ocirc;ng b&aacute;o t&#7841;o l&#7883;ch, b&#7855;t &#273;&#7847;u, l&#7895;i, backup, m&#7845;t k&#7871;t n&#7889;i v&agrave; k&#7871;t th&uacute;c live cho t&agrave;i kho&#7843;n hi&#7879;n t&#7841;i.
+          </p>
+        </div>
+        <div class="space-y-4 px-5 py-5">
+          <div class="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3">
+            <p class="text-[13px] font-semibold text-sky-900">C&aacute;ch k&#7871;t n&#7889;i Telegram live</p>
+            <ol class="mt-3 space-y-2 text-[12px] leading-5 text-sky-800">
+              <li>1. B&#7845;m <strong>M&#7903; bot Telegram</strong> &#273;&#7875; v&agrave;o bot live.</li>
+              <li>2. D&ugrave;ng &#273;&uacute;ng t&agrave;i kho&#7843;n Telegram mu&#7889;n nh&#7853;n th&ocirc;ng b&aacute;o livestream v&agrave; b&#7845;m <strong>Start</strong>.</li>
+              <li>3. Gi&#7919; popup n&agrave;y m&#7903; trong v&agrave;i gi&acirc;y, h&#7879; th&#7889;ng s&#7869; t&#7921; nh&#7853;n chat_id v&agrave; l&#432;u cho t&agrave;i kho&#7843;n hi&#7879;n t&#7841;i.</li>
+              <li>4. Mu&#7889;n &#273;&#7893;i sang t&agrave;i kho&#7843;n Telegram kh&aacute;c, b&#7845;m <strong>Ng&#7855;t k&#7871;t n&#7889;i</strong> r&#7891;i m&#7903; bot l&#7841;i.</li>
+            </ol>
+          </div>
+
+          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <p class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Bot Telegram live</p>
+                <p id="liveTelegramBotLabel" class="mt-2 text-[13px] font-semibold text-slate-900">-</p>
+                <p id="liveTelegramBotMeta" class="mt-1 text-[11px] text-slate-500">H&#7879; th&#7889;ng s&#7869; l&#432;u Telegram live ri&ecirc;ng cho workspace n&agrave;y, kh&ocirc;ng &#7843;nh h&#432;&#7903;ng Telegram h&#7841; t&#7847;ng.</p>
+              </div>
+              <span id="liveTelegramBindingBadge" class="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-600">
+                Ch&#432;a k&#7871;t n&#7889;i
+              </span>
+            </div>
+          </div>
+
+          <div id="liveTelegramStatusBox" class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] font-medium text-amber-800">
+            B&#7845;m M&#7903; bot Telegram r&#7891;i nh&#7845;n Start b&#7857;ng &#273;&uacute;ng t&agrave;i kho&#7843;n mu&#7889;n nh&#7853;n th&ocirc;ng b&aacute;o live.
+          </div>
+        </div>
+        <div class="flex items-center justify-between gap-3 border-t border-slate-200 px-5 py-4">
+          <div class="flex items-center gap-2">
+            <button type="button" data-live-telegram-close class="inline-flex min-w-[108px] items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900">
+              &#272;&oacute;ng
+            </button>
+            <button
+              type="button"
+              id="liveTelegramDisconnectButton"
+              class="hidden inline-flex min-w-[132px] items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+            >
+              Ng&#7855;t k&#7871;t n&#7889;i
+            </button>
+          </div>
+          <button
+            type="button"
+            id="liveTelegramOpenBotButton"
+            class="inline-flex min-w-[172px] items-center justify-center gap-1.5 rounded-lg border border-brand-600 bg-brand-600 px-4 py-2 text-[13px] font-semibold text-white hover:border-brand-700 hover:bg-brand-700"
+          >
+            <i data-lucide="send" class="h-3.5 w-3.5"></i>
+            M&#7903; bot Telegram
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script>
     if (window.lucide) window.lucide.createIcons();
@@ -1176,6 +1249,15 @@
     const liveStopModalMessage = document.getElementById('liveStopModalMessage');
     const liveStopConfirmButton = document.getElementById('liveStopConfirmButton');
     const liveStopCloseButtons = Array.from(document.querySelectorAll('[data-live-stop-close]'));
+    const liveTelegramConnectButton = document.getElementById('liveTelegramConnectButton');
+    const liveTelegramModal = document.getElementById('liveTelegramModal');
+    const liveTelegramBotLabel = document.getElementById('liveTelegramBotLabel');
+    const liveTelegramBotMeta = document.getElementById('liveTelegramBotMeta');
+    const liveTelegramBindingBadge = document.getElementById('liveTelegramBindingBadge');
+    const liveTelegramStatusBox = document.getElementById('liveTelegramStatusBox');
+    const liveTelegramOpenBotButton = document.getElementById('liveTelegramOpenBotButton');
+    const liveTelegramDisconnectButton = document.getElementById('liveTelegramDisconnectButton');
+    const liveTelegramCloseButtons = Array.from(document.querySelectorAll('[data-live-telegram-close]'));
     const liveUrlInputs = {
       video: document.querySelector('[data-live-url-input="video"]'),
       audio: document.querySelector('[data-live-url-input="audio"]'),
@@ -1207,6 +1289,13 @@
     const liveBulkDeleteAction = '/api/user/live/actions/bulk-delete';
     const liveStopAction = {{ (dashboard.live_stop_action | default('/app/live/stop')) | tojson }};
     const liveManagerIds = {{ dashboard.live_form_manager_ids | default([], true) | tojson }};
+    let liveTelegramBindingState = {{ dashboard.live_telegram | default({}, true) | tojson }};
+    let liveTelegramBindingMeta = {
+      bot_username: '',
+      bot_display_name: '',
+      deep_link_base: '',
+      bot_error: '',
+    };
     let liveStreamRowsState = {{ dashboard.live_stream_rows | default([], true) | tojson }};
     const liveUrlValidationTimers = new Map();
     let liveRefreshHandle = null;
@@ -1215,6 +1304,9 @@
     let liveStopPendingForm = null;
     let allowLiveStopSubmit = false;
     let liveStopPreviousBodyOverflow = '';
+    let liveTelegramPollTimer = null;
+    let liveTelegramLinkRequest = null;
+    let liveTelegramPreviousBodyOverflow = '';
     const LIVE_INPUT_HISTORY_STORAGE_PREFIX = 'youtube-lush-live-input-history:';
     const LIVE_INPUT_HISTORY_LIMIT = 8;
 
@@ -1306,6 +1398,236 @@
       const query = params.toString();
       return `${liveIndexHref}${query ? `?${query}` : ''}`;
     };
+
+    const setLiveTelegramStatus = (kind, message) => {
+      if (!(liveTelegramStatusBox instanceof HTMLElement)) return;
+      liveTelegramStatusBox.textContent = String(message || '').trim();
+      liveTelegramStatusBox.className = 'rounded-xl border px-4 py-3 text-[12px] font-medium';
+      if (kind === 'success') {
+        liveTelegramStatusBox.classList.add('border-emerald-200', 'bg-emerald-50', 'text-emerald-800');
+        return;
+      }
+      if (kind === 'error') {
+        liveTelegramStatusBox.classList.add('border-rose-200', 'bg-rose-50', 'text-rose-800');
+        return;
+      }
+      if (kind === 'loading') {
+        liveTelegramStatusBox.classList.add('border-sky-200', 'bg-sky-50', 'text-sky-800');
+        return;
+      }
+      liveTelegramStatusBox.classList.add('border-amber-200', 'bg-amber-50', 'text-amber-800');
+    };
+
+    const stopLiveTelegramPolling = () => {
+      if (liveTelegramPollTimer) {
+        window.clearInterval(liveTelegramPollTimer);
+        liveTelegramPollTimer = null;
+      }
+    };
+
+    const isLiveTelegramLinkRequestActive = () => {
+      if (!liveTelegramLinkRequest) return false;
+      if (!liveTelegramLinkRequest.expires_at) return true;
+      return Date.now() < Number(liveTelegramLinkRequest.expires_at || 0);
+    };
+
+    const formatLiveTelegramChatId = (value) => {
+      const cleaned = String(value || '').trim();
+      if (!cleaned) return '';
+      return cleaned.length > 8 ? `${cleaned.slice(0, 4)}…${cleaned.slice(-4)}` : cleaned;
+    };
+
+    const renderLiveTelegramBindingState = () => {
+      const snapshot = liveTelegramBindingState || {};
+      const linked = Boolean(snapshot.linked);
+      const chatId = String(snapshot.chat_id || '').trim();
+      const botUsername = String(liveTelegramBindingMeta.bot_username || '').trim();
+      const botDisplayName = String(liveTelegramBindingMeta.bot_display_name || '').trim();
+      const botError = String(liveTelegramBindingMeta.bot_error || '').trim();
+
+      if (liveTelegramBindingBadge instanceof HTMLElement) {
+        if (linked) {
+          liveTelegramBindingBadge.textContent = 'Đã kết nối';
+          liveTelegramBindingBadge.className = 'inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-700';
+        } else {
+          liveTelegramBindingBadge.textContent = botError ? 'Chưa sẵn sàng' : 'Chưa kết nối';
+          liveTelegramBindingBadge.className = botError
+            ? 'inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-[11px] font-semibold text-rose-700'
+            : 'inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-600';
+        }
+      }
+
+      if (liveTelegramBotLabel instanceof HTMLElement) {
+        if (botUsername) {
+          liveTelegramBotLabel.textContent = `@${botUsername}`;
+        } else if (botDisplayName) {
+          liveTelegramBotLabel.textContent = botDisplayName;
+        } else if (botError) {
+          liveTelegramBotLabel.textContent = 'Chưa cấu hình bot live';
+        } else {
+          liveTelegramBotLabel.textContent = 'Đang kiểm tra bot live...';
+        }
+      }
+
+      if (liveTelegramBotMeta instanceof HTMLElement) {
+        if (botError) {
+          liveTelegramBotMeta.textContent = botError;
+        } else if (linked && chatId) {
+          liveTelegramBotMeta.textContent = `Đã lưu Telegram live ${formatLiveTelegramChatId(chatId)} cho tài khoản hiện tại. Kết nối này không ảnh hưởng Telegram hạ tầng.`;
+        } else {
+          liveTelegramBotMeta.textContent = 'Hệ thống sẽ lưu Telegram live riêng cho workspace này, không ảnh hưởng Telegram hạ tầng.';
+        }
+      }
+
+      if (liveTelegramDisconnectButton instanceof HTMLButtonElement) {
+        liveTelegramDisconnectButton.classList.toggle('hidden', !linked);
+      }
+
+      if (liveTelegramOpenBotButton instanceof HTMLButtonElement) {
+        liveTelegramOpenBotButton.disabled = Boolean(botError) || snapshot.bot_configured === false;
+        liveTelegramOpenBotButton.classList.toggle('opacity-60', liveTelegramOpenBotButton.disabled);
+        liveTelegramOpenBotButton.classList.toggle('cursor-not-allowed', liveTelegramOpenBotButton.disabled);
+      }
+
+      if (liveTelegramConnectButton instanceof HTMLButtonElement) {
+        liveTelegramConnectButton.title = linked
+          ? 'Tài khoản này đã kết nối Telegram live.'
+          : 'Kết nối Telegram live để nhận thông báo cho luồng của chính bạn.';
+      }
+    };
+
+    const readLiveTelegramJson = async (response, fallbackMessage) => {
+      const payload = await response.json().catch(() => ({ ok: false, detail: fallbackMessage }));
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload.detail || payload.error || fallbackMessage);
+      }
+      return payload;
+    };
+
+    const refreshLiveTelegramBinding = async () => {
+      const payload = await readLiveTelegramJson(
+        await fetch('/api/user/live/telegram', {
+          headers: { Accept: 'application/json', 'Cache-Control': 'no-cache, no-store, max-age=0', Pragma: 'no-cache' },
+          cache: 'no-store',
+        }),
+        'Không thể đọc trạng thái Telegram live.'
+      );
+      liveTelegramBindingState = {
+        linked: Boolean(payload.linked),
+        chat_id: String(payload.chat_id || '').trim(),
+        notifications_enabled: Boolean(payload.notifications_enabled),
+        bot_configured: Boolean(payload.bot_configured),
+      };
+      liveTelegramBindingMeta = {
+        bot_username: String(payload.bot_username || '').trim(),
+        bot_display_name: String(payload.bot_display_name || '').trim(),
+        deep_link_base: String(payload.deep_link_base || '').trim(),
+        bot_error: String(payload.bot_error || '').trim(),
+      };
+      renderLiveTelegramBindingState();
+      return payload;
+    };
+
+    const closeLiveTelegramModal = () => {
+      if (!(liveTelegramModal instanceof HTMLElement)) return;
+      liveTelegramModal.classList.add('hidden');
+      liveTelegramModal.setAttribute('aria-hidden', 'true');
+      document.body.style.overflow = liveTelegramPreviousBodyOverflow;
+      stopLiveTelegramPolling();
+      liveTelegramLinkRequest = null;
+    };
+
+    const pollLiveTelegramLinkStatus = async () => {
+      if (!liveTelegramLinkRequest?.code) {
+        stopLiveTelegramPolling();
+        return;
+      }
+      try {
+        const payload = await readLiveTelegramJson(
+          await fetch(`/api/user/live/telegram-link/status?code=${encodeURIComponent(String(liveTelegramLinkRequest.code || ''))}`, {
+            headers: { Accept: 'application/json', 'Cache-Control': 'no-cache, no-store, max-age=0', Pragma: 'no-cache' },
+            cache: 'no-store',
+          }),
+          'Không thể đọc trạng thái kết nối Telegram live.'
+        );
+        if (String(payload.status || '') === 'linked') {
+          stopLiveTelegramPolling();
+          await refreshLiveTelegramBinding();
+          const identityParts = [];
+          if (payload.telegram_name) identityParts.push(String(payload.telegram_name));
+          if (payload.telegram_username) identityParts.push(`@${payload.telegram_username}`);
+          const identityLabel = identityParts.length ? ` (${identityParts.join(' • ')})` : '';
+          setLiveTelegramStatus('success', `Đã kết nối Telegram live ${payload.chat_id || ''}${identityLabel}. Từ bây giờ các luồng live tạo bằng tài khoản này sẽ tự gửi thông báo riêng.`);
+          showToast('Đã kết nối Telegram live cho tài khoản hiện tại.', 'success');
+          liveTelegramLinkRequest = null;
+          return;
+        }
+        const secondsLeft = Number(payload.expires_in_seconds || 0);
+        const countdownLabel = secondsLeft > 0 ? ` Mã kết nối còn hiệu lực khoảng ${secondsLeft} giây.` : '';
+        setLiveTelegramStatus('loading', `Đang chờ bạn nhấn Start trong bot live bằng đúng tài khoản Telegram muốn nhận thông báo.${countdownLabel}`);
+      } catch (error) {
+        stopLiveTelegramPolling();
+        liveTelegramLinkRequest = null;
+        setLiveTelegramStatus('error', error instanceof Error ? error.message : 'Không thể đọc trạng thái kết nối Telegram live.');
+      }
+    };
+
+    const requestLiveTelegramLink = async () => {
+      const payload = await readLiveTelegramJson(
+        await fetch('/api/user/live/telegram-link/request', {
+          method: 'POST',
+          headers: {
+            Accept: 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+        }),
+        'Không thể tạo yêu cầu kết nối Telegram live.'
+      );
+      liveTelegramLinkRequest = {
+        code: String(payload.code || '').trim(),
+        deep_link_url: String(payload.deep_link_url || '').trim(),
+        expires_at: Date.now() + (Number(payload.expires_in_seconds || 0) * 1000),
+      };
+      if (payload.bot_username || payload.bot_display_name) {
+        liveTelegramBindingMeta = {
+          ...liveTelegramBindingMeta,
+          bot_username: String(payload.bot_username || liveTelegramBindingMeta.bot_username || '').trim(),
+          bot_display_name: String(payload.bot_display_name || liveTelegramBindingMeta.bot_display_name || '').trim(),
+        };
+        renderLiveTelegramBindingState();
+      }
+      stopLiveTelegramPolling();
+      liveTelegramPollTimer = window.setInterval(() => {
+        void pollLiveTelegramLinkStatus();
+      }, 2000);
+      void pollLiveTelegramLinkStatus();
+      return payload;
+    };
+
+    const openLiveTelegramModal = async () => {
+      if (!(liveTelegramModal instanceof HTMLElement)) return;
+      liveTelegramPreviousBodyOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      liveTelegramModal.classList.remove('hidden');
+      liveTelegramModal.setAttribute('aria-hidden', 'false');
+      setLiveTelegramStatus('loading', 'Đang kiểm tra trạng thái Telegram live của tài khoản hiện tại...');
+      try {
+        const payload = await refreshLiveTelegramBinding();
+        if (String(payload.bot_error || '').trim()) {
+          setLiveTelegramStatus('error', String(payload.bot_error || '').trim());
+          return;
+        }
+        if (payload.linked) {
+          setLiveTelegramStatus('pending', 'Tài khoản này đã kết nối Telegram live. Nếu muốn đổi sang Telegram khác, hãy bấm Mở bot Telegram rồi nhấn Start bằng tài khoản mới.');
+        } else {
+          setLiveTelegramStatus('pending', 'Bấm Mở bot Telegram rồi nhấn Start bằng đúng tài khoản muốn nhận thông báo live.');
+        }
+      } catch (error) {
+        setLiveTelegramStatus('error', error instanceof Error ? error.message : 'Không thể kiểm tra Telegram live.');
+      }
+    };
+
+    renderLiveTelegramBindingState();
 
     const liveUrlEmptyCopy = {
       video: 'Chưa nhập link',
@@ -1478,6 +1800,71 @@
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape' && liveStopModal instanceof HTMLElement && !liveStopModal.classList.contains('hidden')) {
         closeLiveStopModal();
+      }
+    });
+
+    liveTelegramCloseButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        closeLiveTelegramModal();
+      });
+    });
+
+    liveTelegramConnectButton?.addEventListener('click', () => {
+      void openLiveTelegramModal();
+    });
+
+    liveTelegramOpenBotButton?.addEventListener('click', async () => {
+      if (!(liveTelegramOpenBotButton instanceof HTMLButtonElement) || liveTelegramOpenBotButton.disabled) return;
+      liveTelegramOpenBotButton.disabled = true;
+      try {
+        if (!isLiveTelegramLinkRequestActive()) {
+          await requestLiveTelegramLink();
+        }
+        const deepLinkUrl = String(liveTelegramLinkRequest?.deep_link_url || '').trim();
+        if (!deepLinkUrl) {
+          throw new Error('Không thể tạo đường dẫn mở bot Telegram live.');
+        }
+        setLiveTelegramStatus('loading', 'Đã sẵn sàng. Hãy nhấn Start trong bot live bằng đúng tài khoản Telegram muốn nhận thông báo.');
+        const popup = window.open(deepLinkUrl, '_blank', 'noopener,noreferrer');
+        if (!popup) {
+          window.location.assign(deepLinkUrl);
+        }
+      } catch (error) {
+        setLiveTelegramStatus('error', error instanceof Error ? error.message : 'Không thể mở bot Telegram live.');
+      } finally {
+        liveTelegramOpenBotButton.disabled = Boolean(liveTelegramBindingMeta.bot_error) || liveTelegramBindingState?.bot_configured === false;
+      }
+    });
+
+    liveTelegramDisconnectButton?.addEventListener('click', async () => {
+      if (!(liveTelegramDisconnectButton instanceof HTMLButtonElement)) return;
+      liveTelegramDisconnectButton.disabled = true;
+      try {
+        stopLiveTelegramPolling();
+        liveTelegramLinkRequest = null;
+        await readLiveTelegramJson(
+          await fetch('/api/user/live/telegram', {
+            method: 'DELETE',
+            headers: {
+              Accept: 'application/json',
+              'X-Requested-With': 'XMLHttpRequest',
+            },
+          }),
+          'Không thể ngắt kết nối Telegram live.'
+        );
+        await refreshLiveTelegramBinding();
+        setLiveTelegramStatus('success', 'Đã ngắt kết nối Telegram live của tài khoản hiện tại.');
+        showToast('Đã ngắt kết nối Telegram live.', 'success');
+      } catch (error) {
+        setLiveTelegramStatus('error', error instanceof Error ? error.message : 'Không thể ngắt kết nối Telegram live.');
+      } finally {
+        liveTelegramDisconnectButton.disabled = false;
+      }
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && liveTelegramModal instanceof HTMLElement && !liveTelegramModal.classList.contains('hidden')) {
+        closeLiveTelegramModal();
       }
     });
 
