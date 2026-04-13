@@ -7570,17 +7570,6 @@ class AppStore:
         live_streams = [stream for stream in self.live_streams if stream.owner_user_id == user.id and self._is_visible_live_stream(stream)]
         live_bots = self._assigned_live_workers_for_user(user)
         backup_worker_ids = {stream.backup_worker_id for stream in live_streams if stream.backup_worker_id}
-        manager = next(
-            (
-                item
-                for item in self.users
-                if item.role == "manager" and item.username == (user.manager_name or "")
-            ),
-            None,
-        )
-        manager_telegram = ""
-        if manager is not None:
-            manager_telegram = str(self._user_meta_record(manager.id).get("telegram") or "").strip()
         return {
             "live_threads_running": len(
                 [stream for stream in live_streams if self._effective_live_runtime_stream(stream).status == "streaming"]
@@ -7605,7 +7594,6 @@ class AppStore:
             "live_threads_backup_total": len([stream for stream in live_streams if stream.backup_worker_id]),
             "live_bots_backup_total": len(backup_worker_ids),
             "live_total_bots": len(live_bots),
-            "telegram_manager": manager_telegram,
         }
 
     def _live_stream_display_row(self, stream: LiveStreamRecord) -> dict[str, Any]:

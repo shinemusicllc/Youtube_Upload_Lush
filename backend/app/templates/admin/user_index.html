@@ -166,20 +166,29 @@
                         <td class="text-[12px] font-medium text-slate-700">{{ user.manager_name }}</td>
                         <td class="table-meta">{{ user.updated_meta }}</td>
                         <td>
-                            <span class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold text-emerald-700">
-                                {{ user.live_threads_running }}/{{ user.live_threads_total }}/{{ user.live_bots_total }}
-                            </span>
-                        </td>
-                        <td>
-                            <span class="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold text-amber-700">
-                                {{ user.live_threads_backup_running }}/{{ user.live_threads_backup_pending }}/{{ user.live_threads_backup_total }}/{{ user.live_bots_backup_total }}
-                            </span>
+                            <div class="space-y-1">
+                                <span
+                                    class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold text-emerald-700"
+                                    title="Đang chạy / Tổng luồng / BOT"
+                                >
+                                    {{ user.live_threads_running }}/{{ user.live_threads_total }}/{{ user.live_bots_total }}
+                                </span>
+                                <p class="table-meta">Chạy / Tổng / BOT</p>
+                            </div>
                         </td>
                         <td>
                             <div class="space-y-1">
-                                <p class="table-meta">{{ user.telegram or '--' }}</p>
-                                <p class="table-meta">QL: {{ user.telegram_manager or '--' }}</p>
+                                <span
+                                    class="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold text-amber-700"
+                                    title="Đang chạy / Chờ / Tổng luồng backup / BOT backup"
+                                >
+                                    {{ user.live_threads_backup_running }}/{{ user.live_threads_backup_pending }}/{{ user.live_threads_backup_total }}/{{ user.live_bots_backup_total }}
+                                </span>
+                                <p class="table-meta">Chạy / Chờ / Tổng / BOT</p>
                             </div>
+                        </td>
+                        <td>
+                            <p class="table-meta">{{ user.telegram or '--' }}</p>
                         </td>
                         <td>
                             <span class="inline-flex items-center rounded-full border border-brand-100 bg-brand-50 px-2.5 py-1 text-[10px] font-semibold text-brand-700">
