@@ -13,7 +13,7 @@ from .store import store
 
 def create_app() -> FastAPI:
     app = FastAPI(
-        title="YouTube Upload Control Plane",
+        title="Youtube Lush Control Plane",
         version="0.1.0",
     )
 

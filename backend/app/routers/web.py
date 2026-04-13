@@ -38,7 +38,7 @@ from ..worker_bootstrap import (
 templates = Jinja2Templates(directory=Path(__file__).resolve().parents[1] / "templates")
 router = APIRouter(tags=["web"])
 
-PUBLIC_APP_NAME = "JazzRelaxation Upload Manager"
+PUBLIC_APP_NAME = "Youtube Lush"
 PUBLIC_SUPPORT_EMAIL = "hoangpear99@gmail.com"
 ADMIN_DASHBOARD_HOME = "/admin/user/index"
 
@@ -409,7 +409,7 @@ async def privacy_policy(request: Request):
                 {
                     "heading": "Who this application is for",
                     "body": [
-                        "JazzRelaxation Upload Manager is a private operational tool used by authorized team members to connect YouTube channels, prepare render jobs, and manage upload automation.",
+                        "Youtube Lush is a private operational tool used by authorized team members to connect YouTube channels, prepare render jobs, and manage upload automation.",
                     ],
                 },
                 {

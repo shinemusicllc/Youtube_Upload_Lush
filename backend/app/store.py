@@ -1938,14 +1938,14 @@ class AppStore:
 
     def _telegram_linked_confirmation_message(self, user: UserSummary) -> str:
         return (
-            "Tài khoản Telegram này đã được thêm để nhận thông báo từ app YouTube Upload.\n"
+            "Tài khoản Telegram này đã được thêm để nhận thông báo từ app Youtube Lush.\n"
             f"Tài khoản app: {user.username}\n"
             "Nếu muốn ngắt thông báo, hãy xóa Telegram ID trong mục Cập nhật user rồi lưu lại."
         )
 
     def _telegram_unlinked_confirmation_message(self, user: UserSummary) -> str:
         return (
-            "Tài khoản Telegram này đã được ngắt khỏi hệ thống thông báo của app YouTube Upload.\n"
+            "Tài khoản Telegram này đã được ngắt khỏi hệ thống thông báo của app Youtube Lush.\n"
             f"Tài khoản app: {user.username}\n"
             "Từ bây giờ tài khoản này sẽ không nhận thông báo mới từ app nữa."
         )
@@ -6012,8 +6012,8 @@ class AppStore:
         is_admin_shell = bootstrap.user.role in {"admin", "manager"}
 
         return {
-            "page_title": "Upload Youtube",
-            "app_name": "Youtube Upload" if is_admin_shell else "Upload Youtube",
+            "page_title": "Youtube Lush",
+            "app_name": "Youtube Lush",
             "admin_shell": is_admin_shell,
             "active_page": "render_workspace",
             "nav_items": (
@@ -6172,7 +6172,7 @@ class AppStore:
 
         return {
             "page_title": "Điều phối live",
-            "app_name": "Youtube Upload" if is_admin_shell else "Upload Youtube",
+            "app_name": "Youtube Lush",
             "admin_shell": is_admin_shell,
             "active_page": "live_workspace",
             "nav_items": (
@@ -8707,7 +8707,7 @@ class AppStore:
             "template": "user_live_dashboard.html",
             "page_title": "Điều phối live",
             "admin_shell": True,
-            "app_name": "Youtube Upload",
+            "app_name": "Youtube Lush",
             "workspace_label": "Admin workspace",
             "active_page": "live_workspace",
             "nav_items": self._admin_nav_items("live"),

@@ -36,17 +36,7 @@ SERVICE_PORT=8000 \
 bash /opt/youtube-upload-lush/scripts/bootstrap_host.sh
 ```
 
-### Control-plane live preview
-```bash
-APP_DIR=/opt/youtube-upload-lush-live \
-RUNTIME_DIR=/opt/youtube-upload-lush-live-runtime \
-REPO_URL=https://github.com/shinemusicllc/Youtube_Upload_Lush.git \
-BRANCH=live-youtube \
-SYSTEMD_SERVICE_NAME=youtube-upload-web-live.service \
-SYSTEMD_SERVICE_DESCRIPTION="Youtube Upload Lush Live Preview Web App" \
-SERVICE_PORT=8010 \
-bash /opt/youtube-upload-lush-live/scripts/bootstrap_host.sh
-```
+Preview control-plane `/opt/youtube-upload-lush-live*` da duoc retire tren host production tu `2026-04-13`; live workspace hien chay chung trong env chinh `/opt/youtube-upload-lush` qua `/app/live`.
 
 ### Worker
 ```bash
