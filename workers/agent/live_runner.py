@@ -11,7 +11,12 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from .config import WorkerConfig
-from .control_plane import complete_live_stream, update_live_stream_progress
+from .control_plane import (
+    LiveStreamStoppedError,
+    complete_live_stream,
+    get_live_stream_runtime_state,
+    update_live_stream_progress,
+)
 from .downloader import download_remote_asset
 from .ffmpeg_pipeline import probe_media
 
@@ -20,6 +25,15 @@ def _env_int(name: str, default: int, *, minimum: int = 0) -> int:
     raw_value = str(os.getenv(name, str(default))).strip()
     try:
         parsed = int(raw_value)
+    except ValueError:
+        return default
+    return max(minimum, parsed)
+
+
+def _env_float(name: str, default: float, *, minimum: float = 0.0) -> float:
+    raw_value = str(os.getenv(name, str(default))).strip()
+    try:
+        parsed = float(raw_value)
     except ValueError:
         return default
     return max(minimum, parsed)
@@ -38,6 +52,8 @@ LIVE_TARGET_BUFSIZE_KBPS = _env_int(
     minimum=LIVE_TARGET_MAXRATE_KBPS,
 )
 LIVE_TARGET_X264_PRESET = str(os.getenv("WORKER_LIVE_X264_PRESET", "veryfast")).strip() or "veryfast"
+LIVE_RUNTIME_GUARD_INTERVAL_SECONDS = _env_float("WORKER_LIVE_RUNTIME_GUARD_INTERVAL_SECONDS", 1.0, minimum=0.2)
+LIVE_FFMPEG_PROGRESS_INTERVAL_SECONDS = _env_float("WORKER_LIVE_FFMPEG_PROGRESS_INTERVAL_SECONDS", 0.5, minimum=0.2)
 
 
 def _app_timezone() -> ZoneInfo:
@@ -161,10 +177,40 @@ def _make_progress_reporter(
     return _report
 
 
+def _make_live_runtime_guard(
+    client: httpx.Client,
+    config: WorkerConfig,
+    stream_id: str,
+):
+    state = {"last_checked_at": 0.0}
+
+    def _guard(*, force: bool = False) -> None:
+        now = time.monotonic()
+        last_checked_at = float(state["last_checked_at"])
+        if not force and now - last_checked_at < LIVE_RUNTIME_GUARD_INTERVAL_SECONDS:
+            return
+        state["last_checked_at"] = now
+        try:
+            runtime_state = get_live_stream_runtime_state(client, config, stream_id)
+        except Exception as exc:
+            if isinstance(exc, LiveStreamStoppedError):
+                raise
+            if _is_terminal_live_stream_conflict(exc):
+                raise LiveStreamStoppedError(stream_id, "stopped") from exc
+            print(f"[live] runtime guard check failed for {stream_id}: {exc}", flush=True)
+            return
+        if runtime_state.should_stop:
+            raise LiveStreamStoppedError(stream_id, runtime_state.status)
+
+    return _guard
+
+
 def _download_live_assets(
     stream: dict,
     downloads_dir: Path,
     report_progress,
+    *,
+    lifecycle_guard=None,
 ) -> tuple[Path, Path | None]:
     downloads_dir.mkdir(parents=True, exist_ok=True)
     video_url = str(stream.get("video_url") or "").strip()
@@ -179,6 +225,8 @@ def _download_live_assets(
 
     def _progress_callback_for(asset_index: int, slot_name: str):
         def _callback(ratio: float, _message: str | None) -> None:
+            if lifecycle_guard:
+                lifecycle_guard()
             clamped_ratio = max(0.0, min(1.0, ratio))
             overall_ratio = (asset_index + clamped_ratio) / total_assets
             report_progress(
@@ -189,6 +237,8 @@ def _download_live_assets(
 
         return _callback
 
+    if lifecycle_guard:
+        lifecycle_guard(force=True)
     video_path = download_remote_asset(
         video_url,
         "video",
@@ -199,6 +249,8 @@ def _download_live_assets(
 
     audio_path: Path | None = None
     if audio_url:
+        if lifecycle_guard:
+            lifecycle_guard(force=True)
         audio_path = download_remote_asset(
             audio_url,
             "audio",
@@ -219,8 +271,17 @@ def _run_ffmpeg_with_progress(
     total_duration_seconds: float | None = None,
     progress_callback=None,
     end_time_live: datetime | None = None,
+    lifecycle_guard=None,
 ) -> None:
-    command = [config.ffmpeg_bin, "-progress", "pipe:1", "-nostats", *arguments]
+    command = [
+        config.ffmpeg_bin,
+        "-stats_period",
+        f"{LIVE_FFMPEG_PROGRESS_INTERVAL_SECONDS:.2f}",
+        "-progress",
+        "pipe:1",
+        "-nostats",
+        *arguments,
+    ]
     process = subprocess.Popen(
         command,
         cwd=str(working_dir),
@@ -237,13 +298,31 @@ def _run_ffmpeg_with_progress(
     try:
         assert process.stdout is not None
         while True:
-            if end_time_live and _now_local() >= end_time_live and process.poll() is None:
-                terminated_for_end_time = True
-                _stop_process(process)
+            try:
+                if lifecycle_guard:
+                    lifecycle_guard()
+                if end_time_live and _now_local() >= end_time_live and process.poll() is None:
+                    terminated_for_end_time = True
+                    _stop_process(process)
+            except Exception as exc:
+                if isinstance(exc, LiveStreamStoppedError) or _is_terminal_live_stream_conflict(exc):
+                    callback_error = exc
+                    _stop_process(process)
+                    break
+                raise
             raw_line = process.stdout.readline()
             if not raw_line:
                 if process.poll() is not None:
                     break
+                try:
+                    if lifecycle_guard:
+                        lifecycle_guard(force=True)
+                except Exception as exc:
+                    if isinstance(exc, LiveStreamStoppedError) or _is_terminal_live_stream_conflict(exc):
+                        callback_error = exc
+                        _stop_process(process)
+                        break
+                    raise
                 time.sleep(0.1)
                 continue
             line = raw_line.strip()
@@ -259,7 +338,7 @@ def _run_ffmpeg_with_progress(
                 try:
                     progress_callback(max(0.0, min(1.0, current_seconds / total_duration_seconds)), current_seconds)
                 except Exception as exc:
-                    if _is_terminal_live_stream_conflict(exc):
+                    if isinstance(exc, LiveStreamStoppedError) or _is_terminal_live_stream_conflict(exc):
                         callback_error = exc
                         _stop_process(process)
                         break
@@ -289,6 +368,7 @@ def _prepare_rendered_media(
     audio_path: Path | None,
     render_dir: Path,
     report_progress,
+    lifecycle_guard=None,
 ) -> Path:
     render_dir.mkdir(parents=True, exist_ok=True)
     rendered_path = render_dir / "rendered.flv"
@@ -389,12 +469,13 @@ def _prepare_rendered_media(
         working_dir=render_dir,
         total_duration_seconds=total_duration,
         progress_callback=_on_progress,
+        lifecycle_guard=lifecycle_guard,
     )
     report_progress("preparing", 100, "Đã chuẩn bị xong luồng", force=True)
     return rendered_path
 
 
-def _wait_until_start(stream: dict, report_progress) -> None:
+def _wait_until_start(stream: dict, report_progress, *, lifecycle_guard=None) -> None:
     start_time_live = _parse_control_plane_datetime(stream.get("start_time_live"))
     if start_time_live is None:
         return
@@ -403,6 +484,8 @@ def _wait_until_start(stream: dict, report_progress) -> None:
     report_progress("waiting", 100, waiting_message, force=True)
 
     while True:
+        if lifecycle_guard:
+            lifecycle_guard(force=True)
         now = _now_local()
         diff = start_time_live - now
         remaining_seconds = diff.total_seconds()
@@ -435,6 +518,7 @@ def _stream_once(
     rtmp_target: str,
     report_progress,
     end_time_live: datetime | None,
+    lifecycle_guard=None,
 ) -> None:
     def _on_progress(ratio: float, current_seconds: float) -> None:
         report_progress(
@@ -463,6 +547,7 @@ def _stream_once(
         total_duration_seconds=rendered_duration,
         progress_callback=_on_progress,
         end_time_live=end_time_live,
+        lifecycle_guard=lifecycle_guard,
     )
     update_live_stream_progress(
         client,
@@ -487,21 +572,30 @@ def run_live_stream(client: httpx.Client, config: WorkerConfig, stream: dict) ->
         shutil.rmtree(work_dir, ignore_errors=True)
     downloads_dir.mkdir(parents=True, exist_ok=True)
     report_progress = _make_progress_reporter(client, config, stream_id, activity_path=activity_path)
+    lifecycle_guard = _make_live_runtime_guard(client, config, stream_id)
     _touch_activity(activity_path)
 
     try:
-        video_path, audio_path = _download_live_assets(stream, downloads_dir, report_progress)
+        lifecycle_guard(force=True)
+        video_path, audio_path = _download_live_assets(
+            stream,
+            downloads_dir,
+            report_progress,
+            lifecycle_guard=lifecycle_guard,
+        )
         rendered_path = _prepare_rendered_media(
             config,
             video_path=video_path,
             audio_path=audio_path,
             render_dir=render_dir,
             report_progress=report_progress,
+            lifecycle_guard=lifecycle_guard,
         )
         shutil.rmtree(downloads_dir, ignore_errors=True)
 
-        _wait_until_start(stream, report_progress)
+        _wait_until_start(stream, report_progress, lifecycle_guard=lifecycle_guard)
 
+        lifecycle_guard(force=True)
         rendered_info = probe_media(config.ffprobe_bin, rendered_path)
         rendered_duration = max(1.0, float(rendered_info.duration_seconds or 1.0))
         end_time_live = _parse_control_plane_datetime(stream.get("end_time_live"))
@@ -520,6 +614,7 @@ def run_live_stream(client: httpx.Client, config: WorkerConfig, stream: dict) ->
                 rtmp_target=target,
                 report_progress=report_progress,
                 end_time_live=end_time_live,
+                lifecycle_guard=lifecycle_guard,
             )
             if end_time_live and _now_local() >= end_time_live:
                 break

@@ -218,6 +218,24 @@ async def update_live_stream_progress(stream_id: str, payload: LiveWorkerProgres
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+@router.get("/live-workers/streams/{stream_id}")
+async def get_live_stream_runtime_state(
+    stream_id: str,
+    x_worker_id: str = Header(...),
+    x_worker_secret: str = Header(...),
+):
+    try:
+        return store.get_live_stream_runtime_state(
+            stream_id=stream_id,
+            worker_id=x_worker_id,
+            shared_secret=x_worker_secret,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Không tìm thấy luồng live.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @router.post("/live-workers/streams/{stream_id}/complete")
 async def complete_live_stream(stream_id: str, payload: LiveWorkerCompletePayload):
     try:

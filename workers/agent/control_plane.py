@@ -257,10 +257,28 @@ class BrowserProfileCleanupAssignment:
 
 
 @dataclass
+class LiveStreamRuntimeState:
+    stream_id: str
+    status: str
+    should_stop: bool
+    stop_requested_at: str | None = None
+    ended_at: str | None = None
+    updated_at: str | None = None
+
+
+@dataclass
 class DecommissionAssignment:
     operation_id: str
     app_dir: str
     runtime_dir: str
+
+
+class LiveStreamStoppedError(RuntimeError):
+    def __init__(self, stream_id: str, status: str, message: str | None = None) -> None:
+        self.stream_id = str(stream_id)
+        self.status = str(status or "").strip().lower() or "stopped"
+        resolved_message = (message or "").strip() or f"Luồng live {self.stream_id} đã dừng trên control-plane ({self.status})."
+        super().__init__(resolved_message)
 
 
 def register_worker(client: httpx.Client, config: WorkerConfig) -> None:
@@ -627,6 +645,32 @@ def update_live_stream_progress(
             "progress": progress,
             "message": message,
         },
+    )
+
+
+def get_live_stream_runtime_state(
+    client: httpx.Client,
+    config: WorkerConfig,
+    stream_id: str,
+) -> LiveStreamRuntimeState:
+    response = _request_with_retry(
+        client,
+        config,
+        "GET",
+        f"/api/live-workers/streams/{stream_id}",
+        operation=f"get_live_stream_runtime_state:{stream_id}",
+        retry_forever=False,
+        max_attempts=1,
+        headers=worker_auth_headers(config),
+    )
+    payload = response.json()
+    return LiveStreamRuntimeState(
+        stream_id=str(payload.get("stream_id") or stream_id),
+        status=str(payload.get("status") or "scheduled"),
+        should_stop=bool(payload.get("should_stop")),
+        stop_requested_at=payload.get("stop_requested_at"),
+        ended_at=payload.get("ended_at"),
+        updated_at=payload.get("updated_at"),
     )
 
 

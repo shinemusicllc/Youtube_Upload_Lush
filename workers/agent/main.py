@@ -9,6 +9,7 @@ import httpx
 
 from .config import load_config
 from .control_plane import (
+    LiveStreamStoppedError,
     claim_job,
     claim_live_stream,
     fail_job,
@@ -36,6 +37,8 @@ def _is_cancelled_job_conflict(exc: Exception) -> bool:
 
 
 def _is_stopped_live_stream_conflict(exc: Exception) -> bool:
+    if isinstance(exc, LiveStreamStoppedError):
+        return True
     if not isinstance(exc, httpx.HTTPStatusError):
         return False
     response = exc.response

@@ -4292,6 +4292,27 @@ class AppStore:
             self._save_state()
             return deepcopy(stream)
 
+    def get_live_stream_runtime_state(
+        self,
+        *,
+        stream_id: str,
+        worker_id: str,
+        shared_secret: str,
+    ) -> dict[str, Any]:
+        with self._worker_state_lock:
+            self._authenticate_live_worker(worker_id, shared_secret)
+            stream = self._find_claimed_live_stream(stream_id, worker_id)
+            normalized_status = str(stream.status or "").strip().lower() or "scheduled"
+            should_stop = normalized_status in {"stopped", "ended", "error"}
+            return {
+                "stream_id": stream.id,
+                "status": normalized_status,
+                "should_stop": should_stop,
+                "stop_requested_at": stream.stop_requested_at.isoformat() if stream.stop_requested_at else None,
+                "ended_at": stream.ended_at.isoformat() if stream.ended_at else None,
+                "updated_at": stream.updated_at.isoformat() if stream.updated_at else None,
+            }
+
     def complete_live_stream_runtime(
         self,
         *,
