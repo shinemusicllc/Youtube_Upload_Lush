@@ -1159,7 +1159,7 @@
   };
 
   const fetchDashboardLivePayload = async () => {
-    const response = await workspaceFetch(`/api/user/dashboard/live?ts=${Date.now()}`, {
+    const response = await workspaceFetch(`/api/user/dashboard?ts=${Date.now()}`, {
       headers: { Accept: "application/json", "Cache-Control": "no-cache, no-store, max-age=0", Pragma: "no-cache" },
       cache: "no-store",
     });

@@ -60,6 +60,11 @@ async def get_user_dashboard_live(request: Request):
     return store.get_user_dashboard_live_payload(_current_app_user_id(request))
 
 
+@router.get("/user/dashboard")
+async def get_user_dashboard(request: Request):
+    return store.get_user_dashboard_payload(_current_app_user_id(request))
+
+
 @router.get("/user/jobs")
 async def get_user_jobs(request: Request):
     return store.get_user_jobs(_current_app_user_id(request))

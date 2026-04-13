@@ -7236,6 +7236,17 @@ class AppStore:
         self._require_workspace_user(user_id)
         return UserJobsResponse(jobs=self._user_jobs_for_workspace(user_id))
 
+    def get_user_dashboard_payload(self, user_id: str) -> dict[str, Any]:
+        dashboard = self.get_user_dashboard_view(user_id=user_id)
+        return {
+            "kpis": dashboard["kpis"],
+            "connected_channels": dashboard["connected_channels"],
+            "browser_session": dashboard["browser_session"],
+            "render_tabs": dashboard["render_tabs"],
+            "render_jobs": dashboard["render_jobs"],
+            "render_summary": dashboard["render_summary"],
+        }
+
     def get_user_dashboard_live_payload(self, user_id: str) -> dict[str, Any]:
         dashboard = self.get_user_live_workspace_view(user_id=user_id)
         return {
