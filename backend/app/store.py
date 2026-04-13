@@ -3767,6 +3767,10 @@ class AppStore:
     def _live_worker_scheduled_statuses(cls) -> set[str]:
         return {"scheduled", "disconnected", *cls._live_worker_active_statuses()}
 
+    @classmethod
+    def _live_pre_stream_statuses(cls) -> set[str]:
+        return {"scheduled", "downloading", "preparing", "waiting"}
+
     def _count_live_worker_running_streams(self, worker: WorkerRecord) -> int:
         active_statuses = self._live_worker_active_statuses()
         return sum(
@@ -6159,7 +6163,13 @@ class AppStore:
         active_live_count = len(
             [record for record in live_records if self._effective_live_runtime_stream(record).status == "streaming"]
         )
-        scheduled_live_count = len([record for record in live_records if record.status in self._live_worker_scheduled_statuses()])
+        scheduled_live_count = len(
+            [
+                record
+                for record in live_records
+                if self._effective_live_runtime_stream(record).status in self._live_pre_stream_statuses()
+            ]
+        )
         backup_live_count = len([record for record in live_records if record.backup_worker_id])
         editing_stream = None
         if editing_stream_id:
@@ -6906,7 +6916,12 @@ class AppStore:
                 ]
             ),
             "live_threads_backup_pending": len(
-                [stream for stream in live_streams if stream.status in self._live_worker_scheduled_statuses() and stream.backup_worker_id]
+                [
+                    stream
+                    for stream in live_streams
+                    if stream.backup_worker_id
+                    and self._effective_live_runtime_stream(stream).status in self._live_pre_stream_statuses()
+                ]
             ),
             "live_threads_backup_total": len([stream for stream in live_streams if stream.backup_worker_id]),
             "live_bots_backup_total": len(backup_worker_ids),
@@ -6988,14 +7003,12 @@ class AppStore:
         return UserJobsResponse(jobs=self._user_jobs_for_workspace(user_id))
 
     def get_user_dashboard_live_payload(self, user_id: str) -> dict[str, Any]:
-        dashboard = self.get_user_dashboard_view(user_id=user_id)
+        dashboard = self.get_user_live_workspace_view(user_id=user_id)
         return {
             "kpis": dashboard["kpis"],
-            "connected_channels": dashboard["connected_channels"],
-            "render_tabs": dashboard["render_tabs"],
-            "render_jobs": dashboard["render_jobs"],
-            "render_summary": dashboard["render_summary"],
-            "browser_session": dashboard.get("browser_session"),
+            "live_tabs": dashboard["live_tabs"],
+            "live_stream_rows": dashboard["live_stream_rows"],
+            "live_summary": dashboard["live_summary"],
         }
 
     def _resolve_job_preview(self, job: RenderJobRecord) -> dict[str, str] | None:
@@ -8544,7 +8557,13 @@ class AppStore:
         active_live_count = len(
             [stream for stream in scoped_streams if self._effective_live_runtime_stream(stream).status == "streaming"]
         )
-        scheduled_live_count = len([stream for stream in scoped_streams if stream.status in self._live_worker_scheduled_statuses()])
+        scheduled_live_count = len(
+            [
+                stream
+                for stream in scoped_streams
+                if self._effective_live_runtime_stream(stream).status in self._live_pre_stream_statuses()
+            ]
+        )
         backup_live_count = len({stream.backup_worker_id for stream in scoped_streams if stream.backup_worker_id})
         return [
             {
@@ -8650,7 +8669,13 @@ class AppStore:
         active_live_count = len(
             [stream for stream in scoped_streams if self._effective_live_runtime_stream(stream).status == "streaming"]
         )
-        scheduled_live_count = len([stream for stream in scoped_streams if stream.status in self._live_worker_scheduled_statuses()])
+        scheduled_live_count = len(
+            [
+                stream
+                for stream in scoped_streams
+                if self._effective_live_runtime_stream(stream).status in self._live_pre_stream_statuses()
+            ]
+        )
         backup_live_count = len({stream.backup_worker_id for stream in scoped_streams if stream.backup_worker_id})
         kpis = [
             {
