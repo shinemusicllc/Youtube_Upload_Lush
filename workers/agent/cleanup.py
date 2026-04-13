@@ -113,12 +113,17 @@ def cleanup_stale_worker_artifacts(config: WorkerConfig) -> dict[str, int]:
         }
 
     temp_retention_hours = _read_env_float("WORKER_TEMP_RETENTION_HOURS", 6.0)
+    live_stream_retention_hours = _read_env_float(
+        "WORKER_LIVE_STREAM_RETENTION_HOURS",
+        1.0 if config.runtime_mode == "live" else temp_retention_hours,
+    )
     output_retention_hours = _read_env_float(
         "WORKER_OUTPUT_RETENTION_HOURS",
         6.0 if config.youtube_upload_enabled else 48.0,
     )
     now = time.time()
     temp_cutoff = now - (temp_retention_hours * 3600.0)
+    live_stream_cutoff = now - (live_stream_retention_hours * 3600.0)
     output_cutoff = now - (output_retention_hours * 3600.0)
 
     removed_job_dirs = 0
@@ -140,7 +145,7 @@ def cleanup_stale_worker_artifacts(config: WorkerConfig) -> dict[str, int]:
         for stream_dir in sorted(live_stream_root.iterdir()):
             if not stream_dir.is_dir():
                 continue
-            if not _is_older_than(stream_dir, cutoff_ts=temp_cutoff):
+            if not _is_older_than(stream_dir, cutoff_ts=live_stream_cutoff):
                 continue
             if _safe_remove_tree(stream_dir):
                 removed_live_stream_dirs += 1

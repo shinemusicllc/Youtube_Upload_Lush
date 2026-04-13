@@ -410,6 +410,8 @@ def _build_worker_env_file(request: WorkerBootstrapRequest) -> str:
     worker_data_dir = f"{runtime_dir}/worker-data"
     browser_session_enabled = runtime_mode != "live"
     youtube_upload_enabled = runtime_mode != "live"
+    janitor_interval_seconds = 600 if runtime_mode == "live" else 3600
+    live_stream_retention_hours = 1 if runtime_mode == "live" else 6
     return "\n".join(
         [
             f"CONTROL_PLANE_URL={request.control_plane_url}",
@@ -429,6 +431,8 @@ def _build_worker_env_file(request: WorkerBootstrapRequest) -> str:
             f"WORKER_UPLOAD_TO_YOUTUBE={'true' if youtube_upload_enabled else 'false'}",
             f"WORKER_DATA_DIR={worker_data_dir}",
             "WORKER_KEEP_JOB_DIRS=false",
+            f"WORKER_JANITOR_INTERVAL_SECONDS={janitor_interval_seconds}",
+            f"WORKER_LIVE_STREAM_RETENTION_HOURS={live_stream_retention_hours}",
             "YOUTUBE_UPLOAD_CHUNK_BYTES=8388608",
             f"BROWSER_SESSION_ENABLED={1 if browser_session_enabled else 0}",
             f"BROWSER_SESSION_PUBLIC_BASE_URL={browser_public_base_url}",

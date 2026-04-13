@@ -37,6 +37,7 @@
 | DEC-031 | Trong control-plane hop nhat, upload va live worker phai mac dinh bootstrap/decommission vao path rieng theo workspace (`/opt/youtube-upload-lush*` cho upload, `/opt/youtube-upload-lush-live-worker*` cho live) thay vi dung chung mot bien global | Active | worker bootstrap + merged main deploy | High |
 | DEC-032 | Live backup policy uu tien continuity cua YouTube stream: luong co BOT backup (ke ca `24/7`) deu chay backup ingest song song ngay tu dau, worker render FLV phai cap video bitrate ve `6800 kbps`, va runtime phai terminate `ffmpeg` ngay khi control-plane da mark stream `stopped/ended/error` | Active | live runtime + failover policy | High |
 | DEC-033 | Live runtime chi khoa sua sau khi da vao `streaming/disconnected`; pre-stream edit phai abort runtime cu de worker claim lai cau hinh moi, va moi live VPS chi duoc chay toi da 1 luong overlap | Active | live runtime + scheduling safety | High |
+| DEC-034 | Live worker phai coi `rendered.flv` la artifact tam ngan han: janitor quet nhanh hon voi `live-streams/*`, va bootstrap live phai tat `xrdp` vi runtime live khong dung desktop stack nay | Active | live worker storage hygiene | Medium |
 
 ## Notes
 - `docs/DECISIONS.md` van giu full history va ly do chi tiet.

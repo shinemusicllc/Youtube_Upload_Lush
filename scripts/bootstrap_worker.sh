@@ -89,6 +89,8 @@ WORKER_EXECUTE_JOBS=false
 WORKER_SIMULATE_STEP_SECONDS=2.5
 WORKER_UPLOAD_TO_YOUTUBE=false
 WORKER_DATA_DIR=/opt/youtube-upload-lush-runtime/worker-data
+WORKER_JANITOR_INTERVAL_SECONDS=3600
+WORKER_LIVE_STREAM_RETENTION_HOURS=1
 YOUTUBE_UPLOAD_CHUNK_BYTES=8388608
 BROWSER_SESSION_ENABLED=0
 BROWSER_SESSION_PUBLIC_BASE_URL=http://worker-public-ip
@@ -107,6 +109,11 @@ fi
 set -a
 . /etc/youtube-upload-worker.env
 set +a
+
+if [ "${WORKER_RUNTIME_MODE:-upload}" = "live" ]; then
+  systemctl stop xrdp xrdp-sesman 2>/dev/null || true
+  systemctl disable xrdp xrdp-sesman 2>/dev/null || true
+fi
 
 if [ "${BROWSER_SESSION_ENABLED:-0}" = "1" ]; then
   apt_get_retry install -y xvfb openbox x11vnc websockify novnc ca-certificates curl gnupg wget || true

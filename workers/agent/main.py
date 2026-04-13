@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import textwrap
 import time
@@ -49,6 +50,18 @@ def _is_stopped_live_stream_conflict(exc: Exception) -> bool:
         return False
     request_url = str(request.url)
     return "/api/live-workers/streams/" in request_url
+
+
+def _janitor_interval_seconds(config) -> float:
+    default_interval = 600.0 if str(getattr(config, "runtime_mode", "")).strip().lower() == "live" else 3600.0
+    raw_value = str(os.getenv("WORKER_JANITOR_INTERVAL_SECONDS", "")).strip()
+    if not raw_value:
+        return default_interval
+    try:
+        parsed_value = float(raw_value)
+    except ValueError:
+        return default_interval
+    return max(60.0, parsed_value)
 
 
 def simulate_job(client: httpx.Client, config, job: dict) -> None:
@@ -308,7 +321,7 @@ def _run_upload_worker(client: httpx.Client, config) -> None:
     from .job_runner import run_job
 
     browser_sessions = BrowserSessionCoordinator(config)
-    janitor_interval_seconds = 3600.0
+    janitor_interval_seconds = _janitor_interval_seconds(config)
     register_worker(client, config)
     heartbeat_loop = UploadHeartbeatLoop(client, config)
     heartbeat_loop.start()
@@ -390,7 +403,7 @@ def _run_live_worker(client: httpx.Client, config) -> None:
     from .cleanup import cleanup_stale_worker_artifacts
     from .live_runner import run_live_stream, simulate_live_stream
 
-    janitor_interval_seconds = 3600.0
+    janitor_interval_seconds = _janitor_interval_seconds(config)
     register_live_worker(client, config)
     heartbeat_loop = LiveHeartbeatLoop(client, config)
     heartbeat_loop.start()
