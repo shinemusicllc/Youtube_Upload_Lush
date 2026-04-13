@@ -609,7 +609,7 @@
           </div>
         </div>
         {% endif %}
-        <form method="post" action="{{ dashboard.live_form_action | e }}" class="elevated-card-panel live-config-shell overflow-visible">
+        <form method="post" action="{{ dashboard.live_form_action | e }}" id="liveConfigForm" class="elevated-card-panel live-config-shell overflow-visible">
           {% for manager_id in dashboard.live_form_manager_ids | default([], true) %}
           <input type="hidden" name="manager_ids" value="{{ manager_id | e }}">
           {% endfor %}
@@ -634,21 +634,24 @@
                 <div class="live-config-stack">
                   <div>
                     <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">T&ecirc;n lu&#7891;ng live</label>
-                    <input type="text" name="stream_name" value="{{ dashboard.live_form.stream_name | e }}" placeholder="Nh&#7853;p t&ecirc;n lu&#7891;ng..." autocomplete="off" class="panel-input live-source-input w-full border text-slate-900 px-4 py-0 rounded-lg outline-none placeholder:text-slate-400 text-[13px] transition-all">
+                    <input id="liveStreamNameInput" type="text" name="stream_name" value="{{ dashboard.live_form.stream_name | e }}" placeholder="Nh&#7853;p t&ecirc;n lu&#7891;ng..." list="liveStreamNameSuggestions" autocomplete="on" spellcheck="false" class="panel-input live-source-input w-full border text-slate-900 px-4 py-0 rounded-lg outline-none placeholder:text-slate-400 text-[13px] transition-all">
+                    <datalist id="liveStreamNameSuggestions"></datalist>
                   </div>
                   <div>
                     <div class="mb-1.5 flex items-center justify-between gap-3">
                       <label class="block text-slate-600 text-[12px] font-semibold">Link video ngu&#7891;n</label>
                       <span data-live-url-status="video" class="text-[11px] font-semibold text-slate-400">Ch&#432;a nh&#7853;p link</span>
                     </div>
-                    <input type="text" name="video_url" value="{{ dashboard.live_form.video_url | e }}" data-live-url-input="video" placeholder="D&aacute;n link video live..." autocomplete="off" class="panel-input live-source-input w-full border text-slate-900 px-4 py-0 rounded-lg outline-none placeholder:text-slate-400 text-[13px] transition-all">
+                    <input id="liveVideoUrlInput" type="text" name="video_url" value="{{ dashboard.live_form.video_url | e }}" data-live-url-input="video" placeholder="D&aacute;n link video live..." list="liveVideoUrlSuggestions" autocomplete="on" spellcheck="false" inputmode="url" class="panel-input live-source-input w-full border text-slate-900 px-4 py-0 rounded-lg outline-none placeholder:text-slate-400 text-[13px] transition-all">
+                    <datalist id="liveVideoUrlSuggestions"></datalist>
                   </div>
                   <div>
                     <div class="mb-1.5 flex items-center justify-between gap-3">
                       <label class="block text-slate-600 text-[12px] font-semibold">Link audio</label>
                       <span data-live-url-status="audio" class="text-[11px] font-semibold text-slate-400">T&ugrave;y ch&#7885;n</span>
                     </div>
-                    <input type="text" name="audio_url" value="{{ dashboard.live_form.audio_url | e }}" data-live-url-input="audio" placeholder="D&aacute;n link audio live..." autocomplete="off" class="panel-input live-source-input w-full border text-slate-900 px-4 py-0 rounded-lg outline-none placeholder:text-slate-400 text-[13px] transition-all">
+                    <input id="liveAudioUrlInput" type="text" name="audio_url" value="{{ dashboard.live_form.audio_url | e }}" data-live-url-input="audio" placeholder="D&aacute;n link audio live..." list="liveAudioUrlSuggestions" autocomplete="on" spellcheck="false" inputmode="url" class="panel-input live-source-input w-full border text-slate-900 px-4 py-0 rounded-lg outline-none placeholder:text-slate-400 text-[13px] transition-all">
+                    <datalist id="liveAudioUrlSuggestions"></datalist>
                   </div>
                 </div>
               </div>
@@ -1153,6 +1156,7 @@
     const liveStreamTableBody = document.getElementById('liveStreamTableBody');
     const liveSummaryNode = document.querySelector('[data-live-summary]');
     const liveDeleteVisibleButton = document.getElementById('deleteVisibleLiveStreamsButton');
+    const liveConfigForm = document.getElementById('liveConfigForm');
     const liveTabButtons = Array.from(document.querySelectorAll('[data-live-tab-index]'));
     const liveKpiCards = Array.from(document.querySelectorAll('[data-live-kpi-index]'));
     const liveStopModal = document.getElementById('liveStopModal');
@@ -1168,6 +1172,23 @@
       video: document.querySelector('[data-live-url-status="video"]'),
       audio: document.querySelector('[data-live-url-status="audio"]'),
     };
+    const liveHistoryFields = [
+      {
+        key: 'stream_name',
+        input: document.getElementById('liveStreamNameInput'),
+        datalist: document.getElementById('liveStreamNameSuggestions'),
+      },
+      {
+        key: 'video_url',
+        input: document.getElementById('liveVideoUrlInput'),
+        datalist: document.getElementById('liveVideoUrlSuggestions'),
+      },
+      {
+        key: 'audio_url',
+        input: document.getElementById('liveAudioUrlInput'),
+        datalist: document.getElementById('liveAudioUrlSuggestions'),
+      },
+    ];
     const liveIndexHref = {{ live_index_href | tojson }};
     const liveDeleteAction = {{ live_delete_action | tojson }};
     const liveDeleteApiBase = '/api/user/live';
@@ -1182,6 +1203,8 @@
     let liveStopPendingForm = null;
     let allowLiveStopSubmit = false;
     let liveStopPreviousBodyOverflow = '';
+    const LIVE_INPUT_HISTORY_STORAGE_PREFIX = 'youtube-lush-live-input-history:';
+    const LIVE_INPUT_HISTORY_LIMIT = 8;
 
     const escapeHtml = (value) => String(value ?? '')
       .replace(/&/g, '&amp;')
@@ -1197,6 +1220,68 @@
     const buildLiveManagerHiddenInputs = () => Array.isArray(liveManagerIds)
       ? liveManagerIds.map((id) => `<input type="hidden" name="manager_ids" value="${escapeHtml(String(id))}">`).join('')
       : '';
+
+    const normalizeLiveHistoryValue = (key, value) => {
+      const raw = String(value || '').trim();
+      if (!raw) return '';
+      if (key === 'stream_name') {
+        return raw.replace(/\s+/g, ' ');
+      }
+      return raw;
+    };
+
+    const liveHistoryStorageKey = (key) => `${LIVE_INPUT_HISTORY_STORAGE_PREFIX}${key}`;
+
+    const readLiveHistory = (key) => {
+      try {
+        const raw = window.localStorage.getItem(liveHistoryStorageKey(key));
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed.map((item) => normalizeLiveHistoryValue(key, item)).filter(Boolean) : [];
+      } catch (_error) {
+        return [];
+      }
+    };
+
+    const writeLiveHistory = (key, values) => {
+      try {
+        window.localStorage.setItem(liveHistoryStorageKey(key), JSON.stringify(values.slice(0, LIVE_INPUT_HISTORY_LIMIT)));
+      } catch (_error) {
+        // Ignore localStorage failures in private mode or quota exhaustion.
+      }
+    };
+
+    const renderLiveHistoryOptions = (field) => {
+      if (!(field?.datalist instanceof HTMLDataListElement)) return;
+      const values = readLiveHistory(field.key);
+      field.datalist.innerHTML = values.map((value) => `<option value="${escapeHtml(value)}"></option>`).join('');
+    };
+
+    const rememberLiveHistoryValue = (key, value) => {
+      const normalized = normalizeLiveHistoryValue(key, value);
+      if (!normalized) return;
+      const nextValues = [normalized, ...readLiveHistory(key).filter((item) => item.toLowerCase() !== normalized.toLowerCase())];
+      writeLiveHistory(key, nextValues);
+      const field = liveHistoryFields.find((item) => item.key === key);
+      if (field) renderLiveHistoryOptions(field);
+    };
+
+    const seedLiveHistoryFromRows = () => {
+      const titleHistory = [
+        ...liveStreamRowsState.map((stream) => normalizeLiveHistoryValue('stream_name', stream?.title || stream?.stream_name || '')),
+        ...readLiveHistory('stream_name'),
+      ].filter(Boolean);
+      if (!titleHistory.length) return;
+      const deduped = [];
+      const seen = new Set();
+      titleHistory.forEach((value) => {
+        const token = value.toLowerCase();
+        if (!token || seen.has(token)) return;
+        seen.add(token);
+        deduped.push(value);
+      });
+      writeLiveHistory('stream_name', deduped);
+    };
 
     const buildLiveWorkspaceHref = () => {
       const params = new URLSearchParams();
@@ -1306,6 +1391,32 @@
       });
       scheduleLiveUrlValidation(slot, input.value);
     });
+
+    seedLiveHistoryFromRows();
+    liveHistoryFields.forEach((field) => {
+      if (!(field.input instanceof HTMLInputElement)) return;
+      renderLiveHistoryOptions(field);
+      const currentValue = normalizeLiveHistoryValue(field.key, field.input.value);
+      if (currentValue) {
+        rememberLiveHistoryValue(field.key, currentValue);
+      }
+      field.input.addEventListener('change', () => {
+        rememberLiveHistoryValue(field.key, field.input.value);
+      });
+      field.input.addEventListener('blur', () => {
+        rememberLiveHistoryValue(field.key, field.input.value);
+      });
+    });
+
+    if (liveConfigForm instanceof HTMLFormElement) {
+      liveConfigForm.addEventListener('submit', () => {
+        liveHistoryFields.forEach((field) => {
+          if (field.input instanceof HTMLInputElement) {
+            rememberLiveHistoryValue(field.key, field.input.value);
+          }
+        });
+      });
+    }
 
     const closeLiveStopModal = () => {
       if (!(liveStopModal instanceof HTMLElement)) return;
@@ -1597,6 +1708,9 @@
       if (!(liveStreamTableBody instanceof HTMLElement)) return;
       const liveRows = Array.isArray(rows) ? rows : [];
       liveStreamRowsState = liveRows;
+      seedLiveHistoryFromRows();
+      const streamNameHistoryField = liveHistoryFields.find((field) => field.key === 'stream_name');
+      if (streamNameHistoryField) renderLiveHistoryOptions(streamNameHistoryField);
       if (!liveRows.length) {
         liveStreamTableBody.innerHTML = '<tr data-live-empty-row><td colspan="11" class="px-6 py-10 text-center text-[13px] text-slate-500">Chưa có luồng live nào trong danh sách</td></tr>';
       } else {
