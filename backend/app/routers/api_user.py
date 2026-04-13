@@ -376,7 +376,10 @@ async def delete_user_live_stream(request: Request, stream_id: str):
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Không tìm thấy luồng live.") from exc
     except ValueError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
+        detail = str(exc)
+        if "Hãy dùng Dừng trước khi xóa" in detail:
+            raise HTTPException(status_code=409, detail=detail) from exc
+        raise HTTPException(status_code=403, detail=detail) from exc
 
     return {"status": "deleted", "stream_id": stream_id}
 

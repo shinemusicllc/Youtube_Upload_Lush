@@ -847,6 +847,7 @@
                       <button type="button" disabled class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-slate-400 bg-white border border-slate-200 rounded-lg cursor-not-allowed"><i data-lucide="square" class="w-3 h-3"></i> Dừng</button>
                       {% endif %}
                       <a href="{{ live_index_href }}?edit={{ stream.id | e }}{% for manager_id in dashboard.live_form_manager_ids | default([], true) %}&manager_ids={{ manager_id | e }}{% endfor %}" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 hover:text-emerald-700 hover:shadow-sm transition-all"><i data-lucide="pencil" class="w-3.5 h-3.5"></i> Sửa</a>
+                      {% if stream.can_delete %}
                       <form method="post" action="{{ live_delete_action }}" class="live-table-action-form" data-live-delete-form>
                         <input type="hidden" name="stream_id" value="{{ stream.id | e }}">
                         {% for manager_id in dashboard.live_form_manager_ids | default([], true) %}
@@ -854,6 +855,9 @@
                         {% endfor %}
                         <button type="submit" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 hover:text-rose-800 hover:shadow-sm transition-all"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Xóa</button>
                       </form>
+                      {% else %}
+                      <button type="button" disabled title="Luồng đang live, hãy dùng Dừng trước." class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-slate-400 bg-white border border-slate-200 rounded-lg cursor-not-allowed"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Xóa</button>
+                      {% endif %}
                       <a href="{{ live_index_href }}?detail={{ stream.id | e }}{% for manager_id in dashboard.live_form_manager_ids | default([], true) %}&manager_ids={{ manager_id | e }}{% endfor %}" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-sky-700 bg-sky-50 border border-sky-200 rounded-lg hover:bg-sky-100 hover:text-sky-800 hover:shadow-sm transition-all"><i data-lucide="eye" class="w-3 h-3"></i> Chi tiết</a>
                     </div>
                   </td>
@@ -1439,6 +1443,8 @@
       });
     };
 
+    const getVisibleDeletableLiveRows = () => getVisibleLiveRows().filter((stream) => stream?.can_delete !== false);
+
     const removeLiveRowsFromState = (streamIds) => {
       const ids = Array.isArray(streamIds)
         ? streamIds.map((id) => String(id || '').trim()).filter(Boolean)
@@ -1451,11 +1457,11 @@
 
     const updateLiveDeleteVisibleButton = () => {
       if (!(liveDeleteVisibleButton instanceof HTMLButtonElement)) return;
-      const visibleRows = getVisibleLiveRows();
-      liveDeleteVisibleButton.disabled = visibleRows.length === 0;
-      liveDeleteVisibleButton.title = visibleRows.length
-        ? `Xóa nhanh ${visibleRows.length} luồng live đang hiển thị`
-        : 'Không có luồng live nào để xóa trên trang hiện tại';
+      const deletableRows = getVisibleDeletableLiveRows();
+      liveDeleteVisibleButton.disabled = deletableRows.length === 0;
+      liveDeleteVisibleButton.title = deletableRows.length
+        ? `Xóa nhanh ${deletableRows.length} luồng live đang hiển thị`
+        : 'Không có luồng live nào có thể xóa trên trang hiện tại';
     };
 
     const renderLiveKpis = (kpis) => {
@@ -1517,15 +1523,22 @@
         : `
           <button type="button" disabled class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-slate-400 bg-white border border-slate-200 rounded-lg cursor-not-allowed"><i data-lucide="square" class="w-3 h-3"></i> Dừng</button>
         `;
-      return `
-        <div class="live-table-action-grid">
-          ${stopForm}
-          <a href="${escapeHtml(editHref)}" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 hover:text-emerald-700 hover:shadow-sm transition-all"><i data-lucide="pencil" class="w-3.5 h-3.5"></i> Sửa</a>
+      const deleteAction = stream.can_delete !== false
+        ? `
           <form method="post" action="${escapeHtml(liveDeleteAction)}" class="live-table-action-form" data-live-delete-form>
             <input type="hidden" name="stream_id" value="${escapeHtml(stream.id || '')}">
             ${managerHiddenInputs}
             <button type="submit" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 hover:text-rose-800 hover:shadow-sm transition-all"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Xóa</button>
           </form>
+        `
+        : `
+          <button type="button" disabled title="Luồng đang live, hãy dùng Dừng trước." class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-slate-400 bg-white border border-slate-200 rounded-lg cursor-not-allowed"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Xóa</button>
+        `;
+      return `
+        <div class="live-table-action-grid">
+          ${stopForm}
+          <a href="${escapeHtml(editHref)}" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 hover:text-emerald-700 hover:shadow-sm transition-all"><i data-lucide="pencil" class="w-3.5 h-3.5"></i> Sửa</a>
+          ${deleteAction}
           <a href="${escapeHtml(detailHref)}" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-sky-700 bg-sky-50 border border-sky-200 rounded-lg hover:bg-sky-100 hover:text-sky-800 hover:shadow-sm transition-all"><i data-lucide="eye" class="w-3 h-3"></i> Chi tiết</a>
         </div>
       `;
@@ -1606,6 +1619,7 @@
             item.status_label,
             item.status_class,
             item.can_stop,
+            item.can_delete,
             item.duration_text,
             item.start_date_text,
             item.start_clock_text,
@@ -1686,7 +1700,7 @@
       if (!(liveDeleteVisibleButton instanceof HTMLButtonElement)) return;
 
       liveDeleteVisibleButton.addEventListener('click', async () => {
-        const visibleRows = getVisibleLiveRows();
+        const visibleRows = getVisibleDeletableLiveRows();
         if (!visibleRows.length) return;
 
         const confirmed = window.confirm(`Xóa nhanh ${visibleRows.length} luồng live đang hiển thị trên trang này?`);

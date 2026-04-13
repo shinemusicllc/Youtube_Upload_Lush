@@ -6755,6 +6755,9 @@ class AppStore:
         stream = self._find_visible_live_stream(stream_id)
         owner = self._require_workspace_user(stream.owner_user_id)
         self._assert_live_stream_owner_scope(owner, viewer_role=viewer_role, viewer_id=viewer_id)
+        effective_runtime = self._effective_live_runtime_stream(stream)
+        if effective_runtime.status == "streaming":
+            raise ValueError("Luồng đang live. Hãy dùng Dừng trước khi xóa.")
         now = self._now(trim=False)
         clone = self._find_live_backup_clone_optional(stream)
         if clone is not None:
@@ -7000,6 +7003,7 @@ class AppStore:
         primary_name = stream.primary_worker_name or self._resolve_live_worker_display_name(stream.primary_worker_id)
         backup_name = stream.backup_worker_name
         effective_log_label = effective_runtime.log_label or stream.log_label
+        can_delete = effective_runtime.status != "streaming"
         return {
             "id": stream.id,
             "manager_id": stream.manager_id,
@@ -7030,6 +7034,7 @@ class AppStore:
             "status_label": status_label,
             "status_class": status_class,
             "can_stop": effective_runtime.status in self._live_worker_scheduled_statuses(),
+            "can_delete": can_delete,
             "detail_href": "",
         }
 
