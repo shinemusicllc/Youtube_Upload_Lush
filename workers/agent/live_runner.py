@@ -283,13 +283,31 @@ def _wait_until_start(stream: dict, report_progress) -> None:
     start_time_live = _parse_control_plane_datetime(stream.get("start_time_live"))
     if start_time_live is None:
         return
+
+    waiting_message = f"Chờ tới giờ live {start_time_live:%d/%m/%Y %H:%M}"
+    report_progress("waiting", 100, waiting_message, force=True)
+
     while True:
         now = _now_local()
         diff = start_time_live - now
-        if diff.total_seconds() <= 0:
+        remaining_seconds = diff.total_seconds()
+        if remaining_seconds <= 0:
             break
-        report_progress("waiting", 100, f"Chờ tới giờ live {start_time_live:%d/%m/%Y %H:%M}", force=True)
-        time.sleep(min(5.0, max(diff.total_seconds(), 1.0)))
+
+        report_progress("waiting", 100, waiting_message)
+        if remaining_seconds > 300:
+            sleep_seconds = 15.0
+        elif remaining_seconds > 60:
+            sleep_seconds = 5.0
+        elif remaining_seconds > 15:
+            sleep_seconds = 1.0
+        elif remaining_seconds > 5:
+            sleep_seconds = 0.5
+        elif remaining_seconds > 1:
+            sleep_seconds = 0.2
+        else:
+            sleep_seconds = 0.05
+        time.sleep(min(sleep_seconds, remaining_seconds))
 
 
 def _stream_once(

@@ -345,6 +345,25 @@ async def delete_user_jobs_bulk(request: Request, payload: dict = Body(...)):
     }
 
 
+@router.post("/user/live/actions/bulk-delete")
+async def delete_user_live_streams_bulk(request: Request, payload: dict = Body(...)):
+    stream_ids = payload.get("stream_ids")
+    if not isinstance(stream_ids, list):
+        raise HTTPException(status_code=422, detail="stream_ids phai la danh sach.")
+
+    current_user = require_app_access(request, "user", "manager", "admin")
+    deleted_ids = store.delete_live_streams(
+        stream_ids,
+        viewer_role=current_user.role,
+        viewer_id=current_user.id,
+    )
+    return {
+        "status": "deleted",
+        "deleted_count": len(deleted_ids),
+        "stream_ids": deleted_ids,
+    }
+
+
 @router.delete("/user/channels/{channel_id}")
 async def delete_user_channel(request: Request, channel_id: str):
     try:

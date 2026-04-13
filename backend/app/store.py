@@ -6271,7 +6271,7 @@ class AppStore:
             "video_url": "",
             "audio_url": "",
             "stream_key": "",
-            "backup_delay_minutes": 3,
+            "backup_delay_minutes": 0,
             "primary_worker_id": "",
             "backup_worker_id": "",
             "start_at": "",
@@ -6285,7 +6285,7 @@ class AppStore:
                 "video_url": str(values.get("video_url") or "").strip(),
                 "audio_url": str(values.get("audio_url") or "").strip(),
                 "stream_key": str(values.get("stream_key") or "").strip(),
-                "backup_delay_minutes": str(values.get("backup_delay_minutes") or "3").strip() or "3",
+                "backup_delay_minutes": str(values.get("backup_delay_minutes") or "0").strip() or "0",
                 "primary_worker_id": str(values.get("primary_worker_id") or "").strip(),
                 "backup_worker_id": str(values.get("backup_worker_id") or "").strip(),
                 "start_at": str(values.get("start_at") or "").strip(),
@@ -6538,7 +6538,7 @@ class AppStore:
         video_url: str,
         audio_url: str | None = None,
         backup_worker_id: str | None = None,
-        backup_delay_minutes: int | str | None = 3,
+        backup_delay_minutes: int | str | None = 0,
         start_time_live: datetime | None = None,
         end_time_live: datetime | None = None,
         is_live_now: bool = False,
@@ -6650,7 +6650,7 @@ class AppStore:
         video_url: str,
         audio_url: str | None = None,
         backup_worker_id: str | None = None,
-        backup_delay_minutes: int | str | None = 3,
+        backup_delay_minutes: int | str | None = 0,
         start_time_live: datetime | None = None,
         end_time_live: datetime | None = None,
         is_live_now: bool = False,
@@ -6764,6 +6764,36 @@ class AppStore:
             self._retire_live_backup_clone(clone, now=now, reason="Luồng chính đã bị xoá.")
         self.live_streams = [item for item in self.live_streams if item.id != stream.id]
         self._save_state()
+
+    def delete_live_streams(
+        self,
+        stream_ids: list[str],
+        *,
+        viewer_role: str = "admin",
+        viewer_id: str | None = None,
+    ) -> list[str]:
+        normalized_ids: list[str] = []
+        for stream_id in stream_ids:
+            cleaned = str(stream_id or "").strip()
+            if cleaned and cleaned not in normalized_ids:
+                normalized_ids.append(cleaned)
+
+        if not normalized_ids:
+            return []
+
+        deleted_ids: list[str] = []
+        for stream_id in normalized_ids:
+            try:
+                self.delete_live_stream(
+                    stream_id,
+                    viewer_role=viewer_role,
+                    viewer_id=viewer_id,
+                )
+            except KeyError:
+                continue
+            deleted_ids.append(stream_id)
+
+        return deleted_ids
 
     def update_live_stream_status(
         self,

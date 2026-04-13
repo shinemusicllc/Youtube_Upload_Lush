@@ -199,7 +199,7 @@ class LiveStreamRecord(BaseModel):
     is_live_now: bool = False
     start_time_live: datetime | None = None
     end_time_live: datetime | None = None
-    backup_delay_minutes: int = 3
+    backup_delay_minutes: int = 0
     status: LiveStreamStatus = "draft"
     status_message: str | None = None
     progress: int = 0

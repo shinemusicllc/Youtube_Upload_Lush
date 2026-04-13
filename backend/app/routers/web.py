@@ -249,7 +249,7 @@ def _extract_live_form_values(form) -> dict[str, str]:
         "video_url": str(form.get("video_url") or "").strip(),
         "audio_url": str(form.get("audio_url") or "").strip(),
         "stream_key": str(form.get("stream_key") or "").strip(),
-        "backup_delay_minutes": str(form.get("backup_delay_minutes") or "3").strip() or "3",
+        "backup_delay_minutes": str(form.get("backup_delay_minutes") or "0").strip() or "0",
         "primary_worker_id": str(form.get("primary_worker_id") or "").strip(),
         "backup_worker_id": str(form.get("backup_worker_id") or "").strip(),
         "start_at": str(form.get("start_time_live") or "").strip(),

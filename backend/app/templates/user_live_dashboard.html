@@ -139,6 +139,28 @@
     .frosted-header { background: rgba(255,255,255,0.82); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid rgba(226,232,240,0.6); box-shadow: 0 1px 3px rgba(15,23,42,0.03); }
     .kpi-card:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(15,23,42,0.08), 0 1px 4px rgba(15,23,42,0.04); }
     .panel-input { height: 42px; }
+    .live-source-input {
+      background: white !important;
+      border-color: rgb(226 232 240);
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+    .live-source-input:hover {
+      border-color: rgb(203 213 225);
+    }
+    .live-source-input:focus {
+      border-color: rgb(148 163 184);
+      box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.12), 0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+    .live-source-input:-webkit-autofill,
+    .live-source-input:-webkit-autofill:hover,
+    .live-source-input:-webkit-autofill:focus,
+    .live-source-input:-webkit-autofill:active {
+      -webkit-text-fill-color: rgb(15 23 42) !important;
+      -webkit-box-shadow: 0 0 0 1000px #ffffff inset, 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+      border: 1px solid rgb(226 232 240) !important;
+      caret-color: rgb(15 23 42);
+      transition: background-color 9999s ease-out 0s;
+    }
     .panel-action-button { min-height: 40px; align-items: center; justify-content: center; }
     .live-config-shell {
       background: white;
@@ -606,21 +628,21 @@
                 <div class="live-config-stack">
                   <div>
                     <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">T&ecirc;n lu&#7891;ng live</label>
-                    <input type="text" name="stream_name" value="{{ dashboard.live_form.stream_name | e }}" placeholder="Nh&#7853;p t&ecirc;n lu&#7891;ng..." class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-4 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 placeholder:text-slate-400 text-[13px] transition-all shadow-sm shadow-slate-100/50">
+                    <input type="text" name="stream_name" value="{{ dashboard.live_form.stream_name | e }}" placeholder="Nh&#7853;p t&ecirc;n lu&#7891;ng..." autocomplete="off" class="panel-input live-source-input w-full border text-slate-900 px-4 py-0 rounded-lg outline-none placeholder:text-slate-400 text-[13px] transition-all">
                   </div>
                   <div>
                     <div class="mb-1.5 flex items-center justify-between gap-3">
                       <label class="block text-slate-600 text-[12px] font-semibold">Link video ngu&#7891;n</label>
                       <span data-live-url-status="video" class="text-[11px] font-semibold text-slate-400">Ch&#432;a nh&#7853;p link</span>
                     </div>
-                    <input type="text" name="video_url" value="{{ dashboard.live_form.video_url | e }}" data-live-url-input="video" placeholder="D&aacute;n link video live..." class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-4 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 placeholder:text-slate-400 text-[13px] transition-all shadow-sm shadow-slate-100/50">
+                    <input type="text" name="video_url" value="{{ dashboard.live_form.video_url | e }}" data-live-url-input="video" placeholder="D&aacute;n link video live..." autocomplete="off" class="panel-input live-source-input w-full border text-slate-900 px-4 py-0 rounded-lg outline-none placeholder:text-slate-400 text-[13px] transition-all">
                   </div>
                   <div>
                     <div class="mb-1.5 flex items-center justify-between gap-3">
                       <label class="block text-slate-600 text-[12px] font-semibold">Link audio</label>
                       <span data-live-url-status="audio" class="text-[11px] font-semibold text-slate-400">T&ugrave;y ch&#7885;n</span>
                     </div>
-                    <input type="text" name="audio_url" value="{{ dashboard.live_form.audio_url | e }}" data-live-url-input="audio" placeholder="D&aacute;n link audio live..." class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-4 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 placeholder:text-slate-400 text-[13px] transition-all shadow-sm shadow-slate-100/50">
+                    <input type="text" name="audio_url" value="{{ dashboard.live_form.audio_url | e }}" data-live-url-input="audio" placeholder="D&aacute;n link audio live..." autocomplete="off" class="panel-input live-source-input w-full border text-slate-900 px-4 py-0 rounded-lg outline-none placeholder:text-slate-400 text-[13px] transition-all">
                   </div>
                 </div>
               </div>
@@ -885,9 +907,21 @@
           <div class="px-5 py-4 border-t border-slate-200 flex items-center justify-between gap-4">
             <p data-live-summary class="text-[13px] text-slate-500">{{ dashboard.live_summary | e }}</p>
             <div class="flex items-center gap-2">
-              <button type="button" disabled class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-400"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
-              <button type="button" class="inline-flex h-9 min-w-[38px] items-center justify-center rounded-lg bg-brand-600 px-3 text-[12px] font-semibold text-white">1</button>
-              <button type="button" disabled class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-400"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
+              <div id="livePagination" class="flex items-center gap-1.5">
+                <button type="button" disabled class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-400"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
+                <button type="button" class="inline-flex h-9 min-w-[38px] items-center justify-center rounded-lg bg-brand-600 px-3 text-[12px] font-semibold text-white">1</button>
+                <button type="button" disabled class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-400"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
+              </div>
+              <button
+                id="deleteVisibleLiveStreamsButton"
+                type="button"
+                class="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 text-[12px] font-semibold text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900 hover:shadow-sm disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none"
+                title="X&#243;a nhanh c&#225;c lu&#7891;ng live &#273;ang hi&#7875;n th&#7883;"
+                disabled
+              >
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                X&#243;a trang
+              </button>
             </div>
           </div>
         </div>
@@ -1108,6 +1142,7 @@
     const liveJobSearchInput = document.getElementById('liveJobSearchInput');
     const liveStreamTableBody = document.getElementById('liveStreamTableBody');
     const liveSummaryNode = document.querySelector('[data-live-summary]');
+    const liveDeleteVisibleButton = document.getElementById('deleteVisibleLiveStreamsButton');
     const liveTabButtons = Array.from(document.querySelectorAll('[data-live-tab-index]'));
     const liveKpiCards = Array.from(document.querySelectorAll('[data-live-kpi-index]'));
     const liveStopModal = document.getElementById('liveStopModal');
@@ -1125,8 +1160,10 @@
     };
     const liveIndexHref = {{ live_index_href | tojson }};
     const liveDeleteAction = {{ live_delete_action | tojson }};
+    const liveBulkDeleteAction = '/api/user/live/actions/bulk-delete';
     const liveStopAction = {{ (dashboard.live_stop_action | default('/app/live/stop')) | tojson }};
     const liveManagerIds = {{ dashboard.live_form_manager_ids | default([], true) | tojson }};
+    let liveStreamRowsState = {{ dashboard.live_stream_rows | default([], true) | tojson }};
     const liveUrlValidationTimers = new Map();
     let liveRefreshHandle = null;
     let liveRefreshInFlight = false;
@@ -1316,6 +1353,26 @@
         const haystack = String(row.getAttribute('data-stream-search') || '').toLowerCase();
         row.classList.toggle('hidden', Boolean(query) && !haystack.includes(query));
       });
+      updateLiveDeleteVisibleButton();
+    };
+
+    const getVisibleLiveRows = () => {
+      const query = liveJobSearchInput instanceof HTMLInputElement
+        ? liveJobSearchInput.value.trim().toLowerCase()
+        : '';
+      return liveStreamRowsState.filter((stream) => {
+        const haystack = buildLiveRowSearch(stream);
+        return !query || haystack.includes(query);
+      });
+    };
+
+    const updateLiveDeleteVisibleButton = () => {
+      if (!(liveDeleteVisibleButton instanceof HTMLButtonElement)) return;
+      const visibleRows = getVisibleLiveRows();
+      liveDeleteVisibleButton.disabled = visibleRows.length === 0;
+      liveDeleteVisibleButton.title = visibleRows.length
+        ? `Xóa nhanh ${visibleRows.length} luồng live đang hiển thị`
+        : 'Không có luồng live nào để xóa trên trang hiện tại';
     };
 
     const renderLiveKpis = (kpis) => {
@@ -1443,6 +1500,7 @@
     const renderLiveRows = (rows) => {
       if (!(liveStreamTableBody instanceof HTMLElement)) return;
       const liveRows = Array.isArray(rows) ? rows : [];
+      liveStreamRowsState = liveRows;
       if (!liveRows.length) {
         liveStreamTableBody.innerHTML = '<tr data-live-empty-row><td colspan="11" class="px-6 py-10 text-center text-[13px] text-slate-500">Chưa có luồng live nào trong danh sách</td></tr>';
       } else {
@@ -1450,6 +1508,7 @@
       }
       if (window.lucide) window.lucide.createIcons();
       applyLiveSearchFilter();
+      updateLiveDeleteVisibleButton();
     };
 
     const buildLivePayloadSignature = (payload) => JSON.stringify({
@@ -1519,8 +1578,48 @@
       }
     };
 
+    const initBulkDeleteVisibleLiveStreams = () => {
+      if (!(liveDeleteVisibleButton instanceof HTMLButtonElement)) return;
+
+      liveDeleteVisibleButton.addEventListener('click', async () => {
+        const visibleRows = getVisibleLiveRows();
+        if (!visibleRows.length) return;
+
+        const confirmed = window.confirm(`Xóa nhanh ${visibleRows.length} luồng live đang hiển thị trên trang này?`);
+        if (!confirmed) return;
+
+        liveDeleteVisibleButton.disabled = true;
+        const scrollY = window.scrollY || window.pageYOffset || 0;
+        try {
+          const response = await fetch(liveBulkDeleteAction, {
+            method: 'POST',
+            headers: {
+              Accept: 'application/json',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              stream_ids: visibleRows.map((stream) => String(stream.id || '')).filter(Boolean),
+            }),
+          });
+          const payload = await response.json();
+          if (!response.ok) {
+            throw new Error(payload.detail || 'Không thể xóa danh sách live đang hiển thị.');
+          }
+          showToast(`Đã xóa ${Number(payload.deleted_count || 0)} luồng live.`, 'success');
+          lastLiveDashboardSignature = '';
+          await pollLiveDashboard();
+          window.scrollTo({ top: scrollY, behavior: 'auto' });
+        } catch (error) {
+          showToast(error.message || 'Không thể xóa danh sách live đang hiển thị.', 'error');
+          updateLiveDeleteVisibleButton();
+        }
+      });
+    };
+
     if (liveJobSearchInput && liveStreamTableBody) {
       liveJobSearchInput.addEventListener('input', applyLiveSearchFilter);
+      initBulkDeleteVisibleLiveStreams();
+      updateLiveDeleteVisibleButton();
       void pollLiveDashboard();
       document.addEventListener('visibilitychange', () => {
         if (document.hidden) {
