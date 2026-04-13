@@ -6389,6 +6389,28 @@ class AppStore:
             raise ValueError(f"{field_label} là bắt buộc.")
         return normalized
 
+    def _normalize_live_source_url(
+        self,
+        value: str | None,
+        *,
+        field_label: str,
+        required: bool,
+    ) -> str | None:
+        normalized = str(value or "").strip()
+        if not normalized:
+            if required:
+                raise ValueError(f"{field_label} là bắt buộc.")
+            return None
+
+        parsed = urlparse(normalized)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError(f"{field_label} phải là link HTTP hoặc HTTPS hợp lệ.")
+
+        host = (parsed.hostname or "").lower()
+        if host in {"drive.google.com", "docs.google.com"} and self._extract_google_drive_file_id(normalized) is None:
+            raise ValueError(f"{field_label} Google Drive chưa đúng định dạng chia sẻ file.")
+        return normalized
+
     def _normalize_live_optional_text(self, value: str | None) -> str | None:
         normalized = str(value or "").strip()
         return normalized or None
@@ -6531,8 +6553,16 @@ class AppStore:
         self._assert_live_stream_owner_scope(owner, viewer_role=viewer_role, viewer_id=viewer_id)
         normalized_name = self._normalize_live_text(stream_name, field_label="Tên luồng live")
         normalized_stream_key = self._normalize_live_text(stream_key, field_label="Stream key")
-        normalized_video_url = self._normalize_live_text(video_url, field_label="Link video nguồn")
-        normalized_audio_url = self._normalize_live_optional_text(audio_url)
+        normalized_video_url = self._normalize_live_source_url(
+            video_url,
+            field_label="Link video nguồn",
+            required=True,
+        )
+        normalized_audio_url = self._normalize_live_source_url(
+            audio_url,
+            field_label="Link audio",
+            required=False,
+        )
         primary_worker = self._validate_live_worker_for_owner(owner, primary_worker_id, field_label="BOT chính", role="primary")
         backup_worker: WorkerRecord | None = None
         normalized_backup_worker_id = str(backup_worker_id or "").strip() or None
@@ -6636,8 +6666,16 @@ class AppStore:
         self._assert_live_stream_owner_scope(owner, viewer_role=viewer_role, viewer_id=viewer_id)
         normalized_name = self._normalize_live_text(stream_name, field_label="Tên luồng live")
         normalized_stream_key = self._normalize_live_text(stream_key, field_label="Stream key")
-        normalized_video_url = self._normalize_live_text(video_url, field_label="Link video nguồn")
-        normalized_audio_url = self._normalize_live_optional_text(audio_url)
+        normalized_video_url = self._normalize_live_source_url(
+            video_url,
+            field_label="Link video nguồn",
+            required=True,
+        )
+        normalized_audio_url = self._normalize_live_source_url(
+            audio_url,
+            field_label="Link audio",
+            required=False,
+        )
         primary_worker = self._validate_live_worker_for_owner(owner, primary_worker_id, field_label="BOT chính", role="primary")
         backup_worker: WorkerRecord | None = None
         normalized_backup_worker_id = str(backup_worker_id or "").strip() or None

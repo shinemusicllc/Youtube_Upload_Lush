@@ -609,12 +609,18 @@
                     <input type="text" name="stream_name" value="{{ dashboard.live_form.stream_name | e }}" placeholder="Nh&#7853;p t&ecirc;n lu&#7891;ng..." class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-4 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 placeholder:text-slate-400 text-[13px] transition-all shadow-sm shadow-slate-100/50">
                   </div>
                   <div>
-                    <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">Link video ngu&#7891;n</label>
-                    <input type="text" name="video_url" value="{{ dashboard.live_form.video_url | e }}" placeholder="D&aacute;n link video live..." class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-4 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 placeholder:text-slate-400 text-[13px] transition-all shadow-sm shadow-slate-100/50">
+                    <div class="mb-1.5 flex items-center justify-between gap-3">
+                      <label class="block text-slate-600 text-[12px] font-semibold">Link video ngu&#7891;n</label>
+                      <span data-live-url-status="video" class="text-[11px] font-semibold text-slate-400">Ch&#432;a nh&#7853;p link</span>
+                    </div>
+                    <input type="text" name="video_url" value="{{ dashboard.live_form.video_url | e }}" data-live-url-input="video" placeholder="D&aacute;n link video live..." class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-4 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 placeholder:text-slate-400 text-[13px] transition-all shadow-sm shadow-slate-100/50">
                   </div>
                   <div>
-                    <label class="block text-slate-600 text-[12px] font-semibold mb-1.5">Link audio</label>
-                    <input type="text" name="audio_url" value="{{ dashboard.live_form.audio_url | e }}" placeholder="D&aacute;n link audio live..." class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-4 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 placeholder:text-slate-400 text-[13px] transition-all shadow-sm shadow-slate-100/50">
+                    <div class="mb-1.5 flex items-center justify-between gap-3">
+                      <label class="block text-slate-600 text-[12px] font-semibold">Link audio</label>
+                      <span data-live-url-status="audio" class="text-[11px] font-semibold text-slate-400">T&ugrave;y ch&#7885;n</span>
+                    </div>
+                    <input type="text" name="audio_url" value="{{ dashboard.live_form.audio_url | e }}" data-live-url-input="audio" placeholder="D&aacute;n link audio live..." class="panel-input w-full bg-white border border-slate-200 text-slate-900 px-4 py-0 rounded-lg outline-none hover:border-slate-300 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 placeholder:text-slate-400 text-[13px] transition-all shadow-sm shadow-slate-100/50">
                   </div>
                 </div>
               </div>
@@ -802,12 +808,12 @@
                   <td class="px-4 py-5 align-top">
                     <div class="live-table-action-grid">
                       {% if stream.can_stop %}
-                      <form method="post" action="{{ dashboard.live_stop_action | default('/app/live/stop') }}" class="live-table-action-form" onsubmit="return window.confirm('Bạn có chắc chắn muốn dừng luồng live này không?');">
+                      <form method="post" action="{{ dashboard.live_stop_action | default('/app/live/stop') }}" class="live-table-action-form" data-live-stop-form data-live-stop-stream-title="{{ stream.title | default(stream.stream_name | default('', true), true) | e }}">
                         <input type="hidden" name="stream_id" value="{{ stream.id | e }}">
                         {% for manager_id in dashboard.live_form_manager_ids | default([], true) %}
                         <input type="hidden" name="manager_ids" value="{{ manager_id | e }}">
                         {% endfor %}
-                        <button type="submit" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 hover:text-amber-800 hover:shadow-sm transition-all"><i data-lucide="square" class="w-3 h-3"></i> Dừng</button>
+                        <button type="submit" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-white bg-rose-600 border border-rose-600 rounded-lg hover:bg-rose-700 hover:border-rose-700 hover:shadow-sm transition-all"><i data-lucide="square" class="w-3 h-3"></i> Dừng</button>
                       </form>
                       {% else %}
                       <button type="button" disabled class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-slate-400 bg-slate-50 border border-slate-200 rounded-lg cursor-not-allowed"><i data-lucide="square" class="w-3 h-3"></i> Dừng</button>
@@ -889,6 +895,37 @@
     </div>
   </main>
   <div id="toastStack" class="toast-stack" aria-live="polite" aria-atomic="false"></div>
+  <div id="liveStopModal" class="fixed inset-0 z-[120] hidden" aria-hidden="true">
+    <div class="absolute inset-0 bg-slate-950/45" data-live-stop-close></div>
+    <div class="relative flex min-h-full items-center justify-center p-4">
+      <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-[0_18px_48px_rgba(15,23,42,0.18)]">
+        <div class="border-b border-slate-200 px-5 py-4">
+          <div class="flex items-start gap-3">
+            <div class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-600">
+              <i data-lucide="square" class="h-4.5 w-4.5"></i>
+            </div>
+            <div class="min-w-0">
+              <h3 class="text-[16px] font-bold text-slate-900">Kết thúc luồng live?</h3>
+              <p id="liveStopModalTitle" class="mt-1 text-[12px] font-semibold text-slate-700"></p>
+            </div>
+          </div>
+        </div>
+        <div class="px-5 py-4">
+          <p id="liveStopModalMessage" class="text-[13px] leading-6 text-slate-600">
+            Luồng live sẽ chuyển sang trạng thái <span class="font-semibold text-rose-600">Đã dừng</span>. Nếu worker đã nhận lịch hoặc đang đẩy RTMP, phiên hiện tại cũng sẽ được kết thúc.
+          </p>
+        </div>
+        <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
+          <button type="button" data-live-stop-close class="inline-flex min-w-[108px] items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900">
+            Quay l&#7841;i
+          </button>
+          <button type="button" id="liveStopConfirmButton" class="inline-flex min-w-[132px] items-center justify-center rounded-lg border border-rose-600 bg-rose-600 px-4 py-2 text-[13px] font-semibold text-white hover:border-rose-700 hover:bg-rose-700">
+            K&#7871;t th&uacute;c live
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script>
     if (window.lucide) window.lucide.createIcons();
@@ -1073,13 +1110,30 @@
     const liveSummaryNode = document.querySelector('[data-live-summary]');
     const liveTabButtons = Array.from(document.querySelectorAll('[data-live-tab-index]'));
     const liveKpiCards = Array.from(document.querySelectorAll('[data-live-kpi-index]'));
+    const liveStopModal = document.getElementById('liveStopModal');
+    const liveStopModalTitle = document.getElementById('liveStopModalTitle');
+    const liveStopModalMessage = document.getElementById('liveStopModalMessage');
+    const liveStopConfirmButton = document.getElementById('liveStopConfirmButton');
+    const liveStopCloseButtons = Array.from(document.querySelectorAll('[data-live-stop-close]'));
+    const liveUrlInputs = {
+      video: document.querySelector('[data-live-url-input="video"]'),
+      audio: document.querySelector('[data-live-url-input="audio"]'),
+    };
+    const liveUrlStatusNodes = {
+      video: document.querySelector('[data-live-url-status="video"]'),
+      audio: document.querySelector('[data-live-url-status="audio"]'),
+    };
     const liveIndexHref = {{ live_index_href | tojson }};
     const liveDeleteAction = {{ live_delete_action | tojson }};
     const liveStopAction = {{ (dashboard.live_stop_action | default('/app/live/stop')) | tojson }};
     const liveManagerIds = {{ dashboard.live_form_manager_ids | default([], true) | tojson }};
+    const liveUrlValidationTimers = new Map();
     let liveRefreshHandle = null;
     let liveRefreshInFlight = false;
     let lastLiveDashboardSignature = '';
+    let liveStopPendingForm = null;
+    let allowLiveStopSubmit = false;
+    let liveStopPreviousBodyOverflow = '';
 
     const escapeHtml = (value) => String(value ?? '')
       .replace(/&/g, '&amp;')
@@ -1095,6 +1149,165 @@
     const buildLiveManagerHiddenInputs = () => Array.isArray(liveManagerIds)
       ? liveManagerIds.map((id) => `<input type="hidden" name="manager_ids" value="${escapeHtml(String(id))}">`).join('')
       : '';
+
+    const liveUrlEmptyCopy = {
+      video: 'Chưa nhập link',
+      audio: 'Tùy chọn',
+    };
+
+    const liveUrlStatusClassMap = {
+      neutral: 'text-[11px] font-semibold text-slate-400',
+      checking: 'text-[11px] font-semibold text-sky-600',
+      success: 'text-[11px] font-semibold text-emerald-600',
+      error: 'text-[11px] font-semibold text-rose-600',
+    };
+
+    const setLiveUrlStatus = (slot, text, tone = 'neutral') => {
+      const node = liveUrlStatusNodes[slot];
+      if (!(node instanceof HTMLElement)) return;
+      node.textContent = String(text || '');
+      node.className = liveUrlStatusClassMap[tone] || liveUrlStatusClassMap.neutral;
+    };
+
+    const extractLiveGoogleDriveFileId = (value) => {
+      try {
+        const parsed = new URL(String(value || '').trim());
+        const host = (parsed.hostname || '').toLowerCase();
+        if (!['drive.google.com', 'docs.google.com'].includes(host)) {
+          return null;
+        }
+        const queryId = parsed.searchParams.get('id');
+        if (queryId) {
+          return queryId;
+        }
+        const match = parsed.pathname.match(/\/file\/d\/([^/]+)/);
+        return match?.[1] || null;
+      } catch (_error) {
+        return null;
+      }
+    };
+
+    const validateLiveUrlValue = (slot, value) => {
+      const trimmed = String(value || '').trim();
+      if (!trimmed) {
+        setLiveUrlStatus(slot, liveUrlEmptyCopy[slot] || 'Chưa nhập link', 'neutral');
+        return;
+      }
+
+      let parsed;
+      try {
+        parsed = new URL(trimmed);
+      } catch (_error) {
+        setLiveUrlStatus(slot, 'Link không hợp lệ', 'error');
+        return;
+      }
+
+      if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname) {
+        setLiveUrlStatus(slot, 'Link không hợp lệ', 'error');
+        return;
+      }
+
+      const host = (parsed.hostname || '').toLowerCase();
+      if (host === 'drive.google.com' || host === 'docs.google.com') {
+        if (!extractLiveGoogleDriveFileId(trimmed)) {
+          setLiveUrlStatus(slot, 'Link Drive chưa đúng định dạng', 'error');
+          return;
+        }
+      }
+
+      setLiveUrlStatus(slot, 'Link hoạt động', 'success');
+    };
+
+    const scheduleLiveUrlValidation = (slot, value) => {
+      const existingTimer = liveUrlValidationTimers.get(slot);
+      if (existingTimer) {
+        window.clearTimeout(existingTimer);
+      }
+
+      const trimmed = String(value || '').trim();
+      if (!trimmed) {
+        setLiveUrlStatus(slot, liveUrlEmptyCopy[slot] || 'Chưa nhập link', 'neutral');
+        liveUrlValidationTimers.delete(slot);
+        return;
+      }
+
+      setLiveUrlStatus(slot, 'Đang kiểm tra...', 'checking');
+      const timer = window.setTimeout(() => {
+        validateLiveUrlValue(slot, value);
+        liveUrlValidationTimers.delete(slot);
+      }, 220);
+      liveUrlValidationTimers.set(slot, timer);
+    };
+
+    Object.entries(liveUrlInputs).forEach(([slot, input]) => {
+      if (!(input instanceof HTMLInputElement)) return;
+      input.addEventListener('input', () => {
+        scheduleLiveUrlValidation(slot, input.value);
+      });
+      scheduleLiveUrlValidation(slot, input.value);
+    });
+
+    const closeLiveStopModal = () => {
+      if (!(liveStopModal instanceof HTMLElement)) return;
+      liveStopModal.classList.add('hidden');
+      liveStopModal.setAttribute('aria-hidden', 'true');
+      document.body.style.overflow = liveStopPreviousBodyOverflow;
+      liveStopPendingForm = null;
+    };
+
+    const openLiveStopModal = (form) => {
+      if (!(liveStopModal instanceof HTMLElement) || !(form instanceof HTMLFormElement)) return;
+      liveStopPendingForm = form;
+      const streamTitle = String(form.getAttribute('data-live-stop-stream-title') || '').trim();
+      if (liveStopModalTitle instanceof HTMLElement) {
+        liveStopModalTitle.textContent = streamTitle ? `Luồng: ${streamTitle}` : 'Xác nhận dừng luồng live';
+      }
+      if (liveStopModalMessage instanceof HTMLElement) {
+        liveStopModalMessage.innerHTML = streamTitle
+          ? `Luồng <span class="font-semibold text-slate-900">${escapeHtml(streamTitle)}</span> sẽ chuyển sang trạng thái <span class="font-semibold text-rose-600">Đã dừng</span>. Nếu worker đã nhận lịch hoặc đang đẩy RTMP, phiên hiện tại cũng sẽ được kết thúc.`
+          : 'Luồng live sẽ chuyển sang trạng thái <span class="font-semibold text-rose-600">Đã dừng</span>. Nếu worker đã nhận lịch hoặc đang đẩy RTMP, phiên hiện tại cũng sẽ được kết thúc.';
+      }
+      liveStopPreviousBodyOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      liveStopModal.classList.remove('hidden');
+      liveStopModal.setAttribute('aria-hidden', 'false');
+      liveStopConfirmButton?.focus();
+    };
+
+    liveStopCloseButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        closeLiveStopModal();
+      });
+    });
+
+    liveStopConfirmButton?.addEventListener('click', () => {
+      if (!(liveStopPendingForm instanceof HTMLFormElement)) return;
+      const targetForm = liveStopPendingForm;
+      allowLiveStopSubmit = true;
+      closeLiveStopModal();
+      if (typeof targetForm.requestSubmit === 'function') {
+        targetForm.requestSubmit();
+        return;
+      }
+      targetForm.submit();
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && liveStopModal instanceof HTMLElement && !liveStopModal.classList.contains('hidden')) {
+        closeLiveStopModal();
+      }
+    });
+
+    document.addEventListener('submit', (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLFormElement) || !target.matches('[data-live-stop-form]')) return;
+      if (allowLiveStopSubmit) {
+        allowLiveStopSubmit = false;
+        return;
+      }
+      event.preventDefault();
+      openLiveStopModal(target);
+    });
 
     const applyLiveSearchFilter = () => {
       if (!liveJobSearchInput || !liveStreamTableBody) return;
@@ -1155,10 +1368,10 @@
       const detailHref = `${liveIndexHref}?detail=${encodeURIComponent(String(stream.id || ''))}${managerQuery}`;
       const stopForm = stream.can_stop
         ? `
-          <form method="post" action="${escapeHtml(liveStopAction)}" class="live-table-action-form" onsubmit="return window.confirm('Bạn có chắc chắn muốn dừng luồng live này không?');">
+          <form method="post" action="${escapeHtml(liveStopAction)}" class="live-table-action-form" data-live-stop-form data-live-stop-stream-title="${escapeHtml(stream.title || stream.stream_name || '')}">
             <input type="hidden" name="stream_id" value="${escapeHtml(stream.id || '')}">
             ${managerHiddenInputs}
-            <button type="submit" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 hover:text-amber-800 hover:shadow-sm transition-all"><i data-lucide="square" class="w-3 h-3"></i> Dừng</button>
+            <button type="submit" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-white bg-rose-600 border border-rose-600 rounded-lg hover:bg-rose-700 hover:border-rose-700 hover:shadow-sm transition-all"><i data-lucide="square" class="w-3 h-3"></i> Dừng</button>
           </form>
         `
         : `
