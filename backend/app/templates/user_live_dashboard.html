@@ -1759,7 +1759,7 @@
       liveTelegramOpenBotButton.disabled = true;
       let popupWindow = null;
       try {
-        popupWindow = window.open('about:blank', '_blank', 'noopener,noreferrer');
+        popupWindow = window.open('', '_blank');
         if (!popupWindow) {
           throw new Error('Trình duyệt đang chặn mở tab mới. Hãy cho phép popup rồi thử lại.');
         }
@@ -1771,7 +1771,12 @@
           throw new Error('Không thể tạo đường dẫn mở bot Telegram live.');
         }
         setLiveTelegramStatus('loading', 'Đã sẵn sàng. Hãy nhấn Start trong bot live bằng đúng tài khoản Telegram muốn nhận thông báo.');
-        popupWindow.location.replace(deepLinkUrl);
+        try {
+          popupWindow.opener = null;
+        } catch (error) {
+          console.warn('Unable to clear popup opener reference.', error);
+        }
+        popupWindow.location.href = deepLinkUrl;
       } catch (error) {
         setLiveTelegramStatus('error', error instanceof Error ? error.message : 'Không thể mở bot Telegram live.');
         if (popupWindow && !popupWindow.closed) {
