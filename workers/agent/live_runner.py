@@ -272,7 +272,7 @@ def _run_ffmpeg_with_progress(
     progress_callback=None,
     end_time_live: datetime | None = None,
     lifecycle_guard=None,
-) -> None:
+) -> bool:
     command = [
         config.ffmpeg_bin,
         "-stats_period",
@@ -355,10 +355,11 @@ def _run_ffmpeg_with_progress(
     if callback_error is not None:
         raise callback_error
     if terminated_for_end_time:
-        return
+        return False
     if return_code != 0:
         tail = "\n".join(output_lines[-40:])
         raise RuntimeError(f"FFmpeg live runtime failed ({return_code}).\n{tail}".strip())
+    return True
 
 
 def _prepare_rendered_media(
@@ -475,15 +476,15 @@ def _stream_once(
     report_progress,
     end_time_live: datetime | None,
     lifecycle_guard=None,
-) -> None:
+) -> bool:
     def _on_progress(ratio: float, current_seconds: float) -> None:
         report_progress(
             "streaming",
             max(0, min(100, int(ratio * 100))),
-            f"Đang live {time.strftime('%H:%M:%S', time.gmtime(max(0, int(current_seconds))))}",
+            f"\u0110ang live {time.strftime('%H:%M:%S', time.gmtime(max(0, int(current_seconds))))}",
         )
 
-    _run_ffmpeg_with_progress(
+    completed_full_pass = _run_ffmpeg_with_progress(
         config,
         [
             "-re",
@@ -527,14 +528,17 @@ def _stream_once(
         end_time_live=end_time_live,
         lifecycle_guard=lifecycle_guard,
     )
-    update_live_stream_progress(
-        client,
-        config,
-        stream_id,
-        status="streaming",
-        progress=100,
-        message="Đã phát xong 1 vòng media",
-    )
+    if completed_full_pass:
+        update_live_stream_progress(
+            client,
+            config,
+            stream_id,
+            status="streaming",
+            progress=100,
+            message="\u0110\u00e3 ph\u00e1t xong 1 v\u00f2ng media",
+        )
+    return completed_full_pass
+
 
 
 def run_live_stream(client: httpx.Client, config: WorkerConfig, stream: dict) -> None:
@@ -583,7 +587,7 @@ def run_live_stream(client: httpx.Client, config: WorkerConfig, stream: dict) ->
         while True:
             if end_time_live and _now_local() >= end_time_live:
                 break
-            _stream_once(
+            completed_full_pass = _stream_once(
                 client,
                 config,
                 stream_id=stream_id,
@@ -594,6 +598,8 @@ def run_live_stream(client: httpx.Client, config: WorkerConfig, stream: dict) ->
                 end_time_live=end_time_live,
                 lifecycle_guard=lifecycle_guard,
             )
+            if not completed_full_pass:
+                break
             if end_time_live and _now_local() >= end_time_live:
                 break
         complete_live_stream(client, config, stream_id, message="Luồng live đã kết thúc theo lịch.")

@@ -3768,6 +3768,10 @@ class AppStore:
         return {"scheduled", "disconnected", *cls._live_worker_active_statuses()}
 
     @classmethod
+    def _live_worker_claimable_statuses(cls) -> set[str]:
+        return {"scheduled", "disconnected", "downloading", "preparing", "waiting"}
+
+    @classmethod
     def _live_pre_stream_statuses(cls) -> set[str]:
         return {"scheduled", "downloading", "preparing", "waiting"}
 
@@ -3798,6 +3802,37 @@ class AppStore:
             ),
             None,
         )
+
+    def _is_live_stream_runtime_locked(self, stream: LiveStreamRecord) -> bool:
+        effective_runtime = self._effective_live_runtime_stream(stream)
+        effective_status = str(effective_runtime.status or "").strip().lower() or "scheduled"
+        if effective_status in {"downloading", "preparing", "waiting", "streaming", "disconnected"}:
+            return True
+        if effective_status == "scheduled" and str(effective_runtime.claimed_by_worker_id or "").strip():
+            return True
+        primary_status = str(stream.status or "").strip().lower() or "scheduled"
+        if primary_status == "scheduled" and str(stream.claimed_by_worker_id or "").strip():
+            return True
+        return False
+
+    def _assert_live_stream_editable(self, stream: LiveStreamRecord) -> None:
+        if self._is_live_stream_runtime_locked(stream):
+            raise ValueError("Luồng đang được worker xử lý hoặc đang live. Hãy dùng Dừng trước khi chỉnh sửa.")
+
+    @staticmethod
+    def _has_live_stream_started(stream: LiveStreamRecord) -> bool:
+        return stream.streaming_started_at is not None
+
+    def _can_claim_live_stream(self, stream: LiveStreamRecord, *, worker_id: str, now: datetime) -> bool:
+        normalized_status = str(stream.status or "").strip().lower() or "scheduled"
+        if normalized_status not in self._live_worker_claimable_statuses():
+            return False
+        if self._has_live_stream_started(stream):
+            return False
+        claimed_by_worker_id = str(stream.claimed_by_worker_id or "").strip()
+        if claimed_by_worker_id in {"", worker_id}:
+            return True
+        return stream.lease_expires_at is not None and stream.lease_expires_at <= now
 
     def _reset_live_backup_clone_runtime(self, stream: LiveStreamRecord, *, now: datetime) -> None:
         stream.status = "scheduled"
@@ -4051,7 +4086,7 @@ class AppStore:
                 manager.username if manager else (install_task_manager_name or str(payload.manager_name or "").strip() or "system")
             )
             resolved_group = install_task_group or str(payload.group or "").strip() or "S - Việt 3"
-            normalized_threads = self._normalize_requested_worker_threads(payload.threads)
+            normalized_threads = self._fixed_live_worker_thread_limit()
             if existing is None:
                 worker = WorkerRecord(
                     id=payload.worker_id,
@@ -4061,7 +4096,7 @@ class AppStore:
                     group=resolved_group,
                     created_at=now,
                     status="online",
-                    capacity=max(int(payload.capacity or 1), 1),
+                    capacity=self._fixed_live_worker_thread_limit(),
                     load_percent=0,
                     ram_percent=0,
                     ram_used_gb=0.0,
@@ -4079,7 +4114,7 @@ class AppStore:
                 existing.manager_name = resolved_manager_name
                 existing.group = resolved_group
                 existing.created_at = existing.created_at or now
-                existing.capacity = max(int(existing.capacity or 1), int(payload.capacity or 1), 1)
+                existing.capacity = self._fixed_live_worker_thread_limit()
                 existing.threads = normalized_threads
                 existing.disk_total_gb = float(payload.disk_total_gb or existing.disk_total_gb or 0)
                 existing.status = "online"
@@ -4131,7 +4166,8 @@ class AppStore:
             worker.bandwidth_kbps = payload.bandwidth_kbps
             worker.disk_used_gb = payload.disk_used_gb
             worker.disk_total_gb = payload.disk_total_gb or worker.disk_total_gb
-            worker.threads = self._normalize_requested_worker_threads(payload.threads)
+            worker.threads = self._fixed_live_worker_thread_limit()
+            worker.capacity = self._fixed_live_worker_thread_limit()
             worker.last_seen_at = now
             worker.offline_since_at = None
             worker.offline_alert_sent_at = None
@@ -4169,7 +4205,7 @@ class AppStore:
             worker = self._authenticate_live_worker(worker_id, shared_secret)
             now = self._now(trim=False)
             self._sync_live_backup_policy(now=now)
-            max_threads = max(1, int(worker.threads or worker.capacity or 1))
+            max_threads = self._fixed_live_worker_thread_limit()
             if self._count_live_worker_running_streams(worker) >= max_threads:
                 self._sync_live_worker_runtime_status(worker)
                 self._save_state()
@@ -4179,11 +4215,7 @@ class AppStore:
                 stream
                 for stream in self.live_streams
                 if stream.primary_worker_id == worker.id
-                and stream.status in self._live_worker_scheduled_statuses()
-                and (
-                    stream.claimed_by_worker_id in {None, worker_id}
-                    or (stream.lease_expires_at is not None and stream.lease_expires_at <= now)
-                )
+                and self._can_claim_live_stream(stream, worker_id=worker_id, now=now)
             ]
             if not candidates:
                 self._sync_live_worker_runtime_status(worker)
@@ -6151,6 +6183,8 @@ class AppStore:
     ) -> dict[str, Any]:
         bootstrap = self.get_user_bootstrap(user_id)
         user = bootstrap.user
+        resolved_notice = notice
+        resolved_notice_level = notice_level
         assigned_workers = self._workspace_live_workers_for_user(user)
         primary_workers = self._assigned_live_workers_for_user(user, role="primary")
         backup_workers = self._assigned_live_workers_for_user(user, role="backup")
@@ -6170,7 +6204,13 @@ class AppStore:
         backup_live_count = len([record for record in live_records if record.backup_worker_id])
         editing_stream = None
         if editing_stream_id:
-            editing_stream = self.get_live_stream(editing_stream_id, viewer_role=user.role, viewer_id=user.id)
+            candidate_stream = self.get_live_stream(editing_stream_id, viewer_role=user.role, viewer_id=user.id)
+            if self._is_live_stream_runtime_locked(candidate_stream):
+                if not resolved_notice:
+                    resolved_notice = "Luồng đang được worker xử lý hoặc đang live. Hãy dùng Dừng trước khi chỉnh sửa."
+                    resolved_notice_level = "error"
+            else:
+                editing_stream = candidate_stream
         detail_stream = None
         if detail_stream_id:
             detail_stream = self.get_live_stream(detail_stream_id, viewer_role=user.role, viewer_id=user.id)
@@ -6211,8 +6251,8 @@ class AppStore:
                 "manager": "manager scope",
             }.get(user.role, user.manager_name or user.role),
             "logout_path": "/admin/logout" if is_admin_shell else "/logout",
-            "notice": notice,
-            "notice_level": notice_level,
+            "notice": resolved_notice,
+            "notice_level": resolved_notice_level,
             "kpis": [
                 {"label": "BOT được cấp", "icon": "server", "icon_class": "text-emerald-500", "value": total_workers, "accent": "Live + Backup", "accent_class": "text-emerald-600", "value_class": "text-emerald-600", "bar_class": "bg-emerald-400"},
                 {"label": "BOT live sẵn sàng", "icon": "server-cog", "icon_class": "text-brand-500", "value": live_ready, "accent": f"{live_ready}/{total_workers} BOT", "accent_class": "text-brand-600", "value_class": "text-brand-600", "bar_class": "bg-brand-500"},
@@ -6421,6 +6461,88 @@ class AppStore:
             raise ValueError("Delay backup không được âm.")
         return delay_minutes
 
+    @staticmethod
+    def _fixed_live_worker_thread_limit() -> int:
+        return 1
+
+    @staticmethod
+    def _resolve_live_schedule_window(
+        *,
+        start_time_live: datetime | None,
+        end_time_live: datetime | None,
+        is_forever: bool,
+    ) -> tuple[datetime, datetime]:
+        start_at = start_time_live or datetime.min
+        end_at = datetime.max if is_forever or end_time_live is None else end_time_live
+        return start_at, end_at
+
+    @classmethod
+    def _live_schedule_windows_overlap(
+        cls,
+        *,
+        start_time_live: datetime | None,
+        end_time_live: datetime | None,
+        is_forever: bool,
+        other_start_time_live: datetime | None,
+        other_end_time_live: datetime | None,
+        other_is_forever: bool,
+    ) -> bool:
+        start_a, end_a = cls._resolve_live_schedule_window(
+            start_time_live=start_time_live,
+            end_time_live=end_time_live,
+            is_forever=is_forever,
+        )
+        start_b, end_b = cls._resolve_live_schedule_window(
+            start_time_live=other_start_time_live,
+            end_time_live=other_end_time_live,
+            is_forever=other_is_forever,
+        )
+        return start_a < end_b and start_b < end_a
+
+    def _assert_live_worker_schedule_available(
+        self,
+        *,
+        worker_id: str | None,
+        field_label: str,
+        start_time_live: datetime | None,
+        end_time_live: datetime | None,
+        is_forever: bool,
+        excluding_stream_id: str | None = None,
+    ) -> None:
+        normalized_worker_id = str(worker_id or "").strip()
+        if not normalized_worker_id:
+            return
+        for stream in self.live_streams:
+            if not self._is_visible_live_stream(stream):
+                continue
+            if excluding_stream_id and stream.id == excluding_stream_id:
+                continue
+            normalized_status = str(stream.status or "").strip().lower()
+            if normalized_status in {"stopped", "ended", "error"}:
+                continue
+            worker_roles: list[str] = []
+            if stream.primary_worker_id == normalized_worker_id:
+                worker_roles.append("BOT chính")
+            if str(stream.backup_worker_id or "").strip() == normalized_worker_id:
+                worker_roles.append("BOT backup")
+            if not worker_roles:
+                continue
+            if not self._live_schedule_windows_overlap(
+                start_time_live=start_time_live,
+                end_time_live=end_time_live,
+                is_forever=is_forever,
+                other_start_time_live=stream.start_time_live,
+                other_end_time_live=stream.end_time_live,
+                other_is_forever=stream.is_forever,
+            ):
+                continue
+            worker_name = self._resolve_live_worker_display_name(normalized_worker_id)
+            conflict_roles = ", ".join(worker_roles)
+            raise ValueError(
+                f"{field_label} {worker_name} đang được dùng làm {conflict_roles} cho luồng "
+                f"'{stream.stream_name}' trong khoảng thời gian trùng nhau."
+            )
+
     def _resolve_live_owner_manager_scope(
         self,
         owner: UserSummary,
@@ -6574,6 +6696,20 @@ class AppStore:
             is_live_now=is_live_now,
             is_forever=is_forever,
         )
+        self._assert_live_worker_schedule_available(
+            worker_id=primary_worker.id,
+            field_label="BOT chính",
+            start_time_live=start_time_live,
+            end_time_live=end_time_live,
+            is_forever=is_forever,
+        )
+        self._assert_live_worker_schedule_available(
+            worker_id=backup_worker.id if backup_worker else None,
+            field_label="BOT backup",
+            start_time_live=start_time_live,
+            end_time_live=end_time_live,
+            is_forever=is_forever,
+        )
         manager_id, manager_name = self._resolve_live_owner_manager_scope(owner, primary_worker=primary_worker)
         live_status, live_log_label = self._derive_live_status_defaults(
             start_time_live=start_time_live,
@@ -6661,6 +6797,7 @@ class AppStore:
         stream = self._find_visible_live_stream(stream_id)
         owner = self._require_workspace_user(stream.owner_user_id)
         self._assert_live_stream_owner_scope(owner, viewer_role=viewer_role, viewer_id=viewer_id)
+        self._assert_live_stream_editable(stream)
         normalized_name = self._normalize_live_text(stream_name, field_label="Tên luồng live")
         normalized_stream_key = self._normalize_live_text(stream_key, field_label="Stream key")
         normalized_video_url = self._normalize_live_source_url(
@@ -6686,6 +6823,22 @@ class AppStore:
             end_time_live=end_time_live,
             is_live_now=is_live_now,
             is_forever=is_forever,
+        )
+        self._assert_live_worker_schedule_available(
+            worker_id=primary_worker.id,
+            field_label="BOT chính",
+            start_time_live=start_time_live,
+            end_time_live=end_time_live,
+            is_forever=is_forever,
+            excluding_stream_id=stream.id,
+        )
+        self._assert_live_worker_schedule_available(
+            worker_id=backup_worker.id if backup_worker else None,
+            field_label="BOT backup",
+            start_time_live=start_time_live,
+            end_time_live=end_time_live,
+            is_forever=is_forever,
+            excluding_stream_id=stream.id,
         )
         manager_id, manager_name = self._resolve_live_owner_manager_scope(owner, primary_worker=primary_worker)
         live_status, live_log_label = self._derive_live_status_defaults(
@@ -6948,7 +7101,7 @@ class AppStore:
 
     def _live_worker_thread_summary(self, worker: WorkerRecord) -> dict[str, int | str]:
         running_threads = self._count_live_worker_running_streams(worker)
-        max_threads = max(1, int(worker.threads or worker.capacity or 1))
+        max_threads = self._fixed_live_worker_thread_limit()
         return {
             "running_threads": running_threads,
             "max_threads": max_threads,
@@ -7004,6 +7157,7 @@ class AppStore:
         backup_name = stream.backup_worker_name
         effective_log_label = effective_runtime.log_label or stream.log_label
         can_delete = effective_runtime.status != "streaming"
+        can_edit = not self._is_live_stream_runtime_locked(stream)
         return {
             "id": stream.id,
             "manager_id": stream.manager_id,
@@ -7034,6 +7188,7 @@ class AppStore:
             "status_label": status_label,
             "status_class": status_class,
             "can_stop": effective_runtime.status in self._live_worker_scheduled_statuses(),
+            "can_edit": can_edit,
             "can_delete": can_delete,
             "detail_href": "",
         }
@@ -8713,9 +8868,17 @@ class AppStore:
             viewer_id=viewer_id,
             manager_ids=manager_ids,
         )
+        resolved_notice = notice
+        resolved_notice_level = notice_level
         editing_stream = None
         if editing_stream_id:
-            editing_stream = self.get_live_stream(editing_stream_id, viewer_role=viewer_role, viewer_id=viewer_id)
+            candidate_stream = self.get_live_stream(editing_stream_id, viewer_role=viewer_role, viewer_id=viewer_id)
+            if self._is_live_stream_runtime_locked(candidate_stream):
+                if not resolved_notice:
+                    resolved_notice = "Luồng đang được worker xử lý hoặc đang live. Hãy dùng Dừng trước khi chỉnh sửa."
+                    resolved_notice_level = "error"
+            else:
+                editing_stream = candidate_stream
         detail_stream = None
         if detail_stream_id:
             detail_stream = self.get_live_stream(detail_stream_id, viewer_role=viewer_role, viewer_id=viewer_id)
@@ -8810,8 +8973,8 @@ class AppStore:
             "user_name": "Admin" if viewer_role == "admin" else "Manager",
             "user_role": "Control plane",
             "logout_path": "/admin/logout",
-            "notice": notice,
-            "notice_level": notice_level,
+            "notice": resolved_notice,
+            "notice_level": resolved_notice_level,
             "kpis": kpis,
             "live_config": {
                 "title": "Live Config",
