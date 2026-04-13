@@ -965,6 +965,7 @@ async def admin_user_update(request: Request):
     )
     password = str(form.get("Password") or form.get("password") or "").strip() or None
     telegram = str(form.get("TelegramId") or form.get("telegram") or "").strip()
+    telegram_live = str(form.get("TelegramLiveId") or form.get("telegram_live") or "").strip()
     manager_id = _force_manager_binding(
         current_admin,
         str(form.get("UserIdManager") or form.get("manager_id") or "").strip() or None,
@@ -977,6 +978,7 @@ async def admin_user_update(request: Request):
             password=password,
             manager_id=manager_id,
             telegram=telegram,
+            telegram_live=telegram_live,
             actor_role=current_admin.role,
             updated_by=current_admin.username,
         )
@@ -985,6 +987,18 @@ async def admin_user_update(request: Request):
         return _redirect_with_notice("/admin/user/index", "Đã cập nhật user.", "success", workspace=workspace_mode)
     except (KeyError, ValueError) as exc:
         return _redirect_with_notice("/admin/user/index", str(exc), "error", workspace=workspace_mode)
+
+
+@router.get("/admin/user/meta")
+async def admin_user_meta(request: Request, userId: str):
+    current_admin = require_admin_access(request)
+    try:
+        _enforce_user_scope(current_admin, userId)
+        return JSONResponse({"ok": True, **store.get_admin_user_binding_payload(userId)})
+    except (HTTPException, KeyError, ValueError) as exc:
+        error_message = exc.detail if isinstance(exc, HTTPException) else str(exc)
+        status_code = exc.status_code if isinstance(exc, HTTPException) else 400
+        return JSONResponse({"ok": False, "error": error_message}, status_code=status_code)
 
 
 @router.post("/admin/user/telegram-link/request")

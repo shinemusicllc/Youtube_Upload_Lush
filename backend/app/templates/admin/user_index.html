@@ -322,6 +322,7 @@
                 <div>
                     <label class="field-label" for="edit-telegram">Telegram ID</label>
                     <input class="toolbar-input" id="edit-telegram" name="TelegramId" inputmode="numeric" placeholder="Nh&#7853;p chat_id Telegram d&#7841;ng s&#7889;">
+                    <p id="edit-telegram-note" class="mt-2 text-[11px] text-slate-500">V&#7899;i admin/manager, &ocirc; n&agrave;y l&agrave; Telegram h&#7841; t&#7847;ng d&ugrave;ng cho th&ocirc;ng b&aacute;o qu&#7843;n l&yacute; VPS.</p>
                 </div>
                 <div id="edit-manager-wrap">
                     <label class="field-label" for="edit-manager-id">Manager</label>
@@ -345,8 +346,10 @@
                 </div>
             </div>
             <div class="flex items-center justify-between gap-3 border-t border-slate-200 px-5 py-4">
+                <p id="edit-telegram-hint" class="hidden text-[11px] text-slate-500">Telegram live c&#7911;a user s&#7869; t&#7921; l&#432;u khi h&#7885; b&#7845;m Start trong bot live &#7903; workspace live.</p>
                 <button
                     type="button"
+                    id="edit-telegram-link-button"
                     class="action-btn action-btn-primary"
                     data-telegram-link-trigger
                     data-target-input="edit-telegram"
@@ -395,18 +398,66 @@
     const editUsernameNote = document.getElementById('edit-username-note');
     const editPasswordInput = document.getElementById('edit-password');
     const editTelegramInput = document.getElementById('edit-telegram');
+    const editTelegramNote = document.getElementById('edit-telegram-note');
+    const editTelegramHint = document.getElementById('edit-telegram-hint');
+    const editTelegramLinkButton = document.getElementById('edit-telegram-link-button');
     const managerSelect = document.getElementById('edit-manager-id');
     const managerDisplay = document.getElementById('edit-manager-display');
     const managerLocked = {{ 'true' if dashboard.current_user.role == 'manager' else 'false' }};
 
+    function applyTelegramFieldMode(role) {
+      const isUserRole = String(role || 'user') === 'user';
+      if (editTelegramNote) {
+        editTelegramNote.textContent = isUserRole
+          ? 'Với user, ô này là Telegram live dùng để nhận thông báo livestream.'
+          : 'Với admin/manager, ô này là Telegram hạ tầng dùng cho thông báo quản lý VPS.';
+      }
+      if (editTelegramLinkButton instanceof HTMLElement) {
+        editTelegramLinkButton.classList.toggle('hidden', isUserRole);
+      }
+      if (editTelegramHint instanceof HTMLElement) {
+        editTelegramHint.classList.toggle('hidden', !isUserRole);
+      }
+    }
+
+    async function refreshEditUserBinding(userId) {
+      const normalizedUserId = String(userId || '').trim();
+      if (!normalizedUserId) return;
+      const response = await fetch('/admin/user/meta?userId=' + encodeURIComponent(normalizedUserId), {
+        headers: {
+          Accept: 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+      });
+      let payload = null;
+      try {
+        payload = await response.json();
+      } catch (error) {
+        payload = null;
+      }
+      if (!response.ok || !payload || payload.ok === false) {
+        const message = payload && payload.error ? payload.error : 'Không thể đọc dữ liệu Telegram mới nhất của user.';
+        throw new Error(message);
+      }
+      if (editTelegramInput) {
+        editTelegramInput.value = payload.telegram || '';
+      }
+      applyTelegramFieldMode(payload.role || 'user');
+      if (managerSelect && managerSelect.tagName === 'SELECT' && !managerLocked) {
+        managerSelect.value = payload.manager_id || managerSelect.value || '';
+        managerSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }
+
     document.querySelectorAll('[data-dialog-open="edit-user-dialog"]').forEach(function (button) {
-      button.addEventListener('click', function () {
+      button.addEventListener('click', async function () {
         document.getElementById('edit-user-id').value = button.dataset.userId || '';
         editUsernameInput.value = button.dataset.username || '';
         editPasswordInput.value = '';
         if (editTelegramInput) {
           editTelegramInput.value = button.dataset.telegram || '';
         }
+        applyTelegramFieldMode(button.dataset.role || 'user');
         if (managerSelect && managerSelect.tagName === 'SELECT' && !managerLocked) {
           managerSelect.value = button.dataset.managerId || managerSelect.value || '';
           managerSelect.dispatchEvent(new Event('change', { bubbles: true }));
@@ -425,6 +476,11 @@
         editManagerWrap.style.display = role === 'user' ? 'block' : 'none';
         if (managerSelect && managerSelect.tagName === 'SELECT') {
           managerSelect.disabled = managerLocked;
+        }
+        try {
+          await refreshEditUserBinding(button.dataset.userId || '');
+        } catch (error) {
+          console.warn(error);
         }
       });
     });

@@ -7982,6 +7982,7 @@ class AppStore:
             meta = self._user_meta_record(user.id)
             row_manager_name = user.manager_name or (user.username if user.role == "manager" else "-")
             row_manager_id = manager.id if manager else (user.id if user.role == "manager" else "")
+            row_telegram = (meta.get("telegram_live") or "") if user.role == "user" else (meta.get("telegram") or "")
             row = {
                 "index": len(rows) + 1,
                 "id": user.id,
@@ -7994,7 +7995,8 @@ class AppStore:
                 "role_class": role_class,
                 "manager_name": row_manager_name,
                 "manager_id": row_manager_id,
-                "telegram": meta.get("telegram") or "",
+                "telegram": row_telegram,
+                "telegram_live": meta.get("telegram_live") or "",
                 "updated_meta": f"{meta.get('updated_by') or '-'} • {self._format_compact_datetime(meta.get('updated_at'))}",
                 "total_channels": self._user_channel_count(user),
                 "total_workers": self._user_worker_count(user),
@@ -8699,12 +8701,26 @@ class AppStore:
                     "display_name": user.username,
                     "role": user.role,
                     "manager_id": manager.id if manager else "",
-                    "telegram": meta.get("telegram") or "",
+                    "telegram": (meta.get("telegram_live") or "") if user.role == "user" else (meta.get("telegram") or ""),
+                    "telegram_live": meta.get("telegram_live") or "",
                     "password": "",
                 },
             }
         )
         return context
+
+    def get_admin_user_binding_payload(self, user_id: str) -> dict[str, str]:
+        user = self._find_user(user_id)
+        meta = self._user_meta_record(user.id)
+        manager = next((item for item in self.users if item.username == user.manager_name), None)
+        return {
+            "id": user.id,
+            "username": user.username,
+            "role": user.role,
+            "manager_id": manager.id if manager else "",
+            "telegram": (meta.get("telegram_live") or "") if user.role == "user" else (meta.get("telegram") or ""),
+            "telegram_live": meta.get("telegram_live") or "",
+        }
 
     def get_admin_manager_page_context(
         self,
@@ -9581,12 +9597,15 @@ class AppStore:
         password: str | None,
         manager_id: str | None,
         telegram: str | None = None,
+        telegram_live: str | None = None,
         actor_role: str = "admin",
         updated_by: str = "admin",
     ) -> UserSummary:
         user = self._find_user(user_id)
         previous_telegram = self._user_telegram_chat_id(user_id)
         next_telegram = previous_telegram
+        previous_telegram_live = self._user_telegram_live_chat_id(user_id)
+        next_telegram_live = previous_telegram_live
 
         old_username = user.username
         can_edit_username = actor_role == "admin" or (actor_role == "manager" and user.role == "user")
@@ -9611,8 +9630,16 @@ class AppStore:
 
         meta = self._user_meta_record(user_id)
         if telegram is not None:
-            next_telegram = self._normalize_telegram_chat_id(telegram)
-            meta["telegram"] = next_telegram
+            normalized_telegram = self._normalize_telegram_chat_id(telegram)
+            if user.role == "user":
+                next_telegram_live = normalized_telegram
+                meta["telegram_live"] = next_telegram_live
+            else:
+                next_telegram = normalized_telegram
+                meta["telegram"] = next_telegram
+        if telegram_live is not None:
+            next_telegram_live = self._normalize_telegram_chat_id(telegram_live)
+            meta["telegram_live"] = next_telegram_live
         if password and password.strip():
             self._set_user_password(user_id, password.strip(), updated_at=self._now())
         meta["updated_by"] = updated_by
@@ -9627,6 +9654,16 @@ class AppStore:
             self._send_telegram_alert(
                 self._telegram_unlinked_confirmation_message(user),
                 chat_id=previous_telegram,
+            )
+        if next_telegram_live and next_telegram_live != previous_telegram_live:
+            self._send_telegram_live_alert(
+                self._telegram_live_linked_confirmation_message(user),
+                chat_id=next_telegram_live,
+            )
+        elif previous_telegram_live and not next_telegram_live:
+            self._send_telegram_live_alert(
+                self._telegram_live_unlinked_confirmation_message(user),
+                chat_id=previous_telegram_live,
             )
         return user
 
