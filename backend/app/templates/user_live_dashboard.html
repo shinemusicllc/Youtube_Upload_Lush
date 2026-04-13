@@ -1016,19 +1016,6 @@
             </ol>
           </div>
 
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <p class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Bot Telegram live</p>
-                <p id="liveTelegramBotLabel" class="mt-2 text-[13px] font-semibold text-slate-900">-</p>
-                <p id="liveTelegramBotMeta" class="mt-1 text-[11px] text-slate-500">H&#7879; th&#7889;ng s&#7869; l&#432;u Telegram live ri&ecirc;ng cho workspace n&agrave;y, kh&ocirc;ng &#7843;nh h&#432;&#7903;ng Telegram h&#7841; t&#7847;ng.</p>
-              </div>
-              <span id="liveTelegramBindingBadge" class="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-600">
-                Ch&#432;a k&#7871;t n&#7889;i
-              </span>
-            </div>
-          </div>
-
           <div id="liveTelegramStatusBox" class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] font-medium text-amber-800">
             B&#7845;m M&#7903; bot Telegram r&#7891;i nh&#7845;n Start b&#7857;ng &#273;&uacute;ng t&agrave;i kho&#7843;n mu&#7889;n nh&#7853;n th&ocirc;ng b&aacute;o live.
           </div>
@@ -1041,7 +1028,7 @@
             <button
               type="button"
               id="liveTelegramDisconnectButton"
-              class="hidden inline-flex min-w-[132px] items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              class="hidden inline-flex min-w-[132px] items-center justify-center rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-[13px] font-semibold text-rose-700 hover:border-rose-300 hover:bg-rose-100 hover:text-rose-800"
             >
               Ng&#7855;t k&#7871;t n&#7889;i
             </button>
@@ -1251,9 +1238,6 @@
     const liveStopCloseButtons = Array.from(document.querySelectorAll('[data-live-stop-close]'));
     const liveTelegramConnectButton = document.getElementById('liveTelegramConnectButton');
     const liveTelegramModal = document.getElementById('liveTelegramModal');
-    const liveTelegramBotLabel = document.getElementById('liveTelegramBotLabel');
-    const liveTelegramBotMeta = document.getElementById('liveTelegramBotMeta');
-    const liveTelegramBindingBadge = document.getElementById('liveTelegramBindingBadge');
     const liveTelegramStatusBox = document.getElementById('liveTelegramStatusBox');
     const liveTelegramOpenBotButton = document.getElementById('liveTelegramOpenBotButton');
     const liveTelegramDisconnectButton = document.getElementById('liveTelegramDisconnectButton');
@@ -1431,53 +1415,10 @@
       return Date.now() < Number(liveTelegramLinkRequest.expires_at || 0);
     };
 
-    const formatLiveTelegramChatId = (value) => {
-      const cleaned = String(value || '').trim();
-      if (!cleaned) return '';
-      return cleaned.length > 8 ? `${cleaned.slice(0, 4)}…${cleaned.slice(-4)}` : cleaned;
-    };
-
     const renderLiveTelegramBindingState = () => {
       const snapshot = liveTelegramBindingState || {};
       const linked = Boolean(snapshot.linked);
-      const chatId = String(snapshot.chat_id || '').trim();
-      const botUsername = String(liveTelegramBindingMeta.bot_username || '').trim();
-      const botDisplayName = String(liveTelegramBindingMeta.bot_display_name || '').trim();
       const botError = String(liveTelegramBindingMeta.bot_error || '').trim();
-
-      if (liveTelegramBindingBadge instanceof HTMLElement) {
-        if (linked) {
-          liveTelegramBindingBadge.textContent = 'Đã kết nối';
-          liveTelegramBindingBadge.className = 'inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-700';
-        } else {
-          liveTelegramBindingBadge.textContent = botError ? 'Chưa sẵn sàng' : 'Chưa kết nối';
-          liveTelegramBindingBadge.className = botError
-            ? 'inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-[11px] font-semibold text-rose-700'
-            : 'inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-600';
-        }
-      }
-
-      if (liveTelegramBotLabel instanceof HTMLElement) {
-        if (botUsername) {
-          liveTelegramBotLabel.textContent = `@${botUsername}`;
-        } else if (botDisplayName) {
-          liveTelegramBotLabel.textContent = botDisplayName;
-        } else if (botError) {
-          liveTelegramBotLabel.textContent = 'Chưa cấu hình bot live';
-        } else {
-          liveTelegramBotLabel.textContent = 'Đang kiểm tra bot live...';
-        }
-      }
-
-      if (liveTelegramBotMeta instanceof HTMLElement) {
-        if (botError) {
-          liveTelegramBotMeta.textContent = botError;
-        } else if (linked && chatId) {
-          liveTelegramBotMeta.textContent = `Đã lưu Telegram live ${formatLiveTelegramChatId(chatId)} cho tài khoản hiện tại. Kết nối này không ảnh hưởng Telegram hạ tầng.`;
-        } else {
-          liveTelegramBotMeta.textContent = 'Hệ thống sẽ lưu Telegram live riêng cho workspace này, không ảnh hưởng Telegram hạ tầng.';
-        }
-      }
 
       if (liveTelegramDisconnectButton instanceof HTMLButtonElement) {
         liveTelegramDisconnectButton.classList.toggle('hidden', !linked);
