@@ -110,11 +110,6 @@ set -a
 . /etc/youtube-upload-worker.env
 set +a
 
-if [ "${WORKER_RUNTIME_MODE:-upload}" = "live" ]; then
-  systemctl stop xrdp xrdp-sesman 2>/dev/null || true
-  systemctl disable xrdp xrdp-sesman 2>/dev/null || true
-fi
-
 if [ "${BROWSER_SESSION_ENABLED:-0}" = "1" ]; then
   apt_get_retry install -y xvfb openbox x11vnc websockify novnc ca-certificates curl gnupg wget || true
 
