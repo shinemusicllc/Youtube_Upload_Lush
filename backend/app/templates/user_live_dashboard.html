@@ -844,7 +844,7 @@
                         {% for manager_id in dashboard.live_form_manager_ids | default([], true) %}
                         <input type="hidden" name="manager_ids" value="{{ manager_id | e }}">
                         {% endfor %}
-                        <button type="submit" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 hover:text-emerald-800 hover:shadow-sm transition-all"><i data-lucide="square" class="w-3 h-3"></i> Dừng</button>
+                        <button type="submit" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 hover:text-rose-800 hover:shadow-sm transition-all"><i data-lucide="square" class="w-3 h-3"></i> Dừng</button>
                       </form>
                       {% else %}
                       <button type="button" disabled class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-slate-400 bg-white border border-slate-200 rounded-lg cursor-not-allowed"><i data-lucide="square" class="w-3 h-3"></i> Dừng</button>
@@ -1628,7 +1628,7 @@
           <form method="post" action="${escapeHtml(liveStopAction)}" class="live-table-action-form" data-live-stop-form data-live-stop-stream-title="${escapeHtml(stream.title || stream.stream_name || '')}">
             <input type="hidden" name="stream_id" value="${escapeHtml(stream.id || '')}">
             ${managerHiddenInputs}
-            <button type="submit" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 hover:text-emerald-800 hover:shadow-sm transition-all"><i data-lucide="square" class="w-3 h-3"></i> Dừng</button>
+            <button type="submit" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 hover:text-rose-800 hover:shadow-sm transition-all"><i data-lucide="square" class="w-3 h-3"></i> Dừng</button>
           </form>
         `
         : `
