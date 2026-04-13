@@ -847,7 +847,7 @@
                       <button type="button" disabled class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-slate-400 bg-white border border-slate-200 rounded-lg cursor-not-allowed"><i data-lucide="square" class="w-3 h-3"></i> Dừng</button>
                       {% endif %}
                       <a href="{{ live_index_href }}?edit={{ stream.id | e }}{% for manager_id in dashboard.live_form_manager_ids | default([], true) %}&manager_ids={{ manager_id | e }}{% endfor %}" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 hover:text-emerald-700 hover:shadow-sm transition-all"><i data-lucide="pencil" class="w-3.5 h-3.5"></i> Sửa</a>
-                      <form method="post" action="{{ live_delete_action }}" class="live-table-action-form" onsubmit="return window.confirm('Bạn có chắc chắn muốn xoá luồng live này không?');">
+                      <form method="post" action="{{ live_delete_action }}" class="live-table-action-form" data-live-delete-form>
                         <input type="hidden" name="stream_id" value="{{ stream.id | e }}">
                         {% for manager_id in dashboard.live_form_manager_ids | default([], true) %}
                         <input type="hidden" name="manager_ids" value="{{ manager_id | e }}">
@@ -1166,6 +1166,7 @@
     };
     const liveIndexHref = {{ live_index_href | tojson }};
     const liveDeleteAction = {{ live_delete_action | tojson }};
+    const liveDeleteApiBase = '/api/user/live';
     const liveBulkDeleteAction = '/api/user/live/actions/bulk-delete';
     const liveStopAction = {{ (dashboard.live_stop_action | default('/app/live/stop')) | tojson }};
     const liveManagerIds = {{ dashboard.live_form_manager_ids | default([], true) | tojson }};
@@ -1192,6 +1193,18 @@
     const buildLiveManagerHiddenInputs = () => Array.isArray(liveManagerIds)
       ? liveManagerIds.map((id) => `<input type="hidden" name="manager_ids" value="${escapeHtml(String(id))}">`).join('')
       : '';
+
+    const buildLiveWorkspaceHref = () => {
+      const params = new URLSearchParams();
+      if (Array.isArray(liveManagerIds)) {
+        liveManagerIds.forEach((id) => {
+          const cleaned = String(id || '').trim();
+          if (cleaned) params.append('manager_ids', cleaned);
+        });
+      }
+      const query = params.toString();
+      return `${liveIndexHref}${query ? `?${query}` : ''}`;
+    };
 
     const liveUrlEmptyCopy = {
       video: 'Chưa nhập link',
@@ -1352,6 +1365,60 @@
       openLiveStopModal(target);
     });
 
+    document.addEventListener('submit', (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLFormElement) || !target.matches('[data-live-delete-form]')) return;
+      event.preventDefault();
+
+      const streamId = String(new FormData(target).get('stream_id') || '').trim();
+      if (!streamId) {
+        showToast('Không thể xác định luồng live cần xóa.', 'error');
+        return;
+      }
+
+      const submitButton = target.querySelector('button[type="submit"]');
+      if (submitButton instanceof HTMLButtonElement) {
+        submitButton.disabled = true;
+      }
+
+      const scrollY = window.scrollY || window.pageYOffset || 0;
+      void (async () => {
+        try {
+          const response = await fetch(`${liveDeleteApiBase}/${encodeURIComponent(streamId)}`, {
+            method: 'DELETE',
+            headers: { Accept: 'application/json' },
+          });
+          const payload = await response.json();
+          if (!response.ok) {
+            throw new Error(payload.detail || 'Không thể xóa luồng live stream.');
+          }
+
+          const currentUrl = new URL(window.location.href);
+          const deletingActiveContext = ['edit', 'detail'].some((key) => String(currentUrl.searchParams.get(key) || '').trim() === streamId);
+
+          if (deletingActiveContext) {
+            window.location.assign(buildLiveWorkspaceHref());
+            return;
+          }
+
+          showToast('Đã xóa luồng live stream.', 'success');
+          removeLiveRowsFromState(streamId);
+          const refreshed = await forceRefreshLiveDashboard();
+          if (!refreshed) {
+            lastLiveDashboardSignature = '';
+            await pollLiveDashboard();
+          }
+          window.scrollTo({ top: scrollY, behavior: 'auto' });
+        } catch (error) {
+          showToast(error.message || 'Không thể xóa luồng live stream.', 'error');
+          updateLiveDeleteVisibleButton();
+          if (submitButton instanceof HTMLButtonElement) {
+            submitButton.disabled = false;
+          }
+        }
+      })();
+    });
+
     const applyLiveSearchFilter = () => {
       if (!liveJobSearchInput || !liveStreamTableBody) return;
       const query = liveJobSearchInput.value.trim().toLowerCase();
@@ -1370,6 +1437,16 @@
         const haystack = buildLiveRowSearch(stream);
         return !query || haystack.includes(query);
       });
+    };
+
+    const removeLiveRowsFromState = (streamIds) => {
+      const ids = Array.isArray(streamIds)
+        ? streamIds.map((id) => String(id || '').trim()).filter(Boolean)
+        : [String(streamIds || '').trim()].filter(Boolean);
+      if (!ids.length) return;
+      const idSet = new Set(ids);
+      liveStreamRowsState = liveStreamRowsState.filter((stream) => !idSet.has(String(stream.id || '').trim()));
+      renderLiveRows(liveStreamRowsState);
     };
 
     const updateLiveDeleteVisibleButton = () => {
@@ -1444,7 +1521,7 @@
         <div class="live-table-action-grid">
           ${stopForm}
           <a href="${escapeHtml(editHref)}" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 hover:text-emerald-700 hover:shadow-sm transition-all"><i data-lucide="pencil" class="w-3.5 h-3.5"></i> Sửa</a>
-          <form method="post" action="${escapeHtml(liveDeleteAction)}" class="live-table-action-form" onsubmit="return window.confirm('Bạn có chắc chắn muốn xoá luồng live này không?');">
+          <form method="post" action="${escapeHtml(liveDeleteAction)}" class="live-table-action-form" data-live-delete-form>
             <input type="hidden" name="stream_id" value="${escapeHtml(stream.id || '')}">
             ${managerHiddenInputs}
             <button type="submit" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 hover:text-rose-800 hover:shadow-sm transition-all"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Xóa</button>
@@ -1542,6 +1619,27 @@
 
     const getLiveRefreshInterval = () => (document.hidden ? 20000 : 10000);
 
+    const forceRefreshLiveDashboard = async () => {
+      if (!liveStreamTableBody) return false;
+      try {
+        const response = await fetch(`/api/user/dashboard/live?ts=${Date.now()}`, {
+          headers: { Accept: 'application/json', 'Cache-Control': 'no-cache, no-store, max-age=0', Pragma: 'no-cache' },
+          cache: 'no-store',
+        });
+        if (!response.ok) {
+          return false;
+        }
+        const payload = await response.json();
+        lastLiveDashboardSignature = '';
+        applyLiveDashboardPayload(payload);
+        return true;
+      } catch (_error) {
+        return false;
+      } finally {
+        scheduleNextLiveRefresh();
+      }
+    };
+
     const scheduleNextLiveRefresh = () => {
       if (liveRefreshHandle) window.clearTimeout(liveRefreshHandle);
       liveRefreshHandle = window.setTimeout(() => {
@@ -1612,8 +1710,12 @@
             throw new Error(payload.detail || 'Không thể xóa danh sách live đang hiển thị.');
           }
           showToast(`Đã xóa ${Number(payload.deleted_count || 0)} luồng live.`, 'success');
-          lastLiveDashboardSignature = '';
-          await pollLiveDashboard();
+          removeLiveRowsFromState(payload.stream_ids || visibleRows.map((stream) => String(stream.id || '')).filter(Boolean));
+          const refreshed = await forceRefreshLiveDashboard();
+          if (!refreshed) {
+            lastLiveDashboardSignature = '';
+            await pollLiveDashboard();
+          }
           window.scrollTo({ top: scrollY, behavior: 'auto' });
         } catch (error) {
           showToast(error.message || 'Không thể xóa danh sách live đang hiển thị.', 'error');

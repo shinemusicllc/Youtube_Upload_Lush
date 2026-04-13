@@ -364,6 +364,23 @@ async def delete_user_live_streams_bulk(request: Request, payload: dict = Body(.
     }
 
 
+@router.delete("/user/live/{stream_id}")
+async def delete_user_live_stream(request: Request, stream_id: str):
+    current_user = require_app_access(request, "user", "manager", "admin")
+    try:
+        store.delete_live_stream(
+            stream_id,
+            viewer_role=current_user.role,
+            viewer_id=current_user.id,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Không tìm thấy luồng live.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+    return {"status": "deleted", "stream_id": stream_id}
+
+
 @router.delete("/user/channels/{channel_id}")
 async def delete_user_channel(request: Request, channel_id: str):
     try:

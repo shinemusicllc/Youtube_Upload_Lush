@@ -2520,8 +2520,10 @@
         const jobId = button.dataset.jobId;
         if (!jobId || !action) return;
 
-        const confirmed = action === "delete" ? window.confirm("Xóa job này?") : window.confirm("Hủy job này?");
-        if (!confirmed) return;
+        if (action !== "delete") {
+          const confirmed = window.confirm("Hủy job này?");
+          if (!confirmed) return;
+        }
 
         button.disabled = true;
         const scrollY = window.scrollY || window.pageYOffset || 0;
