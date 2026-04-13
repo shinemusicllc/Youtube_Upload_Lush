@@ -3937,28 +3937,10 @@ class AppStore:
                     stream.updated_at = now
                 continue
 
-            if not stream.is_forever and stream.end_time_live is not None:
-                clone = self._upsert_live_backup_clone(stream, now=now)
-                if clone is not None and stream.backup_stream_id != clone.id:
-                    stream.backup_stream_id = clone.id
-                    stream.updated_at = now
-                continue
-
-            if stream.disconnected_at is None:
-                if clone is not None:
-                    self._retire_live_backup_clone(clone, now=now, reason="BOT chính đã hồi phục.")
-                if stream.backup_stream_id is not None:
-                    stream.backup_stream_id = None
-                    stream.updated_at = now
-                continue
-
-            delay_seconds = max(0, int(stream.backup_delay_minutes or 0)) * 60
-            disconnected_for_seconds = max(0.0, (now - stream.disconnected_at).total_seconds())
-            if disconnected_for_seconds >= delay_seconds:
-                clone = self._upsert_live_backup_clone(stream, now=now)
-                if clone is not None and stream.backup_stream_id != clone.id:
-                    stream.backup_stream_id = clone.id
-                    stream.updated_at = now
+            clone = self._upsert_live_backup_clone(stream, now=now)
+            if clone is not None and stream.backup_stream_id != clone.id:
+                stream.backup_stream_id = clone.id
+                stream.updated_at = now
 
     def _refresh_live_stream_leases(
         self,
@@ -4303,12 +4285,6 @@ class AppStore:
 
             if self._is_visible_live_stream(stream) and normalized_status == "streaming":
                 stream.disconnected_at = None
-                if stream.is_forever:
-                    clone = self._find_live_backup_clone_optional(stream)
-                    if clone is not None:
-                        self._retire_live_backup_clone(clone, now=now, reason="BOT chính đã hồi phục.")
-                        if stream.backup_stream_id is not None:
-                            stream.backup_stream_id = None
 
             self._refresh_live_stream_leases(worker_id, now, stream_ids=[stream.id])
             self._sync_live_backup_policy(now=now)

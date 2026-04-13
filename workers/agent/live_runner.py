@@ -16,6 +16,30 @@ from .downloader import download_remote_asset
 from .ffmpeg_pipeline import probe_media
 
 
+def _env_int(name: str, default: int, *, minimum: int = 0) -> int:
+    raw_value = str(os.getenv(name, str(default))).strip()
+    try:
+        parsed = int(raw_value)
+    except ValueError:
+        return default
+    return max(minimum, parsed)
+
+
+LIVE_TARGET_VIDEO_BITRATE_KBPS = _env_int("WORKER_LIVE_TARGET_VIDEO_BITRATE_KBPS", 6800, minimum=256)
+LIVE_TARGET_AUDIO_BITRATE_KBPS = _env_int("WORKER_LIVE_TARGET_AUDIO_BITRATE_KBPS", 160, minimum=64)
+LIVE_TARGET_MAXRATE_KBPS = _env_int(
+    "WORKER_LIVE_MAXRATE_KBPS",
+    LIVE_TARGET_VIDEO_BITRATE_KBPS,
+    minimum=LIVE_TARGET_VIDEO_BITRATE_KBPS,
+)
+LIVE_TARGET_BUFSIZE_KBPS = _env_int(
+    "WORKER_LIVE_BUFSIZE_KBPS",
+    LIVE_TARGET_MAXRATE_KBPS * 2,
+    minimum=LIVE_TARGET_MAXRATE_KBPS,
+)
+LIVE_TARGET_X264_PRESET = str(os.getenv("WORKER_LIVE_X264_PRESET", "veryfast")).strip() or "veryfast"
+
+
 def _app_timezone() -> ZoneInfo:
     return ZoneInfo(os.getenv("APP_TIMEZONE", "Asia/Saigon"))
 
@@ -50,6 +74,35 @@ def _touch_activity(path: Path | None) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.touch()
     except OSError:
+        return
+
+
+def _is_terminal_live_stream_conflict(exc: Exception) -> bool:
+    if not isinstance(exc, httpx.HTTPStatusError):
+        return False
+    response = exc.response
+    request = exc.request
+    if response is None or request is None:
+        return False
+    request_url = str(request.url)
+    if "/api/live-workers/streams/" not in request_url:
+        return False
+    return response.status_code in {404, 409}
+
+
+def _stop_process(process: subprocess.Popen[str], *, timeout_seconds: float = 5.0) -> None:
+    if process.poll() is not None:
+        return
+    process.terminate()
+    deadline = time.monotonic() + max(0.5, timeout_seconds)
+    while process.poll() is None and time.monotonic() < deadline:
+        time.sleep(0.1)
+    if process.poll() is not None:
+        return
+    process.kill()
+    try:
+        process.wait(timeout=max(0.5, timeout_seconds))
+    except subprocess.TimeoutExpired:
         return
 
 
@@ -179,12 +232,14 @@ def _run_ffmpeg_with_progress(
     )
     output_lines: list[str] = []
     terminated_for_end_time = False
+    callback_error: Exception | None = None
+    return_code: int | None = None
     try:
         assert process.stdout is not None
         while True:
             if end_time_live and _now_local() >= end_time_live and process.poll() is None:
                 terminated_for_end_time = True
-                process.terminate()
+                _stop_process(process)
             raw_line = process.stdout.readline()
             if not raw_line:
                 if process.poll() is not None:
@@ -201,9 +256,25 @@ def _run_ffmpeg_with_progress(
                     current_seconds = int(line.split("=", 1)[1]) / 1_000_000
                 except ValueError:
                     continue
-                progress_callback(max(0.0, min(1.0, current_seconds / total_duration_seconds)), current_seconds)
+                try:
+                    progress_callback(max(0.0, min(1.0, current_seconds / total_duration_seconds)), current_seconds)
+                except Exception as exc:
+                    if _is_terminal_live_stream_conflict(exc):
+                        callback_error = exc
+                        _stop_process(process)
+                        break
+                    print(f"[live] progress callback failed: {exc}", flush=True)
     finally:
-        return_code = process.wait()
+        if process.poll() is None:
+            try:
+                return_code = process.wait(timeout=5.0)
+            except subprocess.TimeoutExpired:
+                _stop_process(process)
+                return_code = process.wait(timeout=5.0)
+        else:
+            return_code = process.wait()
+    if callback_error is not None:
+        raise callback_error
     if terminated_for_end_time:
         return
     if return_code != 0:
@@ -247,8 +318,30 @@ def _prepare_rendered_media(
             "0:v:0",
             "-map",
             "1:a:0",
-            "-c",
-            "copy",
+            "-vf",
+            "scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p",
+            "-c:v",
+            "libx264",
+            "-preset",
+            LIVE_TARGET_X264_PRESET,
+            "-b:v",
+            f"{LIVE_TARGET_VIDEO_BITRATE_KBPS}k",
+            "-maxrate",
+            f"{LIVE_TARGET_MAXRATE_KBPS}k",
+            "-bufsize",
+            f"{LIVE_TARGET_BUFSIZE_KBPS}k",
+            "-g",
+            "60",
+            "-keyint_min",
+            "60",
+            "-sc_threshold",
+            "0",
+            "-c:a",
+            "aac",
+            "-b:a",
+            f"{LIVE_TARGET_AUDIO_BITRATE_KBPS}k",
+            "-ar",
+            "48000",
             "-shortest",
             "-f",
             "flv",
@@ -259,8 +352,30 @@ def _prepare_rendered_media(
             "-y",
             "-i",
             str(video_path),
-            "-c",
-            "copy",
+            "-vf",
+            "scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p",
+            "-c:v",
+            "libx264",
+            "-preset",
+            LIVE_TARGET_X264_PRESET,
+            "-b:v",
+            f"{LIVE_TARGET_VIDEO_BITRATE_KBPS}k",
+            "-maxrate",
+            f"{LIVE_TARGET_MAXRATE_KBPS}k",
+            "-bufsize",
+            f"{LIVE_TARGET_BUFSIZE_KBPS}k",
+            "-g",
+            "60",
+            "-keyint_min",
+            "60",
+            "-sc_threshold",
+            "0",
+            "-c:a",
+            "aac",
+            "-b:a",
+            f"{LIVE_TARGET_AUDIO_BITRATE_KBPS}k",
+            "-ar",
+            "48000",
             "-shortest",
             "-f",
             "flv",
