@@ -79,6 +79,63 @@ async def get_user_dashboard_live(request: Request):
     return store.get_user_dashboard_live_payload(_current_app_user_id(request))
 
 
+@router.get("/user/live/telegram")
+async def get_user_live_telegram_binding(request: Request):
+    try:
+        return store.get_live_telegram_binding(_current_app_user_id(request))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.patch("/user/live/telegram")
+async def update_user_live_telegram_binding(request: Request, payload: dict = Body(...)):
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=422, detail="Payload Telegram live không hợp lệ.")
+    chat_id = payload.get("chat_id")
+    if chat_id is None:
+        chat_id = payload.get("telegram_live")
+    if chat_id is None:
+        raise HTTPException(status_code=422, detail="Thiếu chat_id Telegram live.")
+    try:
+        return store.set_live_telegram_chat_id(
+            _current_app_user_id(request),
+            str(chat_id or "").strip(),
+            updated_by="user_live_workspace",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.delete("/user/live/telegram")
+async def delete_user_live_telegram_binding(request: Request):
+    try:
+        return store.set_live_telegram_chat_id(
+            _current_app_user_id(request),
+            None,
+            updated_by="user_live_workspace",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/user/live/telegram-link/request")
+async def create_user_live_telegram_link_request(request: Request):
+    try:
+        return store.create_live_telegram_link_request(_current_app_user_id(request))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/user/live/telegram-link/status")
+async def get_user_live_telegram_link_status(request: Request, code: str):
+    try:
+        return store.get_live_telegram_link_request_status(_current_app_user_id(request), code)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Mã liên kết Telegram live không tồn tại hoặc đã hết hạn.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @router.get("/user/dashboard")
 async def get_user_dashboard(request: Request):
     return store.get_user_dashboard_payload(_current_app_user_id(request))

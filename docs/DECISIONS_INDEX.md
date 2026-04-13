@@ -39,6 +39,7 @@
 | DEC-033 | Live runtime chi khoa sua sau khi da vao `streaming/disconnected`; pre-stream edit phai abort runtime cu de worker claim lai cau hinh moi, va moi live VPS chi duoc chay toi da 1 luong overlap | Active | live runtime + scheduling safety | High |
 | DEC-034 | Live worker phai coi `rendered.flv` la artifact tam ngan han: janitor quet nhanh hon voi `live-streams/*`, con `xrdp` neu co la van de van hanh host, khong phai bootstrap worker mac dinh can thiep | Active | live worker storage hygiene | Medium |
 | DEC-035 | Telegram BOT-operation notifications phai route `admin = tat ca`, `manager = chi khi chinh manager do thao tac`; offline alert van theo `admin all + manager so huu BOT` | Active | ops notifications + role routing | Medium |
+| DEC-036 | Telegram livestream notifications dung bot rieng va luu recipient o account-level `telegram_live`; recipient chi la owner cua luong live, khong bam theo BOT/VPS | Active | live notifications + account settings | Medium |
 
 ## Notes
 - `docs/DECISIONS.md` van giu full history va ly do chi tiet.

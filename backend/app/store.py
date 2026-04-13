@@ -280,13 +280,32 @@ class AppStore:
     def _telegram_alert_chat_id() -> str:
         return str(os.getenv("TELEGRAM_ALERT_CHAT_ID", "")).strip()
 
+    @staticmethod
+    def _telegram_live_bot_token() -> str:
+        return str(os.getenv("TELEGRAM_LIVE_BOT_TOKEN", "")).strip()
+
     @classmethod
     def _bot_operation_telegram_enabled(cls) -> bool:
         return cls._env_flag("TELEGRAM_BOT_OPERATION_NOTIFICATIONS_ENABLED", default=True)
 
+    @classmethod
+    def _telegram_live_notifications_enabled(cls) -> bool:
+        return cls._env_flag("TELEGRAM_LIVE_NOTIFICATIONS_ENABLED", default=True)
+
     @staticmethod
     def _telegram_link_ttl_seconds() -> int:
         raw_value = str(os.getenv("TELEGRAM_LINK_TTL_SECONDS", "600")).strip()
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            value = 600
+        return max(120, value)
+
+    @staticmethod
+    def _telegram_live_link_ttl_seconds() -> int:
+        raw_value = str(
+            os.getenv("TELEGRAM_LIVE_LINK_TTL_SECONDS", os.getenv("TELEGRAM_LINK_TTL_SECONDS", "600"))
+        ).strip()
         try:
             value = int(raw_value)
         except (TypeError, ValueError):
@@ -325,6 +344,7 @@ class AppStore:
         self.worker_operation_tasks: list[dict[str, Any]] = []
         self.deleted_workers: dict[str, dict[str, Any]] = {}
         self.telegram_link_requests: dict[str, dict[str, Any]] = {}
+        self.live_telegram_link_requests: dict[str, dict[str, Any]] = {}
         self.admin_notifications: list[dict[str, Any]] = []
         self._worker_state_lock = RLock()
         self._monitor_stop_event = Event()
@@ -340,6 +360,7 @@ class AppStore:
                 "password_hash": self._hash_password("admin123"),
                 "password_algo": "pbkdf2_sha256",
                 "telegram": "@admin-control",
+                "telegram_live": "",
                 "updated_by": "system",
                 "updated_at": now - timedelta(days=3),
                 "created_at": now - timedelta(days=30),
@@ -348,6 +369,7 @@ class AppStore:
                 "password_hash": self._hash_password("manager123"),
                 "password_algo": "pbkdf2_sha256",
                 "telegram": "@manager-alpha",
+                "telegram_live": "",
                 "updated_by": "admin",
                 "updated_at": now - timedelta(days=2),
                 "created_at": now - timedelta(days=20),
@@ -356,6 +378,7 @@ class AppStore:
                 "password_hash": self._hash_password("demo123"),
                 "password_algo": "pbkdf2_sha256",
                 "telegram": "@demo-user",
+                "telegram_live": "",
                 "updated_by": "manager-alpha",
                 "updated_at": now - timedelta(hours=5),
                 "created_at": now - timedelta(days=10),
@@ -625,6 +648,7 @@ class AppStore:
                     manager_id TEXT,
                     manager_name TEXT,
                     telegram TEXT,
+                    telegram_live TEXT,
                     created_at TEXT,
                     updated_at TEXT,
                     updated_by TEXT
@@ -645,6 +669,10 @@ class AppStore:
             )
             try:
                 connection.execute("ALTER TABLE auth_credentials ADD COLUMN password_plain TEXT")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                connection.execute("ALTER TABLE auth_users ADD COLUMN telegram_live TEXT")
             except sqlite3.OperationalError:
                 pass
             connection.execute(
@@ -736,8 +764,8 @@ class AppStore:
                 connection.execute(
                     """
                     INSERT INTO auth_users (
-                        id, username, display_name, role, manager_id, manager_name, telegram, created_at, updated_at, updated_by
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        id, username, display_name, role, manager_id, manager_name, telegram, telegram_live, created_at, updated_at, updated_by
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         user.id,
@@ -747,6 +775,7 @@ class AppStore:
                         manager_ids_by_username.get(user.manager_name or ""),
                         user.manager_name,
                         meta.get("telegram") or None,
+                        meta.get("telegram_live") or None,
                         self._serialize_value(meta.get("created_at")),
                         self._serialize_value(meta.get("updated_at")),
                         meta.get("updated_by") or None,
@@ -797,6 +826,7 @@ class AppStore:
                     users.manager_id,
                     users.manager_name,
                     users.telegram,
+                    users.telegram_live,
                     users.created_at,
                     users.updated_at,
                     users.updated_by,
@@ -830,6 +860,7 @@ class AppStore:
                     updated_at=self._parse_datetime(row["updated_at"]),
                     updated_by=row["updated_by"],
                     link_telegram=row["telegram"] or None,
+                    link_telegram_live=row["telegram_live"] or None,
                 )
             )
             self.user_meta[row["id"]] = {
@@ -837,6 +868,7 @@ class AppStore:
                 "password_algo": row["password_algo"] or "pbkdf2_sha256",
                 "password": "",
                 "telegram": row["telegram"] or "",
+                "telegram_live": row["telegram_live"] or "",
                 "updated_by": row["updated_by"] or "system",
                 "updated_at": self._parse_datetime(row["updated_at"]),
                 "created_at": self._parse_datetime(row["created_at"]) or self._now(),
@@ -1762,9 +1794,11 @@ class AppStore:
             except Exception as exc:
                 print(f"[worker_monitor] reconcile failed: {exc}", flush=True)
 
-    def _send_telegram_alert(self, message: str, *, chat_id: str | None = None) -> bool:
-        bot_token = self._telegram_alert_bot_token()
-        resolved_chat_id = self._normalize_telegram_chat_id(chat_id or self._telegram_alert_chat_id())
+    def _send_telegram_message(self, message: str, *, bot_token: str, chat_id: str | None) -> bool:
+        try:
+            resolved_chat_id = self._normalize_telegram_chat_id(chat_id)
+        except ValueError:
+            return False
         if not bot_token or not resolved_chat_id:
             return False
 
@@ -1788,10 +1822,30 @@ class AppStore:
             print(f"[telegram_alert] failed: {exc}", flush=True)
             return False
 
-    def _telegram_api_payload(self, method: str, *, params: dict[str, str] | None = None) -> dict[str, Any]:
-        bot_token = self._telegram_alert_bot_token()
+    def _send_telegram_alert(self, message: str, *, chat_id: str | None = None) -> bool:
+        return self._send_telegram_message(
+            message,
+            bot_token=self._telegram_alert_bot_token(),
+            chat_id=chat_id or self._telegram_alert_chat_id(),
+        )
+
+    def _send_telegram_live_alert(self, message: str, *, chat_id: str | None = None) -> bool:
+        return self._send_telegram_message(
+            message,
+            bot_token=self._telegram_live_bot_token(),
+            chat_id=chat_id,
+        )
+
+    def _telegram_api_payload_with_bot(
+        self,
+        method: str,
+        *,
+        bot_token: str,
+        bot_label: str,
+        params: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         if not bot_token:
-            raise ValueError("Bot Telegram thông báo chưa được cấu hình.")
+            raise ValueError(f"{bot_label} chưa được cấu hình.")
 
         normalized_method = str(method or "").strip().strip("/")
         if not normalized_method:
@@ -1813,12 +1867,28 @@ class AppStore:
             raise ValueError("Không thể kết nối Telegram Bot API.") from exc
 
         if not payload.get("ok"):
-            description = str(payload.get("description") or "").strip() or "Telegram Bot API tra ve loi."
+            description = str(payload.get("description") or "").strip() or "Telegram Bot API trả về lỗi."
             raise ValueError(description)
         return payload
 
-    def _telegram_bot_identity(self) -> dict[str, str]:
-        payload = self._telegram_api_payload("getMe")
+    def _telegram_api_payload(self, method: str, *, params: dict[str, str] | None = None) -> dict[str, Any]:
+        return self._telegram_api_payload_with_bot(
+            method,
+            bot_token=self._telegram_alert_bot_token(),
+            bot_label="Bot Telegram thông báo",
+            params=params,
+        )
+
+    def _telegram_live_api_payload(self, method: str, *, params: dict[str, str] | None = None) -> dict[str, Any]:
+        return self._telegram_api_payload_with_bot(
+            method,
+            bot_token=self._telegram_live_bot_token(),
+            bot_label="Bot Telegram livestream",
+            params=params,
+        )
+
+    def _telegram_bot_identity_with_bot(self, *, bot_token: str, bot_label: str) -> dict[str, str]:
+        payload = self._telegram_api_payload_with_bot("getMe", bot_token=bot_token, bot_label=bot_label)
         result = payload.get("result") or {}
         username = str(result.get("username") or "").strip()
         first_name = str(result.get("first_name") or "").strip()
@@ -1829,6 +1899,18 @@ class AppStore:
             "display_name": first_name or username,
             "deep_link_base": f"https://t.me/{username}",
         }
+
+    def _telegram_bot_identity(self) -> dict[str, str]:
+        return self._telegram_bot_identity_with_bot(
+            bot_token=self._telegram_alert_bot_token(),
+            bot_label="Bot Telegram thông báo",
+        )
+
+    def _telegram_live_bot_identity(self) -> dict[str, str]:
+        return self._telegram_bot_identity_with_bot(
+            bot_token=self._telegram_live_bot_token(),
+            bot_label="Bot Telegram livestream",
+        )
 
     @staticmethod
     def _extract_telegram_link_code(text: str) -> str:
@@ -1855,6 +1937,17 @@ class AppStore:
         for code in expired_codes:
             self.telegram_link_requests.pop(code, None)
 
+    def _cleanup_expired_live_telegram_link_requests(self, *, now: datetime | None = None) -> None:
+        current_time = now or self._now(trim=False)
+        ttl = timedelta(seconds=self._telegram_live_link_ttl_seconds())
+        expired_codes = [
+            code
+            for code, request in self.live_telegram_link_requests.items()
+            if current_time - request.get("created_at", current_time) > ttl
+        ]
+        for code in expired_codes:
+            self.live_telegram_link_requests.pop(code, None)
+
     def create_telegram_link_request(self, user_id: str) -> dict[str, Any]:
         self._find_user(user_id)
         now = self._now(trim=False)
@@ -1877,6 +1970,30 @@ class AppStore:
             "bot_display_name": bot_identity["display_name"],
             "deep_link_url": f"{bot_identity['deep_link_base']}?start={quote(code)}",
             "expires_in_seconds": self._telegram_link_ttl_seconds(),
+        }
+
+    def create_live_telegram_link_request(self, user_id: str) -> dict[str, Any]:
+        self._require_workspace_user(user_id)
+        now = self._now(trim=False)
+        self._cleanup_expired_live_telegram_link_requests(now=now)
+        bot_identity = self._telegram_live_bot_identity()
+        code = secrets.token_urlsafe(6).replace("-", "").replace("_", "")
+        expires_at = now + timedelta(seconds=self._telegram_live_link_ttl_seconds())
+        self.live_telegram_link_requests[code] = {
+            "user_id": user_id,
+            "code": code,
+            "created_at": now,
+            "expires_at": expires_at,
+            "chat_id": "",
+            "telegram_username": "",
+            "telegram_name": "",
+        }
+        return {
+            "code": code,
+            "bot_username": bot_identity["username"],
+            "bot_display_name": bot_identity["display_name"],
+            "deep_link_url": f"{bot_identity['deep_link_base']}?start={quote(code)}",
+            "expires_in_seconds": self._telegram_live_link_ttl_seconds(),
         }
 
     def get_telegram_link_request_status(self, user_id: str, code: str) -> dict[str, Any]:
@@ -1936,6 +2053,70 @@ class AppStore:
             "expires_in_seconds": expires_in_seconds,
         }
 
+    def get_live_telegram_link_request_status(self, user_id: str, code: str) -> dict[str, Any]:
+        cleaned_code = str(code or "").strip()
+        if not cleaned_code:
+            raise ValueError("Thiếu mã liên kết Telegram live.")
+
+        now = self._now(trim=False)
+        self._cleanup_expired_live_telegram_link_requests(now=now)
+        request_state = self.live_telegram_link_requests.get(cleaned_code)
+        if request_state is None or str(request_state.get("user_id") or "").strip() != str(user_id or "").strip():
+            raise KeyError("Mã liên kết Telegram live đã hết hạn hoặc không tồn tại.")
+
+        expires_at = request_state.get("expires_at")
+        if isinstance(expires_at, datetime) and expires_at <= now:
+            self.live_telegram_link_requests.pop(cleaned_code, None)
+            raise ValueError("Mã liên kết Telegram live đã hết hạn. Hãy tạo lại mã mới.")
+
+        if not request_state.get("chat_id"):
+            payload = self._telegram_live_api_payload("getUpdates", params={"limit": "100"})
+            updates = payload.get("result") or []
+            for update in reversed(updates):
+                message = update.get("message") or update.get("edited_message") or {}
+                matched_code = self._extract_telegram_link_code(message.get("text") or "")
+                if matched_code != cleaned_code:
+                    continue
+                chat = message.get("chat") or {}
+                chat_id = self._normalize_telegram_chat_id(str(chat.get("id") or "").strip())
+                if not chat_id:
+                    continue
+                sender = message.get("from") or {}
+                display_name = " ".join(
+                    [
+                        str(sender.get("first_name") or "").strip(),
+                        str(sender.get("last_name") or "").strip(),
+                    ]
+                ).strip()
+                request_state["chat_id"] = chat_id
+                request_state["telegram_username"] = str(sender.get("username") or "").strip()
+                request_state["telegram_name"] = display_name
+                break
+
+        chat_id = str(request_state.get("chat_id") or "").strip()
+        if chat_id:
+            current_chat_id = self._user_telegram_live_chat_id(user_id)
+            if current_chat_id != chat_id:
+                self.set_live_telegram_chat_id(
+                    user_id,
+                    chat_id,
+                    updated_by="telegram_live_link",
+                )
+            return {
+                "status": "linked",
+                "chat_id": chat_id,
+                "telegram_username": str(request_state.get("telegram_username") or "").strip(),
+                "telegram_name": str(request_state.get("telegram_name") or "").strip(),
+            }
+
+        expires_in_seconds = 0
+        if isinstance(expires_at, datetime):
+            expires_in_seconds = max(0, int((expires_at - now).total_seconds()))
+        return {
+            "status": "pending",
+            "expires_in_seconds": expires_in_seconds,
+        }
+
     def _telegram_linked_confirmation_message(self, user: UserSummary) -> str:
         return (
             "Tài khoản Telegram này đã được thêm để nhận thông báo từ app Youtube Lush.\n"
@@ -1949,6 +2130,205 @@ class AppStore:
             f"Tài khoản app: {user.username}\n"
             "Từ bây giờ tài khoản này sẽ không nhận thông báo mới từ app nữa."
         )
+
+    def _telegram_live_linked_confirmation_message(self, user: UserSummary) -> str:
+        return (
+            "Tài khoản Telegram này đã được thêm để nhận thông báo livestream từ app Youtube Lush.\n"
+            f"Tài khoản app: {user.username}\n"
+            "Từ bây giờ bạn sẽ nhận thông báo tạo lịch, bắt đầu live, lỗi, dừng/kết thúc, backup và mất kết nối."
+        )
+
+    def _telegram_live_unlinked_confirmation_message(self, user: UserSummary) -> str:
+        return (
+            "Tài khoản Telegram này đã được ngắt khỏi hệ thống thông báo livestream của app Youtube Lush.\n"
+            f"Tài khoản app: {user.username}\n"
+            "Từ bây giờ tài khoản này sẽ không nhận thông báo livestream mới nữa."
+        )
+
+    def _live_telegram_binding_snapshot(self, user_id: str) -> dict[str, Any]:
+        linked_chat_id = self._user_telegram_live_chat_id(user_id)
+        return {
+            "linked": bool(linked_chat_id),
+            "chat_id": linked_chat_id,
+            "notifications_enabled": self._telegram_live_notifications_enabled(),
+            "bot_configured": bool(self._telegram_live_bot_token()),
+        }
+
+    def get_live_telegram_binding(self, user_id: str) -> dict[str, Any]:
+        user = self._require_workspace_user(user_id)
+        payload = self._live_telegram_binding_snapshot(user.id)
+        try:
+            bot_identity = self._telegram_live_bot_identity()
+        except ValueError as exc:
+            payload.update(
+                {
+                    "bot_username": "",
+                    "bot_display_name": "",
+                    "deep_link_base": "",
+                    "bot_error": str(exc),
+                }
+            )
+            return payload
+
+        payload.update(
+            {
+                "bot_username": bot_identity["username"],
+                "bot_display_name": bot_identity["display_name"],
+                "deep_link_base": bot_identity["deep_link_base"],
+                "bot_error": "",
+            }
+        )
+        return payload
+
+    def set_live_telegram_chat_id(
+        self,
+        user_id: str,
+        chat_id: str | None,
+        *,
+        updated_by: str | None = None,
+    ) -> dict[str, Any]:
+        user = self._require_workspace_user(user_id)
+        meta = self._user_meta_record(user.id)
+        previous_chat_id = self._user_telegram_live_chat_id(user.id)
+        next_chat_id = self._normalize_telegram_chat_id(chat_id) if str(chat_id or "").strip() else ""
+        meta["telegram_live"] = next_chat_id
+        meta["updated_by"] = updated_by or user.username
+        meta["updated_at"] = self._now(trim=False)
+        self._save_state()
+
+        if next_chat_id and next_chat_id != previous_chat_id:
+            self._send_telegram_live_alert(
+                self._telegram_live_linked_confirmation_message(user),
+                chat_id=next_chat_id,
+            )
+        elif previous_chat_id and not next_chat_id:
+            self._send_telegram_live_alert(
+                self._telegram_live_unlinked_confirmation_message(user),
+                chat_id=previous_chat_id,
+            )
+        return self.get_live_telegram_binding(user.id)
+
+    @staticmethod
+    def _live_notification_mode_label(stream: LiveStreamRecord) -> str:
+        return "24/7" if stream.is_forever else (stream.live_label or "Theo lịch")
+
+    def _live_notification_start_label(self, stream: LiveStreamRecord) -> str:
+        if stream.start_time_live is None:
+            return "Ngay bây giờ"
+        return self._format_full_datetime(stream.start_time_live)
+
+    def _live_notification_end_label(self, stream: LiveStreamRecord) -> str:
+        if stream.is_forever or stream.end_time_live is None:
+            return "24/7"
+        return self._format_full_datetime(stream.end_time_live)
+
+    def _visible_live_stream_for_notification(self, stream: LiveStreamRecord) -> LiveStreamRecord:
+        if not self._is_runtime_backup_clone(stream):
+            return stream
+        parent_stream_id = str(stream.parent_stream_id or "").strip()
+        if not parent_stream_id:
+            return stream
+        parent_stream = self._find_live_stream_optional(parent_stream_id)
+        if parent_stream is None:
+            return stream
+        return parent_stream
+
+    def _live_notification_base_lines(self, stream: LiveStreamRecord) -> list[str]:
+        visible_stream = self._visible_live_stream_for_notification(stream)
+        lines = [
+            f"Tài khoản: {visible_stream.owner_username}",
+            f"Tên luồng: {visible_stream.stream_name}",
+            f"Kiểu live: {self._live_notification_mode_label(visible_stream)}",
+            f"BOT chính: {visible_stream.primary_worker_name or self._resolve_live_worker_display_name(visible_stream.primary_worker_id)}",
+        ]
+        if visible_stream.backup_worker_id:
+            lines.append(
+                f"BOT backup: {visible_stream.backup_worker_name or self._resolve_live_worker_display_name(visible_stream.backup_worker_id)}"
+            )
+        lines.append(f"Bắt đầu: {self._live_notification_start_label(visible_stream)}")
+        lines.append(f"Kết thúc: {self._live_notification_end_label(visible_stream)}")
+        return lines
+
+    def _live_stream_created_message(self, stream: LiveStreamRecord) -> str:
+        visible_stream = self._visible_live_stream_for_notification(stream)
+        title = "[LIVE] Đã tạo lịch live" if visible_stream.start_time_live else "[LIVE] Đã tạo luồng live"
+        return "\n".join([title, *self._live_notification_base_lines(visible_stream)])
+
+    def _live_stream_started_message(self, stream: LiveStreamRecord, *, now: datetime) -> str:
+        visible_stream = self._visible_live_stream_for_notification(stream)
+        return "\n".join(
+            [
+                "[LIVE] Bắt đầu live",
+                *self._live_notification_base_lines(visible_stream),
+                f"Bắt đầu lúc: {self._format_full_datetime(now)}",
+            ]
+        )
+
+    def _live_stream_error_message(self, stream: LiveStreamRecord, *, error_message: str) -> str:
+        visible_stream = self._visible_live_stream_for_notification(stream)
+        return "\n".join(
+            [
+                "[LIVE] Luồng live gặp lỗi",
+                *self._live_notification_base_lines(visible_stream),
+                f"Lỗi: {error_message or 'Không rõ nguyên nhân.'}",
+            ]
+        )
+
+    def _live_stream_stopped_message(self, stream: LiveStreamRecord, *, now: datetime) -> str:
+        visible_stream = self._visible_live_stream_for_notification(stream)
+        return "\n".join(
+            [
+                "[LIVE] Đã dừng luồng live",
+                *self._live_notification_base_lines(visible_stream),
+                f"Dừng lúc: {self._format_full_datetime(now)}",
+            ]
+        )
+
+    def _live_stream_ended_message(self, stream: LiveStreamRecord, *, now: datetime) -> str:
+        visible_stream = self._visible_live_stream_for_notification(stream)
+        return "\n".join(
+            [
+                "[LIVE] Luồng live đã kết thúc",
+                *self._live_notification_base_lines(visible_stream),
+                f"Kết thúc lúc: {self._format_full_datetime(now)}",
+            ]
+        )
+
+    def _live_backup_activated_message(self, stream: LiveStreamRecord, *, now: datetime) -> str:
+        visible_stream = self._visible_live_stream_for_notification(stream)
+        backup_label = stream.primary_worker_name or self._resolve_live_worker_display_name(stream.primary_worker_id)
+        return "\n".join(
+            [
+                "[LIVE] Backup đã kích hoạt",
+                *self._live_notification_base_lines(visible_stream),
+                f"BOT backup đang chạy: {backup_label}",
+                f"Kích hoạt lúc: {self._format_full_datetime(now)}",
+                "Trạng thái: Luồng backup đang phát song song trên backup ingest.",
+            ]
+        )
+
+    def _live_stream_disconnected_message(
+        self,
+        stream: LiveStreamRecord,
+        *,
+        now: datetime,
+        reason: str | None = None,
+    ) -> str:
+        visible_stream = self._visible_live_stream_for_notification(stream)
+        if visible_stream.backup_worker_id:
+            status_line = "Trạng thái: BOT chính đã mất kết nối, backup đang giữ luồng."
+        else:
+            status_line = "Trạng thái: Chưa có BOT backup, cần kiểm tra lại BOT chính."
+        lines = [
+            "[LIVE] Luồng live bị mất kết nối",
+            *self._live_notification_base_lines(visible_stream),
+            f"Mất kết nối lúc: {self._format_full_datetime(now)}",
+            status_line,
+        ]
+        normalized_reason = str(reason or "").strip()
+        if normalized_reason:
+            lines.append(f"Chi tiết: {normalized_reason}")
+        return "\n".join(lines)
 
     @staticmethod
     def _bot_operation_actor_label(role: str | None, username: str | None) -> str:
@@ -1985,6 +2365,18 @@ class AppStore:
             return self._normalize_telegram_chat_id(meta.get("telegram"))
         except ValueError:
             return ""
+
+    def _user_telegram_live_chat_id(self, user_id: str) -> str:
+        meta = self._user_meta_record(user_id)
+        try:
+            return self._normalize_telegram_chat_id(meta.get("telegram_live"))
+        except ValueError:
+            return ""
+
+    def _live_stream_recipient_chat_ids(self, stream: LiveStreamRecord) -> list[str]:
+        visible_stream = self._visible_live_stream_for_notification(stream)
+        chat_id = self._user_telegram_live_chat_id(visible_stream.owner_user_id)
+        return [chat_id] if chat_id else []
 
     def _telegram_recipient_chat_ids_for_users(self, users: list[UserSummary]) -> list[str]:
         chat_ids: list[str] = []
@@ -2056,6 +2448,18 @@ class AppStore:
         delivered = False
         for chat_id in recipient_chat_ids:
             if self._send_telegram_alert(message, chat_id=chat_id):
+                delivered = True
+        return delivered
+
+    def _notify_live_telegram_chat_ids(self, chat_ids: list[str], message: str) -> bool:
+        if not self._telegram_live_notifications_enabled():
+            return False
+        recipient_chat_ids = [chat_id for chat_id in chat_ids if str(chat_id or "").strip()]
+        if not recipient_chat_ids:
+            return False
+        delivered = False
+        for chat_id in recipient_chat_ids:
+            if self._send_telegram_live_alert(message, chat_id=chat_id):
                 delivered = True
         return delivered
 
@@ -4004,16 +4408,21 @@ class AppStore:
         *,
         now: datetime,
         reason: str,
-    ) -> None:
+    ) -> tuple[list[str], str] | None:
         if self._is_runtime_backup_clone(stream):
             stream.status = "error"
             stream.log_label = "Lỗi"
             stream.error_message = reason
+            notification_payload = None
         else:
             stream.status = "disconnected"
             stream.log_label = "Mất kết nối"
             stream.error_message = None
             stream.disconnected_at = now
+            notification_payload = (
+                self._live_stream_recipient_chat_ids(stream),
+                self._live_stream_disconnected_message(stream, now=now, reason=reason),
+            )
         stream.status_message = None
         stream.is_live_now = False
         stream.claimed_by_worker_id = None
@@ -4021,6 +4430,7 @@ class AppStore:
         stream.claimed_at = None
         stream.lease_expires_at = None
         stream.updated_at = now
+        return notification_payload
 
     def _reconcile_live_streams_from_heartbeat(
         self,
@@ -4039,11 +4449,13 @@ class AppStore:
                 continue
             if stream.lease_expires_at is not None and stream.lease_expires_at > now:
                 continue
-            self._handle_interrupted_live_stream(
+            notification_payload = self._handle_interrupted_live_stream(
                 stream,
                 now=now,
                 reason="Worker không còn báo luồng live này trong heartbeat sau khi đã qua grace window.",
             )
+            if notification_payload is not None:
+                self._notify_live_telegram_chat_ids(notification_payload[0], notification_payload[1])
 
     def register_live_worker(self, payload: LiveWorkerRegisterPayload) -> LiveWorkerControlResponse:
         completed_task: dict[str, Any] | None = None
@@ -4282,6 +4694,8 @@ class AppStore:
         progress: int,
         message: str | None = None,
     ) -> LiveStreamRecord:
+        notification_chat_ids: list[str] = []
+        notification_message = ""
         with self._worker_state_lock:
             worker = self._authenticate_live_worker(worker_id, shared_secret)
             stream = self._find_claimed_live_stream(stream_id, worker_id)
@@ -4313,9 +4727,16 @@ class AppStore:
                 stream.is_live_now = False
             elif normalized_status == "streaming":
                 stream.prepared_at = stream.prepared_at or now
+                first_streaming_transition = stream.streaming_started_at is None
                 stream.streaming_started_at = stream.streaming_started_at or now
                 stream.is_live_now = True
                 stream.disconnected_at = None
+                if first_streaming_transition:
+                    notification_chat_ids = self._live_stream_recipient_chat_ids(stream)
+                    if self._is_runtime_backup_clone(stream):
+                        notification_message = self._live_backup_activated_message(stream, now=now)
+                    elif self._is_visible_live_stream(stream):
+                        notification_message = self._live_stream_started_message(stream, now=now)
             else:
                 stream.is_live_now = normalized_status == "streaming"
 
@@ -4326,7 +4747,10 @@ class AppStore:
             self._sync_live_backup_policy(now=now)
             self._sync_live_worker_runtime_status(worker)
             self._save_state()
-            return deepcopy(stream)
+            snapshot = deepcopy(stream)
+        if notification_message and notification_chat_ids:
+            self._notify_live_telegram_chat_ids(notification_chat_ids, notification_message)
+        return snapshot
 
     def get_live_stream_runtime_state(
         self,
@@ -4357,6 +4781,8 @@ class AppStore:
         shared_secret: str,
         message: str | None = None,
     ) -> LiveStreamRecord:
+        notification_chat_ids: list[str] = []
+        notification_message = ""
         with self._worker_state_lock:
             worker = self._authenticate_live_worker(worker_id, shared_secret)
             stream = self._find_claimed_live_stream(stream_id, worker_id)
@@ -4375,13 +4801,18 @@ class AppStore:
             stream.claimed_by_role = None
             stream.claimed_at = None
             if self._is_visible_live_stream(stream):
+                notification_chat_ids = self._live_stream_recipient_chat_ids(stream)
+                notification_message = self._live_stream_ended_message(stream, now=now)
                 clone = self._find_live_backup_clone_optional(stream)
                 if clone is not None:
                     self._retire_live_backup_clone(clone, now=now, reason="Luồng chính đã kết thúc.")
                     stream.backup_stream_id = None
             self._sync_live_worker_runtime_status(worker)
             self._save_state()
-            return deepcopy(stream)
+            snapshot = deepcopy(stream)
+        if notification_message and notification_chat_ids:
+            self._notify_live_telegram_chat_ids(notification_chat_ids, notification_message)
+        return snapshot
 
     def fail_live_stream_runtime(
         self,
@@ -4391,6 +4822,8 @@ class AppStore:
         shared_secret: str,
         message: str,
     ) -> LiveStreamRecord:
+        notification_chat_ids: list[str] = []
+        notification_message = ""
         with self._worker_state_lock:
             worker = self._authenticate_live_worker(worker_id, shared_secret)
             stream = self._find_claimed_live_stream(stream_id, worker_id)
@@ -4409,9 +4842,14 @@ class AppStore:
                 stream.status = "disconnected"
                 stream.log_label = "Mất kết nối"
                 stream.disconnected_at = now
+                notification_chat_ids = self._live_stream_recipient_chat_ids(stream)
+                notification_message = self._live_stream_disconnected_message(stream, now=now, reason=message)
             else:
                 stream.status = "error"
                 stream.log_label = "Lỗi"
+                if self._is_visible_live_stream(stream):
+                    notification_chat_ids = self._live_stream_recipient_chat_ids(stream)
+                    notification_message = self._live_stream_error_message(stream, error_message=message)
             stream.status_message = None
             stream.error_message = message
             stream.is_live_now = False
@@ -4430,7 +4868,10 @@ class AppStore:
                     self._sync_live_backup_policy(now=now)
             self._sync_live_worker_runtime_status(worker)
             self._save_state()
-            return deepcopy(stream)
+            snapshot = deepcopy(stream)
+        if notification_message and notification_chat_ids:
+            self._notify_live_telegram_chat_ids(notification_chat_ids, notification_message)
+        return snapshot
 
     def _find_channel(self, channel_id: str) -> ChannelRecord:
         for channel in self.channels:
@@ -5164,6 +5605,7 @@ class AppStore:
                 "password_hash": "",
                 "password_algo": "pbkdf2_sha256",
                 "telegram": "",
+                "telegram_live": "",
                 "updated_by": "system",
                 "updated_at": None,
                 "created_at": self._now(),
@@ -5824,11 +6266,13 @@ class AppStore:
                 continue
             if stream.lease_expires_at is None or stream.lease_expires_at > now:
                 continue
-            self._handle_interrupted_live_stream(
+            notification_payload = self._handle_interrupted_live_stream(
                 stream,
                 now=now,
                 reason="Control-plane không nhận được heartbeat/progress của live worker trong thời gian grace.",
             )
+            if notification_payload is not None:
+                self._notify_live_telegram_chat_ids(notification_payload[0], notification_payload[1])
             changed = True
         if changed:
             self._sync_live_backup_policy(now=now)
@@ -6276,6 +6720,7 @@ class AppStore:
             "live_index_href": "/app/live",
             "live_delete_action": "/app/live/delete",
             "live_stop_action": "/app/live/stop",
+            "live_telegram": self._live_telegram_binding_snapshot(user.id),
             "live_form": live_form_state,
             "primary_live_workers": self._build_live_worker_picker_cards(primary_workers),
             "backup_live_workers": self._build_live_worker_picker_cards(backup_workers),
@@ -6763,6 +7208,10 @@ class AppStore:
         self.live_streams.append(stream)
         self._sync_live_backup_policy(now=now)
         self._save_state()
+        self._notify_live_telegram_chat_ids(
+            self._live_stream_recipient_chat_ids(stream),
+            self._live_stream_created_message(stream),
+        )
         return deepcopy(stream)
 
     def get_live_stream(
@@ -7020,6 +7469,10 @@ class AppStore:
             self._retire_live_backup_clone(clone, now=now, reason="Luồng chính đã được dừng thủ công.")
             stream.backup_stream_id = None
         self._save_state()
+        self._notify_live_telegram_chat_ids(
+            self._live_stream_recipient_chat_ids(stream),
+            self._live_stream_stopped_message(stream, now=now),
+        )
         return deepcopy(stream)
 
     def _scoped_live_streams(
@@ -9058,6 +9511,7 @@ class AppStore:
             "password_algo": "pbkdf2_sha256",
             "password": password.strip(),
             "telegram": (telegram or "").strip(),
+            "telegram_live": "",
             "updated_by": updated_by,
             "updated_at": self._now(),
             "created_at": self._now(),

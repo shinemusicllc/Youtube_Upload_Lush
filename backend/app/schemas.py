@@ -42,6 +42,7 @@ class UserSummary(BaseModel):
     updated_at: datetime | None = None
     updated_by: str | None = None
     link_telegram: str | None = None
+    link_telegram_live: str | None = None
 
 
 class WorkerRecord(BaseModel):
