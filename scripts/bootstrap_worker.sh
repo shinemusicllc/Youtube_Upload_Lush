@@ -31,11 +31,39 @@ apt_get_retry() {
   done
 }
 
-apt_get_retry update
-apt_get_retry install -y ffmpeg
+APT_METADATA_READY=0
+
+ensure_apt_metadata() {
+  local force_refresh="${1:-0}"
+  if [ "$force_refresh" != "1" ] && [ "$APT_METADATA_READY" -eq 1 ]; then
+    return 0
+  fi
+  apt_get_retry update
+  APT_METADATA_READY=1
+}
+
+package_is_installed() {
+  local package_name="$1"
+  dpkg-query -W -f='${Status}' "$package_name" 2>/dev/null | grep -q '^install ok installed$'
+}
+
+install_packages_if_missing() {
+  local missing_packages=()
+  local package_name
+  for package_name in "$@"; do
+    if ! package_is_installed "$package_name"; then
+      missing_packages+=("$package_name")
+    fi
+  done
+  if [ "${#missing_packages[@]}" -eq 0 ]; then
+    return 0
+  fi
+  ensure_apt_metadata
+  apt_get_retry install -y "${missing_packages[@]}"
+}
 
 mkdir -p "$RUNTIME_DIR"
-install_base_packages
+install_packages_if_missing ffmpeg git python3 python3-venv python3-pip
 mkdir -p "$RUNTIME_DIR/.backup" "$RUNTIME_DIR/worker-data"
 adopt_runtime_path "$APP_DIR" "$RUNTIME_DIR" ".venv" ".venv"
 adopt_runtime_path "$APP_DIR" "$RUNTIME_DIR" ".backup" ".backup"
@@ -51,8 +79,17 @@ if [ ! -d "$RUNTIME_DIR/.venv" ]; then
   python3 -m venv "$RUNTIME_DIR/.venv"
 fi
 . .venv/bin/activate
-pip install --upgrade pip
-pip install -r workers/agent/requirements.txt
+
+requirements_hash_file="$RUNTIME_DIR/.worker-agent-requirements.sha256"
+current_requirements_hash="$(sha256sum workers/agent/requirements.txt | awk '{print $1}')"
+stored_requirements_hash="$(cat "$requirements_hash_file" 2>/dev/null || true)"
+if [ "$current_requirements_hash" != "$stored_requirements_hash" ]; then
+  python -m pip install --upgrade pip
+  python -m pip install -r workers/agent/requirements.txt
+  printf '%s\n' "$current_requirements_hash" >"$requirements_hash_file"
+else
+  echo "[python-setup] worker requirements unchanged, skipping pip install."
+fi
 
 cat >/etc/systemd/system/youtube-upload-worker.service <<EOF
 [Unit]
@@ -111,7 +148,7 @@ set -a
 set +a
 
 if [ "${BROWSER_SESSION_ENABLED:-0}" = "1" ]; then
-  apt_get_retry install -y xvfb openbox x11vnc websockify novnc ca-certificates curl gnupg wget || true
+  install_packages_if_missing xvfb openbox x11vnc websockify novnc ca-certificates curl gnupg wget || true
 
   # ---------- Install Google Chrome Stable (.deb) ----------
   # Why Chrome Stable instead of apt chromium-browser?
@@ -138,12 +175,17 @@ if [ "${BROWSER_SESSION_ENABLED:-0}" = "1" ]; then
     apt_get_retry remove -y chromium-browser 2>/dev/null || true
 
     # Add Google's official apt repo
-    wget -qO- https://dl.google.com/linux/linux_signing_key.pub \
-      | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg 2>/dev/null
-    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" \
-      > /etc/apt/sources.list.d/google-chrome.list
-    apt_get_retry update -qq
-    apt_get_retry install -y google-chrome-stable
+    if [ ! -f /usr/share/keyrings/google-chrome.gpg ]; then
+      wget -qO- https://dl.google.com/linux/linux_signing_key.pub \
+        | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg 2>/dev/null
+    fi
+    if [ ! -f /etc/apt/sources.list.d/google-chrome.list ]; then
+      echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" \
+        > /etc/apt/sources.list.d/google-chrome.list
+    fi
+    APT_METADATA_READY=0
+    ensure_apt_metadata 1
+    install_packages_if_missing google-chrome-stable
 
     echo "[browser-setup] Google Chrome Stable installed successfully."
   }

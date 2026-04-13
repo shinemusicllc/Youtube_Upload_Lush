@@ -2,8 +2,11 @@
 set -euo pipefail
 
 install_base_packages() {
-  apt-get update
-  apt-get install -y git python3 python3-venv python3-pip
+  local packages=(git python3 python3-venv python3-pip)
+  if [ "$#" -gt 0 ]; then
+    packages+=("$@")
+  fi
+  apt-get install -y "${packages[@]}"
 }
 
 merge_dir_into_target() {
@@ -59,7 +62,7 @@ ensure_git_checkout() {
   timestamp="$(date +%Y%m%d-%H%M%S)"
 
   if [ -d "$app_dir/.git" ]; then
-    git -C "$app_dir" fetch --prune origin
+    git -C "$app_dir" fetch --prune --depth 1 origin "$branch"
     git -C "$app_dir" checkout "$branch"
     git -C "$app_dir" reset --hard "origin/$branch"
     return
@@ -67,7 +70,7 @@ ensure_git_checkout() {
 
   local tmp_clone="${app_dir}.clone-${timestamp}"
   rm -rf "$tmp_clone"
-  git clone --branch "$branch" "$repo_url" "$tmp_clone"
+  git clone --depth 1 --branch "$branch" "$repo_url" "$tmp_clone"
 
   if [ -e "$app_dir" ]; then
     mv "$app_dir" "${app_dir}.legacy-${timestamp}"
