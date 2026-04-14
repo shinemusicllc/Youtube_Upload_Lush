@@ -21,15 +21,6 @@ from .downloader import download_remote_asset
 from .ffmpeg_pipeline import probe_media
 
 
-def _env_int(name: str, default: int, *, minimum: int = 0) -> int:
-    raw_value = str(os.getenv(name, str(default))).strip()
-    try:
-        parsed = int(raw_value)
-    except ValueError:
-        return default
-    return max(minimum, parsed)
-
-
 def _env_float(name: str, default: float, *, minimum: float = 0.0) -> float:
     raw_value = str(os.getenv(name, str(default))).strip()
     try:
@@ -37,41 +28,6 @@ def _env_float(name: str, default: float, *, minimum: float = 0.0) -> float:
     except ValueError:
         return default
     return max(minimum, parsed)
-
-
-def _env_bool(name: str, default: bool) -> bool:
-    raw_value = str(os.getenv(name, "1" if default else "0")).strip().lower()
-    if raw_value in {"1", "true", "yes", "on"}:
-        return True
-    if raw_value in {"0", "false", "no", "off"}:
-        return False
-    return default
-
-
-LIVE_TARGET_VIDEO_BITRATE_KBPS = _env_int("WORKER_LIVE_TARGET_VIDEO_BITRATE_KBPS", 6800, minimum=256)
-LIVE_TARGET_AUDIO_BITRATE_KBPS = _env_int("WORKER_LIVE_TARGET_AUDIO_BITRATE_KBPS", 160, minimum=64)
-LIVE_TARGET_MAXRATE_KBPS = _env_int(
-    "WORKER_LIVE_MAXRATE_KBPS",
-    LIVE_TARGET_VIDEO_BITRATE_KBPS,
-    minimum=LIVE_TARGET_VIDEO_BITRATE_KBPS,
-)
-LIVE_TARGET_BUFSIZE_KBPS = _env_int(
-    "WORKER_LIVE_BUFSIZE_KBPS",
-    LIVE_TARGET_MAXRATE_KBPS * 2,
-    minimum=LIVE_TARGET_MAXRATE_KBPS,
-)
-LIVE_TARGET_4K_VIDEO_BITRATE_KBPS = _env_int(
-    "WORKER_LIVE_TARGET_4K_VIDEO_BITRATE_KBPS",
-    20000,
-    minimum=LIVE_TARGET_VIDEO_BITRATE_KBPS,
-)
-LIVE_TARGET_4K60_VIDEO_BITRATE_KBPS = _env_int(
-    "WORKER_LIVE_TARGET_4K60_VIDEO_BITRATE_KBPS",
-    28000,
-    minimum=LIVE_TARGET_4K_VIDEO_BITRATE_KBPS,
-)
-LIVE_4K_PASSTHROUGH_ENABLED = _env_bool("WORKER_LIVE_4K_PASSTHROUGH_ENABLED", True)
-LIVE_TARGET_X264_PRESET = str(os.getenv("WORKER_LIVE_X264_PRESET", "veryfast")).strip() or "veryfast"
 LIVE_RUNTIME_GUARD_INTERVAL_SECONDS = _env_float("WORKER_LIVE_RUNTIME_GUARD_INTERVAL_SECONDS", 1.0, minimum=0.2)
 LIVE_FFMPEG_PROGRESS_INTERVAL_SECONDS = _env_float("WORKER_LIVE_FFMPEG_PROGRESS_INTERVAL_SECONDS", 0.5, minimum=0.2)
 
@@ -109,38 +65,6 @@ def _is_hot_standby_backup_stream(stream: dict) -> bool:
     is_forever = bool(stream.get("is_forever"))
     end_time_live = _parse_control_plane_datetime(stream.get("end_time_live"))
     return runtime_role == "backup" and is_runtime_clone and is_forever and end_time_live is None
-
-
-def _select_live_video_bitrate_kbps(*, width: int | None, height: int | None, frame_rate: float | None) -> tuple[int, int, int, str]:
-    normalized_width = int(width or 0)
-    normalized_height = int(height or 0)
-    long_edge = max(normalized_width, normalized_height)
-    short_edge = min(normalized_width, normalized_height)
-    normalized_fps = float(frame_rate or 30.0)
-
-    is_4k = long_edge >= 3000 or short_edge >= 2000
-    if is_4k:
-        if normalized_fps > 30.0:
-            video_bitrate_kbps = LIVE_TARGET_4K60_VIDEO_BITRATE_KBPS
-            profile_label = "4K 60fps"
-        else:
-            video_bitrate_kbps = LIVE_TARGET_4K_VIDEO_BITRATE_KBPS
-            profile_label = "4K 30fps"
-    else:
-        video_bitrate_kbps = LIVE_TARGET_VIDEO_BITRATE_KBPS
-        profile_label = "1080p/default"
-
-    maxrate_kbps = video_bitrate_kbps
-    bufsize_kbps = maxrate_kbps * 2
-    return video_bitrate_kbps, maxrate_kbps, bufsize_kbps, profile_label
-
-
-def _is_4k_media(*, width: int | None, height: int | None) -> bool:
-    normalized_width = int(width or 0)
-    normalized_height = int(height or 0)
-    long_edge = max(normalized_width, normalized_height)
-    short_edge = min(normalized_width, normalized_height)
-    return long_edge >= 3000 or short_edge >= 2000
 
 
 def _touch_activity(path: Path | None) -> None:
@@ -545,23 +469,12 @@ def _stream_once(
     stream_id: str,
     rendered_path: Path,
     rendered_duration: float,
-    rendered_width: int | None,
-    rendered_height: int | None,
-    rendered_frame_rate: float | None,
     rtmp_target: str,
     report_progress,
     end_time_live: datetime | None,
     lifecycle_guard=None,
     expected_playback_mode: str | None = None,
 ) -> str:
-    is_4k_media = _is_4k_media(width=rendered_width, height=rendered_height)
-    video_bitrate_kbps, maxrate_kbps, bufsize_kbps, profile_label = _select_live_video_bitrate_kbps(
-        width=rendered_width,
-        height=rendered_height,
-        frame_rate=rendered_frame_rate,
-    )
-    use_4k_passthrough = is_4k_media and LIVE_4K_PASSTHROUGH_ENABLED
-
     def _on_progress(ratio: float, current_seconds: float) -> None:
         report_progress(
             "streaming",
@@ -569,62 +482,21 @@ def _stream_once(
             f"\u0110ang live {time.strftime('%H:%M:%S', time.gmtime(max(0, int(current_seconds))))}",
         )
 
-    if use_4k_passthrough:
-        ffmpeg_arguments = [
-            "-re",
-            "-f",
-            "flv",
-            "-i",
-            str(rendered_path),
-            "-c",
-            "copy",
-            "-f",
-            "flv",
-            "-flvflags",
-            "no_duration_filesize",
-            rtmp_target,
-        ]
-        completed_message = "\u0110\u00e3 ph\u00e1t xong 1 v\u00f2ng media (4K passthrough - c copy)"
-    else:
-        ffmpeg_arguments = [
-            "-re",
-            "-f",
-            "flv",
-            "-i",
-            str(rendered_path),
-            "-vf",
-            "scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p",
-            "-c:v",
-            "libx264",
-            "-preset",
-            LIVE_TARGET_X264_PRESET,
-            "-b:v",
-            f"{video_bitrate_kbps}k",
-            "-maxrate",
-            f"{maxrate_kbps}k",
-            "-bufsize",
-            f"{bufsize_kbps}k",
-            "-g",
-            "60",
-            "-keyint_min",
-            "60",
-            "-sc_threshold",
-            "0",
-            "-c:a",
-            "aac",
-            "-b:a",
-            f"{LIVE_TARGET_AUDIO_BITRATE_KBPS}k",
-            "-ar",
-            "48000",
-            "-f",
-            "flv",
-            "-flvflags",
-            "no_duration_filesize",
-            rtmp_target,
-        ]
-        completed_message = (
-            f"\u0110\u00e3 ph\u00e1t xong 1 v\u00f2ng media ({profile_label} ~ {video_bitrate_kbps} kbps)"
-        )
+    ffmpeg_arguments = [
+        "-re",
+        "-f",
+        "flv",
+        "-i",
+        str(rendered_path),
+        "-c",
+        "copy",
+        "-f",
+        "flv",
+        "-flvflags",
+        "no_duration_filesize",
+        rtmp_target,
+    ]
+    completed_message = "\u0110\u00e3 ph\u00e1t xong 1 v\u00f2ng media (-c copy)"
 
     stream_result = _run_ffmpeg_with_progress(
         config,
@@ -655,9 +527,6 @@ def _run_hot_standby_backup_loop(
     stream_id: str,
     rendered_path: Path,
     rendered_duration: float,
-    rendered_width: int | None,
-    rendered_height: int | None,
-    rendered_frame_rate: float | None,
     rtmp_target: str,
     report_progress,
     lifecycle_guard=None,
@@ -679,9 +548,6 @@ def _run_hot_standby_backup_loop(
             stream_id=stream_id,
             rendered_path=rendered_path,
             rendered_duration=rendered_duration,
-            rendered_width=rendered_width,
-            rendered_height=rendered_height,
-            rendered_frame_rate=rendered_frame_rate,
             rtmp_target=rtmp_target,
             report_progress=report_progress,
             end_time_live=None,
@@ -744,9 +610,6 @@ def run_live_stream(client: httpx.Client, config: WorkerConfig, stream: dict) ->
                 stream_id=stream_id,
                 rendered_path=rendered_path,
                 rendered_duration=rendered_duration,
-                rendered_width=rendered_info.width,
-                rendered_height=rendered_info.height,
-                rendered_frame_rate=rendered_info.frame_rate,
                 rtmp_target=target,
                 report_progress=report_progress,
                 lifecycle_guard=lifecycle_guard,
@@ -763,9 +626,6 @@ def run_live_stream(client: httpx.Client, config: WorkerConfig, stream: dict) ->
                 stream_id=stream_id,
                 rendered_path=rendered_path,
                 rendered_duration=rendered_duration,
-                rendered_width=rendered_info.width,
-                rendered_height=rendered_info.height,
-                rendered_frame_rate=rendered_info.frame_rate,
                 rtmp_target=target,
                 report_progress=report_progress,
                 end_time_live=end_time_live,
