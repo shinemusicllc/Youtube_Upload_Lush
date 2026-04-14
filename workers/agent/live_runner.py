@@ -51,6 +51,16 @@ LIVE_TARGET_BUFSIZE_KBPS = _env_int(
     LIVE_TARGET_MAXRATE_KBPS * 2,
     minimum=LIVE_TARGET_MAXRATE_KBPS,
 )
+LIVE_TARGET_4K_VIDEO_BITRATE_KBPS = _env_int(
+    "WORKER_LIVE_TARGET_4K_VIDEO_BITRATE_KBPS",
+    20000,
+    minimum=LIVE_TARGET_VIDEO_BITRATE_KBPS,
+)
+LIVE_TARGET_4K60_VIDEO_BITRATE_KBPS = _env_int(
+    "WORKER_LIVE_TARGET_4K60_VIDEO_BITRATE_KBPS",
+    28000,
+    minimum=LIVE_TARGET_4K_VIDEO_BITRATE_KBPS,
+)
 LIVE_TARGET_X264_PRESET = str(os.getenv("WORKER_LIVE_X264_PRESET", "veryfast")).strip() or "veryfast"
 LIVE_RUNTIME_GUARD_INTERVAL_SECONDS = _env_float("WORKER_LIVE_RUNTIME_GUARD_INTERVAL_SECONDS", 1.0, minimum=0.2)
 LIVE_FFMPEG_PROGRESS_INTERVAL_SECONDS = _env_float("WORKER_LIVE_FFMPEG_PROGRESS_INTERVAL_SECONDS", 0.5, minimum=0.2)
@@ -81,6 +91,30 @@ def _rtmp_target(stream: dict) -> str:
     if not stream_key:
         raise ValueError("Thiếu stream_key cho live runtime.")
     return f"{base_url}/{stream_key}"
+
+
+def _select_live_video_bitrate_kbps(*, width: int | None, height: int | None, frame_rate: float | None) -> tuple[int, int, int, str]:
+    normalized_width = int(width or 0)
+    normalized_height = int(height or 0)
+    long_edge = max(normalized_width, normalized_height)
+    short_edge = min(normalized_width, normalized_height)
+    normalized_fps = float(frame_rate or 30.0)
+
+    is_4k = long_edge >= 3000 or short_edge >= 2000
+    if is_4k:
+        if normalized_fps > 30.0:
+            video_bitrate_kbps = LIVE_TARGET_4K60_VIDEO_BITRATE_KBPS
+            profile_label = "4K 60fps"
+        else:
+            video_bitrate_kbps = LIVE_TARGET_4K_VIDEO_BITRATE_KBPS
+            profile_label = "4K 30fps"
+    else:
+        video_bitrate_kbps = LIVE_TARGET_VIDEO_BITRATE_KBPS
+        profile_label = "1080p/default"
+
+    maxrate_kbps = video_bitrate_kbps
+    bufsize_kbps = maxrate_kbps * 2
+    return video_bitrate_kbps, maxrate_kbps, bufsize_kbps, profile_label
 
 
 def _touch_activity(path: Path | None) -> None:
@@ -472,11 +506,20 @@ def _stream_once(
     stream_id: str,
     rendered_path: Path,
     rendered_duration: float,
+    rendered_width: int | None,
+    rendered_height: int | None,
+    rendered_frame_rate: float | None,
     rtmp_target: str,
     report_progress,
     end_time_live: datetime | None,
     lifecycle_guard=None,
 ) -> bool:
+    video_bitrate_kbps, maxrate_kbps, bufsize_kbps, profile_label = _select_live_video_bitrate_kbps(
+        width=rendered_width,
+        height=rendered_height,
+        frame_rate=rendered_frame_rate,
+    )
+
     def _on_progress(ratio: float, current_seconds: float) -> None:
         report_progress(
             "streaming",
@@ -499,11 +542,11 @@ def _stream_once(
             "-preset",
             LIVE_TARGET_X264_PRESET,
             "-b:v",
-            f"{LIVE_TARGET_VIDEO_BITRATE_KBPS}k",
+            f"{video_bitrate_kbps}k",
             "-maxrate",
-            f"{LIVE_TARGET_MAXRATE_KBPS}k",
+            f"{maxrate_kbps}k",
             "-bufsize",
-            f"{LIVE_TARGET_BUFSIZE_KBPS}k",
+            f"{bufsize_kbps}k",
             "-g",
             "60",
             "-keyint_min",
@@ -535,7 +578,7 @@ def _stream_once(
             stream_id,
             status="streaming",
             progress=100,
-            message="\u0110\u00e3 ph\u00e1t xong 1 v\u00f2ng media",
+            message=f"\u0110\u00e3 ph\u00e1t xong 1 v\u00f2ng media ({profile_label} ~ {video_bitrate_kbps} kbps)",
         )
     return completed_full_pass
 
@@ -593,6 +636,9 @@ def run_live_stream(client: httpx.Client, config: WorkerConfig, stream: dict) ->
                 stream_id=stream_id,
                 rendered_path=rendered_path,
                 rendered_duration=rendered_duration,
+                rendered_width=rendered_info.width,
+                rendered_height=rendered_info.height,
+                rendered_frame_rate=rendered_info.frame_rate,
                 rtmp_target=target,
                 report_progress=report_progress,
                 end_time_live=end_time_live,
