@@ -93,6 +93,14 @@ def _rtmp_target(stream: dict) -> str:
     return f"{base_url}/{stream_key}"
 
 
+def _is_hot_standby_backup_stream(stream: dict) -> bool:
+    runtime_role = str(stream.get("runtime_role") or "").strip().lower()
+    is_runtime_clone = bool(stream.get("is_runtime_clone"))
+    is_forever = bool(stream.get("is_forever"))
+    end_time_live = _parse_control_plane_datetime(stream.get("end_time_live"))
+    return runtime_role == "backup" and is_runtime_clone and is_forever and end_time_live is None
+
+
 def _select_live_video_bitrate_kbps(*, width: int | None, height: int | None, frame_rate: float | None) -> tuple[int, int, int, str]:
     normalized_width = int(width or 0)
     normalized_height = int(height or 0)
@@ -216,13 +224,13 @@ def _make_live_runtime_guard(
     config: WorkerConfig,
     stream_id: str,
 ):
-    state = {"last_checked_at": 0.0}
+    state = {"last_checked_at": 0.0, "runtime_state": None}
 
     def _guard(*, force: bool = False) -> None:
         now = time.monotonic()
         last_checked_at = float(state["last_checked_at"])
         if not force and now - last_checked_at < LIVE_RUNTIME_GUARD_INTERVAL_SECONDS:
-            return
+            return state["runtime_state"]
         state["last_checked_at"] = now
         try:
             runtime_state = get_live_stream_runtime_state(client, config, stream_id)
@@ -232,9 +240,11 @@ def _make_live_runtime_guard(
             if _is_terminal_live_stream_conflict(exc):
                 raise LiveStreamStoppedError(stream_id, "stopped") from exc
             print(f"[live] runtime guard check failed for {stream_id}: {exc}", flush=True)
-            return
+            return state["runtime_state"]
+        state["runtime_state"] = runtime_state
         if runtime_state.should_stop:
             raise LiveStreamStoppedError(stream_id, runtime_state.status)
+        return runtime_state
 
     return _guard
 
@@ -306,7 +316,8 @@ def _run_ffmpeg_with_progress(
     progress_callback=None,
     end_time_live: datetime | None = None,
     lifecycle_guard=None,
-) -> bool:
+    expected_playback_mode: str | None = None,
+) -> str:
     command = [
         config.ffmpeg_bin,
         "-stats_period",
@@ -327,36 +338,44 @@ def _run_ffmpeg_with_progress(
     )
     output_lines: list[str] = []
     terminated_for_end_time = False
+    terminated_for_mode_change = False
     callback_error: Exception | None = None
     return_code: int | None = None
+
+    def _check_runtime(*, force: bool = False) -> bool:
+        nonlocal callback_error, terminated_for_mode_change
+        try:
+            runtime_state = lifecycle_guard(force=force) if lifecycle_guard else None
+            if (
+                expected_playback_mode
+                and runtime_state is not None
+                and str(getattr(runtime_state, "playback_mode", "") or "stream").strip().lower() != expected_playback_mode
+                and process.poll() is None
+            ):
+                terminated_for_mode_change = True
+                _stop_process(process)
+            return True
+        except Exception as exc:
+            if isinstance(exc, LiveStreamStoppedError) or _is_terminal_live_stream_conflict(exc):
+                callback_error = exc
+                _stop_process(process)
+                return False
+            raise
+
     try:
         assert process.stdout is not None
         while True:
-            try:
-                if lifecycle_guard:
-                    lifecycle_guard()
-                if end_time_live and _now_local() >= end_time_live and process.poll() is None:
-                    terminated_for_end_time = True
-                    _stop_process(process)
-            except Exception as exc:
-                if isinstance(exc, LiveStreamStoppedError) or _is_terminal_live_stream_conflict(exc):
-                    callback_error = exc
-                    _stop_process(process)
-                    break
-                raise
+            if not _check_runtime():
+                break
+            if end_time_live and _now_local() >= end_time_live and process.poll() is None:
+                terminated_for_end_time = True
+                _stop_process(process)
             raw_line = process.stdout.readline()
             if not raw_line:
                 if process.poll() is not None:
                     break
-                try:
-                    if lifecycle_guard:
-                        lifecycle_guard(force=True)
-                except Exception as exc:
-                    if isinstance(exc, LiveStreamStoppedError) or _is_terminal_live_stream_conflict(exc):
-                        callback_error = exc
-                        _stop_process(process)
-                        break
-                    raise
+                if not _check_runtime(force=True):
+                    break
                 time.sleep(0.1)
                 continue
             line = raw_line.strip()
@@ -388,12 +407,14 @@ def _run_ffmpeg_with_progress(
             return_code = process.wait()
     if callback_error is not None:
         raise callback_error
+    if terminated_for_mode_change:
+        return "paused"
     if terminated_for_end_time:
-        return False
+        return "ended"
     if return_code != 0:
         tail = "\n".join(output_lines[-40:])
         raise RuntimeError(f"FFmpeg live runtime failed ({return_code}).\n{tail}".strip())
-    return True
+    return "completed"
 
 
 def _prepare_rendered_media(
@@ -513,7 +534,8 @@ def _stream_once(
     report_progress,
     end_time_live: datetime | None,
     lifecycle_guard=None,
-) -> bool:
+    expected_playback_mode: str | None = None,
+) -> str:
     video_bitrate_kbps, maxrate_kbps, bufsize_kbps, profile_label = _select_live_video_bitrate_kbps(
         width=rendered_width,
         height=rendered_height,
@@ -527,7 +549,7 @@ def _stream_once(
             f"\u0110ang live {time.strftime('%H:%M:%S', time.gmtime(max(0, int(current_seconds))))}",
         )
 
-    completed_full_pass = _run_ffmpeg_with_progress(
+    stream_result = _run_ffmpeg_with_progress(
         config,
         [
             "-re",
@@ -570,8 +592,9 @@ def _stream_once(
         progress_callback=_on_progress,
         end_time_live=end_time_live,
         lifecycle_guard=lifecycle_guard,
+        expected_playback_mode=expected_playback_mode,
     )
-    if completed_full_pass:
+    if stream_result == "completed":
         update_live_stream_progress(
             client,
             config,
@@ -580,8 +603,54 @@ def _stream_once(
             progress=100,
             message=f"\u0110\u00e3 ph\u00e1t xong 1 v\u00f2ng media ({profile_label} ~ {video_bitrate_kbps} kbps)",
         )
-    return completed_full_pass
+    return stream_result
 
+
+def _run_hot_standby_backup_loop(
+    client: httpx.Client,
+    config: WorkerConfig,
+    *,
+    stream_id: str,
+    rendered_path: Path,
+    rendered_duration: float,
+    rendered_width: int | None,
+    rendered_height: int | None,
+    rendered_frame_rate: float | None,
+    rtmp_target: str,
+    report_progress,
+    lifecycle_guard=None,
+) -> None:
+    standby_message = "Backup đã sẵn sàng, đang chờ tiếp quản luồng"
+    report_progress("waiting", 100, standby_message, force=True)
+
+    while True:
+        runtime_state = lifecycle_guard(force=True) if lifecycle_guard else None
+        playback_mode = str(getattr(runtime_state, "playback_mode", "") or "standby").strip().lower() if runtime_state is not None else "standby"
+        if playback_mode != "stream":
+            report_progress("waiting", 100, standby_message)
+            time.sleep(0.5)
+            continue
+
+        stream_result = _stream_once(
+            client,
+            config,
+            stream_id=stream_id,
+            rendered_path=rendered_path,
+            rendered_duration=rendered_duration,
+            rendered_width=rendered_width,
+            rendered_height=rendered_height,
+            rendered_frame_rate=rendered_frame_rate,
+            rtmp_target=rtmp_target,
+            report_progress=report_progress,
+            end_time_live=None,
+            lifecycle_guard=lifecycle_guard,
+            expected_playback_mode="stream",
+        )
+        if stream_result == "paused":
+            report_progress("waiting", 100, standby_message, force=True)
+            continue
+        if stream_result == "ended":
+            break
 
 
 def run_live_stream(client: httpx.Client, config: WorkerConfig, stream: dict) -> None:
@@ -626,11 +695,27 @@ def run_live_stream(client: httpx.Client, config: WorkerConfig, stream: dict) ->
         end_time_live = _parse_control_plane_datetime(stream.get("end_time_live"))
         target = _rtmp_target(stream)
 
+        if _is_hot_standby_backup_stream(stream):
+            _run_hot_standby_backup_loop(
+                client,
+                config,
+                stream_id=stream_id,
+                rendered_path=rendered_path,
+                rendered_duration=rendered_duration,
+                rendered_width=rendered_info.width,
+                rendered_height=rendered_info.height,
+                rendered_frame_rate=rendered_info.frame_rate,
+                rtmp_target=target,
+                report_progress=report_progress,
+                lifecycle_guard=lifecycle_guard,
+            )
+            return
+
         report_progress("streaming", 0, "Bắt đầu đẩy RTMP", force=True)
         while True:
             if end_time_live and _now_local() >= end_time_live:
                 break
-            completed_full_pass = _stream_once(
+            stream_result = _stream_once(
                 client,
                 config,
                 stream_id=stream_id,
@@ -644,7 +729,7 @@ def run_live_stream(client: httpx.Client, config: WorkerConfig, stream: dict) ->
                 end_time_live=end_time_live,
                 lifecycle_guard=lifecycle_guard,
             )
-            if not completed_full_pass:
+            if stream_result == "ended":
                 break
             if end_time_live and _now_local() >= end_time_live:
                 break

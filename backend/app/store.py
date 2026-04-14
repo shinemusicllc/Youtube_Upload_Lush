@@ -2322,7 +2322,7 @@ class AppStore:
                 *self._live_notification_base_lines(visible_stream),
                 f"BOT backup đang chạy: {backup_label}",
                 f"Kích hoạt lúc: {self._format_full_datetime(now)}",
-                "Trạng thái: Luồng backup đang phát song song trên backup ingest.",
+                "Trạng thái: Luồng backup đang tiếp quản luồng live trên backup ingest.",
             ]
         )
 
@@ -2335,7 +2335,7 @@ class AppStore:
     ) -> str:
         visible_stream = self._visible_live_stream_for_notification(stream)
         if visible_stream.backup_worker_id:
-            status_line = "Trạng thái: BOT chính đã mất kết nối, backup đang giữ luồng."
+            status_line = "Trạng thái: BOT chính đã mất kết nối, backup đang được kích hoạt để giữ luồng."
         else:
             status_line = "Trạng thái: Chưa có BOT backup, cần kiểm tra lại BOT chính."
         lines = [
@@ -4185,6 +4185,14 @@ class AppStore:
     def _live_worker_active_statuses() -> set[str]:
         return {"downloading", "preparing", "waiting", "streaming"}
 
+    @staticmethod
+    def _live_fast_failover_lease_seconds() -> int:
+        raw_value = str(os.getenv("LIVE_FAST_FAILOVER_LEASE_SECONDS", "20")).strip()
+        try:
+            return max(5, int(raw_value))
+        except ValueError:
+            return 20
+
     @classmethod
     def _live_worker_scheduled_statuses(cls) -> set[str]:
         return {"scheduled", "disconnected", *cls._live_worker_active_statuses()}
@@ -4225,6 +4233,60 @@ class AppStore:
             None,
         )
 
+    def _parent_live_stream_optional(self, stream: LiveStreamRecord) -> LiveStreamRecord | None:
+        parent_stream_id = str(stream.parent_stream_id or "").strip()
+        if not parent_stream_id:
+            return None
+        return self._find_live_stream_optional(parent_stream_id)
+
+    def _visible_live_stream_for_runtime(self, stream: LiveStreamRecord) -> LiveStreamRecord:
+        if not self._is_runtime_backup_clone(stream):
+            return stream
+        parent_stream = self._parent_live_stream_optional(stream)
+        return parent_stream or stream
+
+    def _is_live_hot_standby_backup_clone(self, stream: LiveStreamRecord) -> bool:
+        return bool(self._is_runtime_backup_clone(stream) and stream.is_forever and stream.end_time_live is None)
+
+    def _live_stream_requires_fast_failover(self, stream: LiveStreamRecord) -> bool:
+        visible_stream = self._visible_live_stream_for_runtime(stream)
+        return bool(visible_stream.is_forever and visible_stream.backup_worker_id)
+
+    def _live_stream_lease_seconds(self, stream: LiveStreamRecord) -> int:
+        default_seconds = self._worker_job_lease_seconds()
+        if not self._live_stream_requires_fast_failover(stream):
+            return default_seconds
+        return min(default_seconds, self._live_fast_failover_lease_seconds())
+
+    def _can_reclaim_started_live_stream(self, stream: LiveStreamRecord) -> bool:
+        normalized_status = str(stream.status or "").strip().lower() or "scheduled"
+        if not self._live_stream_requires_fast_failover(stream):
+            return False
+        if self._is_live_hot_standby_backup_clone(stream):
+            return normalized_status in self._live_worker_claimable_statuses()
+        return normalized_status == "disconnected"
+
+    def _desired_live_playback_mode(self, stream: LiveStreamRecord, *, now: datetime) -> str:
+        normalized_status = str(stream.status or "").strip().lower() or "scheduled"
+        if normalized_status in {"stopped", "ended", "error"}:
+            return "stop"
+        if not self._is_live_hot_standby_backup_clone(stream):
+            return "stream"
+        parent_stream = self._parent_live_stream_optional(stream)
+        if parent_stream is None:
+            return "stop"
+        parent_status = str(parent_stream.status or "").strip().lower() or "scheduled"
+        if parent_status in {"stopped", "ended", "error"}:
+            return "stop"
+        start_time_live = parent_stream.start_time_live
+        if start_time_live is not None and now < start_time_live:
+            return "standby"
+        if parent_status == "streaming":
+            return "standby"
+        if parent_stream.streaming_started_at is None and parent_status in self._live_pre_stream_statuses():
+            return "standby"
+        return "stream"
+
     def _is_live_stream_runtime_locked(self, stream: LiveStreamRecord) -> bool:
         effective_runtime = self._effective_live_runtime_stream(stream)
         effective_status = str(effective_runtime.status or "").strip().lower() or "scheduled"
@@ -4257,7 +4319,7 @@ class AppStore:
         normalized_status = str(stream.status or "").strip().lower() or "scheduled"
         if normalized_status not in self._live_worker_claimable_statuses():
             return False
-        if self._has_live_stream_started(stream):
+        if self._has_live_stream_started(stream) and not self._can_reclaim_started_live_stream(stream):
             return False
         claimed_by_worker_id = str(stream.claimed_by_worker_id or "").strip()
         if claimed_by_worker_id in {"", worker_id}:
@@ -4416,12 +4478,12 @@ class AppStore:
     ) -> None:
         lease_base = now or self._now(trim=False)
         allowed_stream_ids = {str(stream_id).strip() for stream_id in (stream_ids or []) if str(stream_id).strip()}
-        lease_duration = timedelta(seconds=self._worker_job_lease_seconds())
         for stream in self.live_streams:
             if stream.claimed_by_worker_id != worker_id or stream.status not in self._live_worker_active_statuses():
                 continue
             if allowed_stream_ids and stream.id not in allowed_stream_ids:
                 continue
+            lease_duration = timedelta(seconds=self._live_stream_lease_seconds(stream))
             stream.lease_expires_at = lease_base + lease_duration
 
     def _handle_interrupted_live_stream(
@@ -4462,11 +4524,11 @@ class AppStore:
         now: datetime,
     ) -> None:
         active_stream_id_set = {str(stream_id).strip() for stream_id in active_stream_ids if str(stream_id).strip()}
-        lease_duration = timedelta(seconds=self._worker_job_lease_seconds())
         for stream in self.live_streams:
             if stream.claimed_by_worker_id != worker.id or stream.status not in self._live_worker_active_statuses():
                 continue
             if stream.id in active_stream_id_set:
+                lease_duration = timedelta(seconds=self._live_stream_lease_seconds(stream))
                 stream.lease_expires_at = now + lease_duration
                 continue
             if stream.lease_expires_at is not None and stream.lease_expires_at > now:
@@ -4664,7 +4726,7 @@ class AppStore:
             stream.claimed_by_worker_id = worker.id
             stream.claimed_by_role = stream.runtime_role or "primary"
             stream.claimed_at = stream.claimed_at or now
-            stream.lease_expires_at = now + timedelta(seconds=self._worker_job_lease_seconds())
+            stream.lease_expires_at = now + timedelta(seconds=self._live_stream_lease_seconds(stream))
             stream.updated_at = now
             self._sync_live_worker_runtime_status(worker)
             self._save_state()
@@ -4723,6 +4785,7 @@ class AppStore:
             stream = self._find_claimed_live_stream(stream_id, worker_id)
             self._ensure_live_stream_can_continue(stream)
             now = self._now(trim=False)
+            previous_status = str(stream.status or "").strip().lower() or "scheduled"
 
             normalized_status = str(status or "").strip().lower() or "scheduled"
             bounded_progress = max(0, min(100, int(progress)))
@@ -4750,14 +4813,15 @@ class AppStore:
             elif normalized_status == "streaming":
                 stream.prepared_at = stream.prepared_at or now
                 first_streaming_transition = stream.streaming_started_at is None
+                was_streaming = previous_status == "streaming"
                 stream.streaming_started_at = stream.streaming_started_at or now
                 stream.is_live_now = True
                 stream.disconnected_at = None
-                if first_streaming_transition:
+                if not was_streaming:
                     notification_chat_ids = self._live_stream_recipient_chat_ids(stream)
                     if self._is_runtime_backup_clone(stream):
                         notification_message = self._live_backup_activated_message(stream, now=now)
-                    elif self._is_visible_live_stream(stream):
+                    elif self._is_visible_live_stream(stream) and first_streaming_transition:
                         notification_message = self._live_stream_started_message(stream, now=now)
             else:
                 stream.is_live_now = normalized_status == "streaming"
@@ -4785,11 +4849,14 @@ class AppStore:
             self._authenticate_live_worker(worker_id, shared_secret)
             stream = self._find_claimed_live_stream(stream_id, worker_id)
             normalized_status = str(stream.status or "").strip().lower() or "scheduled"
-            should_stop = normalized_status in {"stopped", "ended", "error"}
+            now = self._now(trim=False)
+            playback_mode = self._desired_live_playback_mode(stream, now=now)
+            should_stop = normalized_status in {"stopped", "ended", "error"} or playback_mode == "stop"
             return {
                 "stream_id": stream.id,
                 "status": normalized_status,
                 "should_stop": should_stop,
+                "playback_mode": playback_mode,
                 "stop_requested_at": stream.stop_requested_at.isoformat() if stream.stop_requested_at else None,
                 "ended_at": stream.ended_at.isoformat() if stream.ended_at else None,
                 "updated_at": stream.updated_at.isoformat() if stream.updated_at else None,
@@ -7554,6 +7621,13 @@ class AppStore:
         if self._is_runtime_backup_clone(stream):
             return stream
         clone = self._find_live_backup_clone_optional(stream)
+        primary_status = str(stream.status or "").strip().lower() or "scheduled"
+        if primary_status == "streaming":
+            return stream
+        if clone is not None and str(clone.status or "").strip().lower() == "streaming":
+            return clone
+        if primary_status in self._live_worker_active_statuses():
+            return stream
         if clone is not None and clone.status in self._live_worker_active_statuses():
             return clone
         return stream

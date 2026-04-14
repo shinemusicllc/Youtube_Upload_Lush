@@ -261,6 +261,7 @@ class LiveStreamRuntimeState:
     stream_id: str
     status: str
     should_stop: bool
+    playback_mode: str = "stream"
     stop_requested_at: str | None = None
     ended_at: str | None = None
     updated_at: str | None = None
@@ -668,6 +669,7 @@ def get_live_stream_runtime_state(
         stream_id=str(payload.get("stream_id") or stream_id),
         status=str(payload.get("status") or "scheduled"),
         should_stop=bool(payload.get("should_stop")),
+        playback_mode=str(payload.get("playback_mode") or "stream"),
         stop_requested_at=payload.get("stop_requested_at"),
         ended_at=payload.get("ended_at"),
         updated_at=payload.get("updated_at"),
