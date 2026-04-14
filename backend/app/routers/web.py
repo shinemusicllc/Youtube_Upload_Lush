@@ -168,7 +168,6 @@ def _redirect_bot_page_with_scope(
     query: list[tuple[str, str]] = [
         ("notice", message),
         ("notice_level", level),
-        ("workspace", _resolve_admin_workspace(workspace)),
     ]
     for manager_id in manager_ids or []:
         if manager_id:
@@ -1247,7 +1246,7 @@ async def admin_bot_index(
     selected_manager_ids = _resolve_bot_scope_manager_ids(selected_manager_ids, userId)
     if current_admin.role == "manager" and not selected_manager_ids:
         selected_manager_ids = [current_admin.id]
-    workspace_mode = _resolve_admin_workspace(workspace)
+    workspace_mode = "upload"
     dashboard = store.get_admin_bot_index_context(
         manager_ids=selected_manager_ids,
         viewer_role=current_admin.role,
@@ -1258,11 +1257,9 @@ async def admin_bot_index(
         workspace_mode=workspace_mode,
     )
     dashboard["new_worker_defaults"] = {
-        "worker_id": (
-            store.suggest_next_live_worker_bootstrap_id()
-            if workspace_mode == "live"
-            else store.suggest_next_worker_bootstrap_id()
-        ),
+        "default_workspace_kind": workspace_mode,
+        "upload_worker_id": store.suggest_next_worker_bootstrap_id(),
+        "live_worker_id": store.suggest_next_live_worker_bootstrap_id(),
         "worker_name_hint": "IP VPS",
         "ssh_user": "root",
         "browser_session_enabled": True,
@@ -1417,7 +1414,10 @@ async def admin_bot_update(request: Request):
 async def admin_bot_create(request: Request):
     current_admin = require_admin_access(request)
     form = await request.form()
-    workspace_mode = _resolve_admin_workspace(str(form.get("workspace") or "").strip())
+    requested_bot_kind = str(form.get("bot_kind") or "").strip().lower()
+    workspace_mode = _resolve_admin_workspace(
+        "live" if requested_bot_kind in {"primary", "backup"} else requested_bot_kind or str(form.get("workspace") or "").strip()
+    )
     vps_ip = str(form.get("vps_ip") or "").strip()
     ssh_user = str(form.get("ssh_user") or "").strip() or "root"
     return_user_id = str(form.get("return_user_id") or "").strip() or None
@@ -1426,7 +1426,15 @@ async def admin_bot_create(request: Request):
     ssh_private_key = str(form.get("ssh_private_key") or "").replace("\r\n", "\n").strip()
     return_manager_ids = [str(value).strip() for value in form.getlist("return_manager_ids") if str(value).strip()]
     manager_name = current_admin.username if current_admin.role == "manager" else "system"
-    manager_id = current_admin.id if current_admin.role == "manager" else None
+    manager_id = current_admin.id if current_admin.role == "manager" else str(form.get("manager_id") or "").strip() or None
+    if manager_id == "__bot_empty__":
+        manager_id = None
+    requested_name = str(form.get("name") or "").strip() or None
+    requested_group = str(form.get("group") or "").strip() or None
+    requested_live_role = str(form.get("live_role") or "").strip().lower() or None
+    if requested_bot_kind in {"upload", "primary", "backup"}:
+        requested_live_role = "upload" if requested_bot_kind == "upload" else requested_bot_kind
+    requested_user_ids = [str(value).strip() for value in form.getlist("assigned_user_ids") if str(value).strip()]
     worker_id = (
         store.suggest_next_live_worker_bootstrap_id()
         if workspace_mode == "live"
@@ -1434,6 +1442,35 @@ async def admin_bot_create(request: Request):
     )
 
     try:
+        if current_admin.role == "admin" and manager_id:
+            selected_manager = store._find_user(manager_id)
+            if selected_manager.role != "manager":
+                raise ValueError("Manager được chọn không hợp lệ.")
+            manager_name = selected_manager.username
+        if requested_user_ids and not manager_id:
+            raise ValueError("Hãy chọn manager trước khi gán user cho BOT.")
+        if workspace_mode == "live":
+            if requested_live_role not in {None, "", "primary", "backup"}:
+                raise ValueError("Chức năng BOT live không hợp lệ.")
+            if requested_user_ids and not requested_live_role:
+                raise ValueError("Hãy chọn chức năng BOT live trước khi gán user.")
+        else:
+            requested_live_role = "upload"
+        for selected_user_id in requested_user_ids:
+            _enforce_user_scope(current_admin, selected_user_id)
+            assigned_user = store._find_user(selected_user_id)
+            if assigned_user.role == "user":
+                resolved_manager_id = store._resolved_user_manager_id(assigned_user)
+                if resolved_manager_id != manager_id:
+                    raise ValueError("User phải thuộc manager đã chọn.")
+            elif assigned_user.role == "manager":
+                if assigned_user.id != manager_id:
+                    raise ValueError("Manager chỉ được chọn chính mình trong BOT này.")
+            elif assigned_user.role == "admin":
+                if assigned_user.id != current_admin.id:
+                    raise ValueError("Admin chỉ được tự gán BOT cho chính tài khoản admin đang đăng nhập.")
+            else:
+                raise ValueError("User được chọn không hợp lệ.")
         bootstrap_request = build_worker_bootstrap_request(
             vps_ip=vps_ip,
             ssh_user=ssh_user,
@@ -1454,8 +1491,17 @@ async def admin_bot_create(request: Request):
             ssh_private_key=ssh_private_key if auth_mode == "ssh_key" else None,
             manager_id=manager_id,
             manager_name=manager_name,
+            group=requested_group or "",
             requested_by=current_admin.username,
             requested_role=current_admin.role,
+            requested_user_id=current_admin.id,
+            post_install_config={
+                "name": requested_name,
+                "group": requested_group,
+                "manager_id": manager_id,
+                "live_role": requested_live_role if workspace_mode == "live" else "upload",
+                "assigned_user_ids": requested_user_ids,
+            },
         )
         return _redirect_bot_page_with_scope(
             (

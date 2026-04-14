@@ -65,7 +65,7 @@ async def poll_worker_browser_sessions(payload: WorkerAuthPayload):
             "cleanup_profiles": cleanup_profiles,
         }
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Worker chÆ°a Ä‘Æ°á»£c Ä‘Äƒng kÃ½.") from exc
+        raise HTTPException(status_code=404, detail="Worker chưa được đăng ký.") from exc
     except ValueError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
 
@@ -109,7 +109,7 @@ async def ack_worker_browser_profile_cleanup(payload: WorkerBrowserProfileCleanu
         )
         return {"ok": True, "cleared": cleared}
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Worker chÆ°a Ä‘Æ°á»£c Ä‘Äƒng kÃ½.") from exc
+        raise HTTPException(status_code=404, detail="Worker chưa được đăng ký.") from exc
     except ValueError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
 
@@ -148,7 +148,7 @@ async def sync_worker_browser_session(session_id: str, payload: WorkerBrowserSes
         session = store.sync_worker_browser_session(session_id, payload)
         return {"ok": True, "session": session.model_dump(mode="json")}
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail="KhÃ´ng tÃ¬m tháº¥y browser session.") from exc
+        raise HTTPException(status_code=404, detail="Không tìm thấy browser session.") from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -330,6 +330,6 @@ async def upload_worker_job_thumbnail(
             payload=payload,
         )
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail="KhÃ´ng tÃ¬m tháº¥y job.") from exc
+        raise HTTPException(status_code=404, detail="Không tìm thấy job.") from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

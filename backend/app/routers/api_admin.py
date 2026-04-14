@@ -68,7 +68,13 @@ class AdminBotInstallPayload(BaseModel):
     auth_mode: str = "password"
     password: str | None = None
     ssh_private_key: str | None = None
+    bot_kind: str | None = None
     workspace: str | None = None
+    name: str | None = None
+    group: str | None = None
+    manager_id: str | None = None
+    live_role: str | None = None
+    assigned_user_ids: list[str] | None = None
 
 
 class AdminBotDecommissionPayload(BaseModel):
@@ -359,7 +365,7 @@ async def get_admin_bots(
 ):
     if userId:
         _enforce_user_scope(request, userId)
-    workspace_mode = _resolve_workspace_mode(workspace)
+    workspace_mode = "upload"
     selected_manager_ids = _manager_ids_from_request(request, manager_ids)
     if not selected_manager_ids and userId:
         focus_user = store._find_user(userId)
@@ -372,21 +378,19 @@ async def get_admin_bots(
     current_user = require_admin_access(request)
     if current_user.role == "manager" and not selected_manager_ids:
         selected_manager_ids = [current_user.id]
-    notifications = (
-        store.get_admin_notifications(
-            manager_ids=selected_manager_ids,
-            after_id=after_event_id,
-        )
-        if workspace_mode != "live"
-        else {"items": [], "cursor": after_event_id or ""}
+    dashboard = store.get_admin_bot_index_context(
+        manager_ids=selected_manager_ids,
+        viewer_role=current_user.role,
+        viewer_id=current_user.id,
+        workspace_mode=workspace_mode,
+    )
+    notifications = store.get_admin_notifications(
+        manager_ids=selected_manager_ids,
+        after_id=after_event_id,
     )
     return {
-        "items": store.get_admin_bot_index_context(
-            manager_ids=selected_manager_ids,
-            viewer_role=current_user.role,
-            viewer_id=current_user.id,
-            workspace_mode=workspace_mode,
-        ).get("workers", []),
+        "items": dashboard.get("workers", []),
+        "summary_strip": dashboard.get("summary_strip", []),
         "events": notifications.get("items", []),
         "event_cursor": notifications.get("cursor", ""),
     }
@@ -395,15 +399,62 @@ async def get_admin_bots(
 @router.post("/admin/bots/install")
 async def install_admin_bot(request: Request, payload: AdminBotInstallPayload):
     current_user = require_admin_access(request)
-    workspace_mode = _resolve_workspace_mode(payload.workspace)
+    requested_bot_kind = str(payload.bot_kind or "").strip().lower()
+    workspace_mode = _resolve_workspace_mode(
+        "live" if requested_bot_kind in {"primary", "backup"} else requested_bot_kind or payload.workspace
+    )
     manager_name = current_user.username if current_user.role == "manager" else "system"
-    manager_id = current_user.id if current_user.role == "manager" else None
+    manager_id = current_user.id if current_user.role == "manager" else str(payload.manager_id or "").strip() or None
+    if manager_id == "__bot_empty__":
+        manager_id = None
     worker_id = (
         store.suggest_next_live_worker_bootstrap_id()
         if workspace_mode == "live"
         else store.suggest_next_worker_bootstrap_id()
     )
     auth_mode = str(payload.auth_mode or "password").strip().lower() or "password"
+    requested_name = str(payload.name or "").strip() or None
+    requested_group = str(payload.group or "").strip() or None
+    requested_live_role = str(payload.live_role or "").strip().lower() or None
+    if requested_bot_kind in {"upload", "primary", "backup"}:
+        requested_live_role = "upload" if requested_bot_kind == "upload" else requested_bot_kind
+    requested_user_ids = [str(value).strip() for value in (payload.assigned_user_ids or []) if str(value).strip()]
+    if current_user.role == "admin" and manager_id:
+        selected_manager = store._find_user(manager_id)
+        if selected_manager.role != "manager":
+            raise HTTPException(status_code=400, detail="Manager được chọn không hợp lệ.")
+        manager_name = selected_manager.username
+    if requested_user_ids and not manager_id:
+        raise HTTPException(status_code=400, detail="Hãy chọn manager trước khi gán user cho BOT.")
+    if workspace_mode == "live":
+        if requested_live_role not in {None, "", "primary", "backup"}:
+            raise HTTPException(status_code=400, detail="Chức năng BOT live không hợp lệ.")
+        if requested_user_ids and not requested_live_role:
+            raise HTTPException(status_code=400, detail="Hãy chọn chức năng BOT live trước khi gán user.")
+    else:
+        requested_live_role = "upload"
+    for user_id in requested_user_ids:
+        _enforce_user_scope(request, user_id)
+        assigned_user = store._find_user(user_id)
+        if assigned_user.role == "user":
+            resolved_manager_id = store._resolved_user_manager_id(assigned_user)
+            if resolved_manager_id != manager_id:
+                raise HTTPException(status_code=400, detail="User phải thuộc manager đã chọn.")
+        elif assigned_user.role == "manager":
+            if assigned_user.id != manager_id:
+                raise HTTPException(status_code=400, detail="Manager chỉ được chọn chính mình trong BOT này.")
+        elif assigned_user.role == "admin":
+            if assigned_user.id != current_user.id:
+                raise HTTPException(status_code=400, detail="Admin chỉ được tự gán BOT cho chính tài khoản admin đang đăng nhập.")
+        else:
+            raise HTTPException(status_code=400, detail="User được chọn không hợp lệ.")
+    post_install_config = {
+        "name": requested_name,
+        "group": requested_group,
+        "manager_id": manager_id,
+        "live_role": requested_live_role if workspace_mode == "live" else "upload",
+        "assigned_user_ids": requested_user_ids,
+    }
     try:
         bootstrap_request = build_worker_bootstrap_request(
             vps_ip=payload.vps_ip,
@@ -425,8 +476,11 @@ async def install_admin_bot(request: Request, payload: AdminBotInstallPayload):
             ssh_private_key=payload.ssh_private_key if auth_mode == "ssh_key" else None,
             manager_id=manager_id,
             manager_name=manager_name,
+            group=requested_group or "",
             requested_by=current_user.username,
             requested_role=current_user.role,
+            requested_user_id=current_user.id,
+            post_install_config=post_install_config,
         )
         return {
             "ok": True,
