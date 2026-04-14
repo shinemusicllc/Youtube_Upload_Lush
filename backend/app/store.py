@@ -190,7 +190,7 @@ class AppStore:
                 primary_worker_name=self._resolve_live_worker_display_name("live-worker-01"),
                 primary_group="S - Việt 3",
                 backup_worker_id="live-worker-02",
-                backup_worker_name=f"{self._resolve_live_worker_display_name('live-worker-02')} - T",
+                backup_worker_name=self._live_backup_worker_display_name("live-worker-02"),
                 backup_group="S - Việt 3",
                 stream_name="11hkodi luồng live test tiêu đề khá dài để kiểm tra việc tự xuống dòng trong bảng render livestream",
                 stream_key="bz2k-vegp-54v4-v2pc-25sr-demo-key-cuc-ky-dai-de-test-wrap",
@@ -2233,6 +2233,25 @@ class AppStore:
             return stream
         return parent_stream
 
+    @staticmethod
+    def _strip_backup_worker_suffix(name: str | None) -> str:
+        normalized = str(name or "").strip()
+        lowered = normalized.lower()
+        if lowered.endswith(" - t"):
+            return normalized[:-4].rstrip()
+        if lowered.endswith("-t"):
+            return normalized[:-2].rstrip()
+        return normalized
+
+    def _live_backup_worker_display_name(self, worker_id: str | None, stored_name: str | None = None) -> str:
+        cleaned_name = self._strip_backup_worker_suffix(stored_name)
+        if cleaned_name:
+            return cleaned_name
+        normalized_worker_id = str(worker_id or "").strip()
+        if not normalized_worker_id:
+            return ""
+        return self._resolve_live_worker_display_name(normalized_worker_id)
+
     def _live_notification_base_lines(self, stream: LiveStreamRecord) -> list[str]:
         visible_stream = self._visible_live_stream_for_notification(stream)
         lines = [
@@ -2243,7 +2262,7 @@ class AppStore:
         ]
         if visible_stream.backup_worker_id:
             lines.append(
-                f"BOT backup: {visible_stream.backup_worker_name or self._resolve_live_worker_display_name(visible_stream.backup_worker_id)}"
+                f"BOT backup: {self._live_backup_worker_display_name(visible_stream.backup_worker_id, visible_stream.backup_worker_name)}"
             )
         lines.append(f"Bắt đầu: {self._live_notification_start_label(visible_stream)}")
         lines.append(f"Kết thúc: {self._live_notification_end_label(visible_stream)}")
@@ -2956,7 +2975,10 @@ class AppStore:
             if not is_runtime_backup_clone and stream.backup_worker_id:
                 candidate_backup = backup_worker_map.get(stream.backup_worker_id)
                 if candidate_backup is None:
-                    desired_backup_name = str(stream.backup_worker_name or self._resolve_worker_display_name(stream.backup_worker_id)).strip()
+                    desired_backup_name = self._live_backup_worker_display_name(
+                        stream.backup_worker_id,
+                        stream.backup_worker_name or self._resolve_worker_display_name(stream.backup_worker_id),
+                    )
                     candidate_backup = next(
                         (
                             worker
@@ -2978,7 +3000,7 @@ class AppStore:
 
             resolved_backup_id = backup_worker.id if backup_worker else None
             resolved_backup_name = (
-                f"{self._resolve_live_worker_display_name(backup_worker.id)} - T"
+                self._live_backup_worker_display_name(backup_worker.id)
                 if backup_worker
                 else None
             )
@@ -6605,7 +6627,7 @@ class AppStore:
             "owner_username": stream.owner_username,
             "manager_name": stream.manager_name or "-",
             "primary_worker_name": stream.primary_worker_name or self._resolve_live_worker_display_name(stream.primary_worker_id),
-            "backup_worker_name": stream.backup_worker_name or "Không dùng backup",
+            "backup_worker_name": self._live_backup_worker_display_name(stream.backup_worker_id, stream.backup_worker_name) or "Không dùng backup",
             "stream_key": stream.stream_key,
             "video_url": stream.video_url,
             "audio_url": stream.audio_url or "Không có",
@@ -7180,7 +7202,7 @@ class AppStore:
             primary_group=primary_worker.group or primary_worker.manager_name,
             backup_worker_id=backup_worker.id if backup_worker else None,
             backup_worker_name=(
-                f"{self._resolve_live_worker_display_name(backup_worker.id)} - T"
+                self._live_backup_worker_display_name(backup_worker.id)
                 if backup_worker
                 else None
             ),
@@ -7311,7 +7333,7 @@ class AppStore:
         stream.primary_group = primary_worker.group or primary_worker.manager_name
         stream.backup_worker_id = backup_worker.id if backup_worker else None
         stream.backup_worker_name = (
-            f"{self._resolve_live_worker_display_name(backup_worker.id)} - T"
+            self._live_backup_worker_display_name(backup_worker.id)
             if backup_worker
             else None
         )
@@ -7600,7 +7622,7 @@ class AppStore:
         effective_runtime = self._effective_live_runtime_stream(stream)
         status_label, status_class = self._live_status_presentation(effective_runtime.status)
         primary_name = stream.primary_worker_name or self._resolve_live_worker_display_name(stream.primary_worker_id)
-        backup_name = stream.backup_worker_name
+        backup_name = self._live_backup_worker_display_name(stream.backup_worker_id, stream.backup_worker_name)
         effective_log_label = effective_runtime.log_label or stream.log_label
         can_delete = effective_runtime.status != "streaming"
         can_edit = not self._is_live_stream_runtime_locked(stream)
