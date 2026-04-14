@@ -413,6 +413,7 @@ def _build_worker_env_file(request: WorkerBootstrapRequest) -> str:
     janitor_interval_seconds = 600 if runtime_mode == "live" else 3600
     live_stream_retention_hours = 1 if runtime_mode == "live" else 6
     live_target_video_bitrate_kbps = str(os.getenv("WORKER_LIVE_TARGET_VIDEO_BITRATE_KBPS", "6800")).strip() or "6800"
+    live_4k_passthrough_enabled = str(os.getenv("WORKER_LIVE_4K_PASSTHROUGH_ENABLED", "1")).strip() or "1"
     live_target_4k_video_bitrate_kbps = str(os.getenv("WORKER_LIVE_TARGET_4K_VIDEO_BITRATE_KBPS", "20000")).strip() or "20000"
     live_target_4k60_video_bitrate_kbps = str(os.getenv("WORKER_LIVE_TARGET_4K60_VIDEO_BITRATE_KBPS", "28000")).strip() or "28000"
     return "\n".join(
@@ -437,6 +438,7 @@ def _build_worker_env_file(request: WorkerBootstrapRequest) -> str:
             f"WORKER_JANITOR_INTERVAL_SECONDS={janitor_interval_seconds}",
             f"WORKER_LIVE_STREAM_RETENTION_HOURS={live_stream_retention_hours}",
             f"WORKER_LIVE_TARGET_VIDEO_BITRATE_KBPS={live_target_video_bitrate_kbps}",
+            f"WORKER_LIVE_4K_PASSTHROUGH_ENABLED={live_4k_passthrough_enabled}",
             f"WORKER_LIVE_TARGET_4K_VIDEO_BITRATE_KBPS={live_target_4k_video_bitrate_kbps}",
             f"WORKER_LIVE_TARGET_4K60_VIDEO_BITRATE_KBPS={live_target_4k60_video_bitrate_kbps}",
             "YOUTUBE_UPLOAD_CHUNK_BYTES=8388608",

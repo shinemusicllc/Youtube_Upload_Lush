@@ -39,6 +39,15 @@ def _env_float(name: str, default: float, *, minimum: float = 0.0) -> float:
     return max(minimum, parsed)
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw_value = str(os.getenv(name, "1" if default else "0")).strip().lower()
+    if raw_value in {"1", "true", "yes", "on"}:
+        return True
+    if raw_value in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
 LIVE_TARGET_VIDEO_BITRATE_KBPS = _env_int("WORKER_LIVE_TARGET_VIDEO_BITRATE_KBPS", 6800, minimum=256)
 LIVE_TARGET_AUDIO_BITRATE_KBPS = _env_int("WORKER_LIVE_TARGET_AUDIO_BITRATE_KBPS", 160, minimum=64)
 LIVE_TARGET_MAXRATE_KBPS = _env_int(
@@ -61,6 +70,7 @@ LIVE_TARGET_4K60_VIDEO_BITRATE_KBPS = _env_int(
     28000,
     minimum=LIVE_TARGET_4K_VIDEO_BITRATE_KBPS,
 )
+LIVE_4K_PASSTHROUGH_ENABLED = _env_bool("WORKER_LIVE_4K_PASSTHROUGH_ENABLED", True)
 LIVE_TARGET_X264_PRESET = str(os.getenv("WORKER_LIVE_X264_PRESET", "veryfast")).strip() or "veryfast"
 LIVE_RUNTIME_GUARD_INTERVAL_SECONDS = _env_float("WORKER_LIVE_RUNTIME_GUARD_INTERVAL_SECONDS", 1.0, minimum=0.2)
 LIVE_FFMPEG_PROGRESS_INTERVAL_SECONDS = _env_float("WORKER_LIVE_FFMPEG_PROGRESS_INTERVAL_SECONDS", 0.5, minimum=0.2)
@@ -123,6 +133,14 @@ def _select_live_video_bitrate_kbps(*, width: int | None, height: int | None, fr
     maxrate_kbps = video_bitrate_kbps
     bufsize_kbps = maxrate_kbps * 2
     return video_bitrate_kbps, maxrate_kbps, bufsize_kbps, profile_label
+
+
+def _is_4k_media(*, width: int | None, height: int | None) -> bool:
+    normalized_width = int(width or 0)
+    normalized_height = int(height or 0)
+    long_edge = max(normalized_width, normalized_height)
+    short_edge = min(normalized_width, normalized_height)
+    return long_edge >= 3000 or short_edge >= 2000
 
 
 def _touch_activity(path: Path | None) -> None:
@@ -536,11 +554,13 @@ def _stream_once(
     lifecycle_guard=None,
     expected_playback_mode: str | None = None,
 ) -> str:
+    is_4k_media = _is_4k_media(width=rendered_width, height=rendered_height)
     video_bitrate_kbps, maxrate_kbps, bufsize_kbps, profile_label = _select_live_video_bitrate_kbps(
         width=rendered_width,
         height=rendered_height,
         frame_rate=rendered_frame_rate,
     )
+    use_4k_passthrough = is_4k_media and LIVE_4K_PASSTHROUGH_ENABLED
 
     def _on_progress(ratio: float, current_seconds: float) -> None:
         report_progress(
@@ -549,9 +569,24 @@ def _stream_once(
             f"\u0110ang live {time.strftime('%H:%M:%S', time.gmtime(max(0, int(current_seconds))))}",
         )
 
-    stream_result = _run_ffmpeg_with_progress(
-        config,
-        [
+    if use_4k_passthrough:
+        ffmpeg_arguments = [
+            "-re",
+            "-f",
+            "flv",
+            "-i",
+            str(rendered_path),
+            "-c",
+            "copy",
+            "-f",
+            "flv",
+            "-flvflags",
+            "no_duration_filesize",
+            rtmp_target,
+        ]
+        completed_message = "\u0110\u00e3 ph\u00e1t xong 1 v\u00f2ng media (4K passthrough - c copy)"
+    else:
+        ffmpeg_arguments = [
             "-re",
             "-f",
             "flv",
@@ -586,7 +621,14 @@ def _stream_once(
             "-flvflags",
             "no_duration_filesize",
             rtmp_target,
-        ],
+        ]
+        completed_message = (
+            f"\u0110\u00e3 ph\u00e1t xong 1 v\u00f2ng media ({profile_label} ~ {video_bitrate_kbps} kbps)"
+        )
+
+    stream_result = _run_ffmpeg_with_progress(
+        config,
+        ffmpeg_arguments,
         working_dir=rendered_path.parent,
         total_duration_seconds=rendered_duration,
         progress_callback=_on_progress,
@@ -601,7 +643,7 @@ def _stream_once(
             stream_id,
             status="streaming",
             progress=100,
-            message=f"\u0110\u00e3 ph\u00e1t xong 1 v\u00f2ng media ({profile_label} ~ {video_bitrate_kbps} kbps)",
+            message=completed_message,
         )
     return stream_result
 
