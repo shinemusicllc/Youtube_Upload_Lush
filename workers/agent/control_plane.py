@@ -142,6 +142,20 @@ def worker_auth_headers(config: WorkerConfig) -> dict[str, str]:
     }
 
 
+def _sync_worker_limits_from_response(config: WorkerConfig, payload: dict[str, Any]) -> None:
+    worker = payload.get("worker") or {}
+    try:
+        resolved_threads = max(1, int(worker.get("threads") or config.threads or 1))
+    except (TypeError, ValueError):
+        resolved_threads = max(1, int(config.threads or 1))
+    try:
+        resolved_capacity = max(1, int(worker.get("capacity") or resolved_threads))
+    except (TypeError, ValueError):
+        resolved_capacity = max(1, resolved_threads)
+    config.threads = resolved_threads
+    config.capacity = resolved_capacity
+
+
 def _is_retryable_error(exc: Exception) -> bool:
     if isinstance(exc, httpx.TimeoutException):
         return True
@@ -348,7 +362,7 @@ def heartbeat_worker(
 
 def register_live_worker(client: httpx.Client, config: WorkerConfig) -> None:
     _, total_gb = _disk_usage()
-    _request_with_retry(
+    response = _request_with_retry(
         client,
         config,
         "POST",
@@ -365,6 +379,7 @@ def register_live_worker(client: httpx.Client, config: WorkerConfig) -> None:
             "disk_total_gb": total_gb,
         },
     )
+    _sync_worker_limits_from_response(config, response.json())
 
 
 def heartbeat_live_worker(
@@ -375,7 +390,7 @@ def heartbeat_live_worker(
 ) -> None:
     used_gb, total_gb = _disk_usage()
     ram_used_gb, ram_total_gb, ram_percent = _memory_usage()
-    _request_with_retry(
+    response = _request_with_retry(
         client,
         config,
         "POST",
@@ -396,6 +411,7 @@ def heartbeat_live_worker(
             "active_stream_ids": active_stream_ids or [],
         },
     )
+    _sync_worker_limits_from_response(config, response.json())
 
 
 def poll_browser_sessions(

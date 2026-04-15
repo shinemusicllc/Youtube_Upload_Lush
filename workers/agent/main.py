@@ -315,6 +315,65 @@ class LiveHeartbeatLoop:
                 time.sleep(self.config.poll_seconds)
 
 
+class LiveExecutionPool:
+    def __init__(self, client: httpx.Client, config, heartbeat_loop: LiveHeartbeatLoop, runner) -> None:
+        self.client = client
+        self.config = config
+        self.heartbeat_loop = heartbeat_loop
+        self.runner = runner
+        self._workers: dict[str, Thread] = {}
+        self._lock = Lock()
+        self._completion_event = Event()
+
+    def active_stream_ids(self) -> list[str]:
+        with self._lock:
+            return list(self._workers.keys())
+
+    def active_count(self) -> int:
+        with self._lock:
+            return len(self._workers)
+
+    def _sync_heartbeat_active_ids(self) -> None:
+        self.heartbeat_loop.set_active_ids(self.active_stream_ids())
+
+    def start(self, stream: dict) -> None:
+        stream_id = str(stream["id"])
+
+        def _runner() -> None:
+            try:
+                self.runner(self.client, self.config, stream)
+            except Exception as exc:
+                if _is_stopped_live_stream_conflict(exc):
+                    print(f"[live] {stream_id} không còn tiếp tục được trên control plane, dừng worker flow sạch sẽ.", flush=True)
+                else:
+                    fail_live_stream(self.client, self.config, stream_id, message=str(exc))
+            finally:
+                with self._lock:
+                    self._workers.pop(stream_id, None)
+                self._sync_heartbeat_active_ids()
+                self._completion_event.set()
+
+        thread = Thread(target=_runner, name=f"live-stream-{stream_id}", daemon=True)
+        with self._lock:
+            self._workers[stream_id] = thread
+        self._sync_heartbeat_active_ids()
+        thread.start()
+
+    def wait(self, timeout_seconds: float) -> bool:
+        signaled = self._completion_event.wait(timeout=max(0.1, timeout_seconds))
+        if signaled:
+            self._completion_event.clear()
+        return signaled
+
+    def join_all(self, timeout_seconds: float = 1.0) -> None:
+        with self._lock:
+            threads = list(self._workers.values())
+        deadline = time.monotonic() + max(0.1, timeout_seconds)
+        for thread in threads:
+            remaining = max(0.1, deadline - time.monotonic())
+            thread.join(timeout=remaining)
+
+
 def _run_upload_worker(client: httpx.Client, config) -> None:
     from .browser_sessions import BrowserSessionCoordinator
     from .cleanup import cleanup_stale_worker_artifacts
@@ -406,6 +465,8 @@ def _run_live_worker(client: httpx.Client, config) -> None:
     janitor_interval_seconds = _janitor_interval_seconds(config)
     register_live_worker(client, config)
     heartbeat_loop = LiveHeartbeatLoop(client, config)
+    stream_runner = simulate_live_stream if config.simulate_jobs else run_live_stream
+    execution_pool = LiveExecutionPool(client, config, heartbeat_loop, stream_runner)
     heartbeat_loop.start()
     heartbeat_loop.pulse_once()
     janitor_result = cleanup_stale_worker_artifacts(config)
@@ -423,55 +484,46 @@ def _run_live_worker(client: httpx.Client, config) -> None:
                     last_janitor_at = now
 
                 if not config.simulate_jobs and not config.execute_jobs:
-                    time.sleep(config.poll_seconds)
+                    execution_pool.wait(config.poll_seconds)
                     continue
 
-                try:
-                    stream = claim_live_stream(client, config)
-                except Exception as exc:
-                    if is_worker_deleted_error(exc):
-                        print("[live-worker] BOT này đã bị xoá khỏi control-plane, dừng worker.", flush=True)
+                claimed_any = False
+                while execution_pool.active_count() < max(1, int(config.threads or 1)):
+                    try:
+                        stream = claim_live_stream(client, config)
+                    except Exception as exc:
+                        if is_worker_deleted_error(exc):
+                            print("[live-worker] BOT này đã bị xoá khỏi control-plane, dừng worker.", flush=True)
+                            raise SystemExit("[live-worker] deleted from control-plane")
+                        if is_worker_missing_error(exc):
+                            print("[live-worker] claim got 404 worker-missing, re-registering.", flush=True)
+                            register_live_worker(client, config)
+                            heartbeat_loop.pulse_once()
+                            break
+                        raise
+                    if not stream:
                         break
-                    if is_worker_missing_error(exc):
-                        print("[live-worker] claim got 404 worker-missing, re-registering.", flush=True)
-                        register_live_worker(client, config)
-                        heartbeat_loop.pulse_once()
-                        time.sleep(config.poll_seconds)
-                        continue
-                    raise
-                if not stream:
-                    time.sleep(config.poll_seconds)
-                    continue
-
-                stream_id = str(stream["id"])
-                heartbeat_loop.set_active_ids([stream_id])
-                heartbeat_loop.pulse_once()
-
-                try:
-                    if config.simulate_jobs:
-                        simulate_live_stream(client, config, stream)
-                    else:
-                        run_live_stream(client, config, stream)
-                except Exception as exc:
-                    if _is_stopped_live_stream_conflict(exc):
-                        print(f"[live] {stream['id']} không còn tiếp tục được trên control plane, dừng worker flow sạch sẽ.", flush=True)
-                        time.sleep(config.poll_seconds)
-                        continue
-                    fail_live_stream(client, config, stream_id, message=str(exc))
-                finally:
-                    heartbeat_loop.clear_active_ids()
+                    claimed_any = True
+                    execution_pool.start(stream)
                     try:
                         heartbeat_loop.pulse_once()
                     except Exception as exc:
-                        print(f"[live-worker] post-stream heartbeat failed: {exc}", flush=True)
-                time.sleep(config.poll_seconds)
+                        print(f"[live-worker] post-claim heartbeat failed: {exc}", flush=True)
+
+                if claimed_any:
+                    continue
+                execution_pool.wait(config.poll_seconds)
             except Exception as exc:
                 if is_worker_deleted_error(exc):
                     print("[live-worker] BOT này đã bị xoá khỏi control-plane, dừng worker.", flush=True)
                     break
+                if isinstance(exc, SystemExit):
+                    print(str(exc), flush=True)
+                    break
                 print(f"[live-worker] main loop recovered from error: {exc}", flush=True)
                 time.sleep(config.poll_seconds)
     finally:
+        execution_pool.join_all()
         heartbeat_loop.stop()
 
 

@@ -4676,7 +4676,7 @@ class AppStore:
             requested_threads = (
                 install_task.get("threads")
                 if install_task is not None and install_task.get("threads") is not None
-                else payload.threads
+                else (existing.threads if existing is not None and int(existing.threads or 0) > 0 else payload.threads)
             )
             normalized_threads = self._normalize_live_worker_threads(
                 requested_threads or (existing.threads if existing is not None else 1)
@@ -4779,7 +4779,7 @@ class AppStore:
             worker.bandwidth_kbps = payload.bandwidth_kbps
             worker.disk_used_gb = payload.disk_used_gb
             worker.disk_total_gb = payload.disk_total_gb or worker.disk_total_gb
-            normalized_threads = self._normalize_live_worker_threads(payload.threads or worker.threads or 1)
+            normalized_threads = self._normalize_live_worker_threads(worker.threads or worker.capacity or payload.threads or 1)
             worker.threads = normalized_threads
             worker.capacity = normalized_threads
             for link in self.live_user_worker_links:
