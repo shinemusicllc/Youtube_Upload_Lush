@@ -42,6 +42,7 @@
 | DEC-036 | Telegram livestream notifications dung bot rieng va luu recipient o account-level `telegram_live`; recipient chi la owner cua luong live, khong bam theo BOT/VPS | Active | live notifications + account settings | Medium |
 | DEC-037 | Live quota phai tach `worker.capacity` (tran cung cua VPS) khoi `allocated_threads` theo tung mapping `user + worker + role`; UI user/BOT phai hien theo quota cap phat va admin assignment phai chan tong quota vuot tran | Active | live admin assignment + scheduling | High |
 | DEC-038 | Chuyen BOT giua `upload` va `live/backup` phai di qua SSH bootstrap lai tren cung VPS; source workspace bi cleanup truoc khi BOT quay lai pool moi | Active | admin BOT conversion + bootstrap | High |
+| DEC-039 | Live runtime retry sau loi media phai co cooldown, worker khong duoc reclaim lai chinh stream khi lease chua het, va Telegram disconnect phai throttle cho den khi stream hoi phuc that su | Active | live runtime resilience + alert dedupe | High |
 
 ## Notes
 - `docs/DECISIONS.md` van giu full history va ly do chi tiet.

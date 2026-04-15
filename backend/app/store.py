@@ -4350,6 +4350,40 @@ class AppStore:
         except ValueError:
             return 20
 
+    @staticmethod
+    def _live_retry_cooldown_seconds() -> int:
+        raw_value = str(os.getenv("LIVE_RETRY_COOLDOWN_SECONDS", "180")).strip()
+        try:
+            return max(30, int(raw_value))
+        except ValueError:
+            return 180
+
+    def _live_runtime_retry_anchor(self, stream: LiveStreamRecord) -> datetime | None:
+        return (
+            stream.disconnected_at
+            or stream.updated_at
+            or stream.claimed_at
+            or stream.streaming_started_at
+            or stream.waiting_started_at
+            or stream.prepared_at
+            or stream.download_started_at
+            or stream.created_at
+        )
+
+    def _live_runtime_retry_ready(self, stream: LiveStreamRecord, *, now: datetime) -> bool:
+        retry_anchor = self._live_runtime_retry_anchor(stream)
+        if retry_anchor is None:
+            return True
+        retry_after = retry_anchor + timedelta(seconds=self._live_retry_cooldown_seconds())
+        return retry_after <= now
+
+    def _should_notify_live_disconnect(self, stream: LiveStreamRecord, *, now: datetime) -> bool:
+        last_disconnected_at = stream.disconnected_at
+        if last_disconnected_at is None:
+            return True
+        retry_after = last_disconnected_at + timedelta(seconds=self._live_retry_cooldown_seconds())
+        return retry_after <= now
+
     @classmethod
     def _live_worker_scheduled_statuses(cls) -> set[str]:
         return {"scheduled", "disconnected", *cls._live_worker_active_statuses()}
@@ -4421,13 +4455,15 @@ class AppStore:
             return default_seconds
         return min(default_seconds, self._live_fast_failover_lease_seconds())
 
-    def _can_reclaim_started_live_stream(self, stream: LiveStreamRecord) -> bool:
+    def _can_reclaim_started_live_stream(self, stream: LiveStreamRecord, *, now: datetime) -> bool:
         normalized_status = str(stream.status or "").strip().lower() or "scheduled"
         if not self._live_stream_requires_fast_failover(stream):
             return False
         if self._is_live_hot_standby_backup_clone(stream):
-            return normalized_status in self._live_worker_claimable_statuses()
-        return normalized_status == "disconnected"
+            return normalized_status in self._live_worker_claimable_statuses() and self._live_runtime_retry_ready(stream, now=now)
+        if normalized_status != "disconnected":
+            return False
+        return self._live_runtime_retry_ready(stream, now=now)
 
     def _desired_live_playback_mode(self, stream: LiveStreamRecord, *, now: datetime) -> str:
         normalized_status = str(stream.status or "").strip().lower() or "scheduled"
@@ -4512,7 +4548,9 @@ class AppStore:
         normalized_status = str(stream.status or "").strip().lower() or "scheduled"
         if normalized_status not in self._live_worker_claimable_statuses():
             return False
-        if self._has_live_stream_started(stream) and not self._can_reclaim_started_live_stream(stream):
+        if normalized_status == "disconnected" and not self._live_runtime_retry_ready(stream, now=now):
+            return False
+        if self._has_live_stream_started(stream) and not self._can_reclaim_started_live_stream(stream, now=now):
             return False
         visible_stream = self._visible_live_stream_for_runtime(stream)
         runtime_role = self._live_runtime_role(stream)
@@ -4532,7 +4570,7 @@ class AppStore:
         if current_user_active_streams >= allocated_threads:
             return False
         claimed_by_worker_id = str(stream.claimed_by_worker_id or "").strip()
-        if claimed_by_worker_id in {"", worker_id}:
+        if claimed_by_worker_id == "":
             return True
         return stream.lease_expires_at is not None and stream.lease_expires_at <= now
 
@@ -4631,8 +4669,12 @@ class AppStore:
             clone.start_time_live = stream.start_time_live
             clone.end_time_live = stream.end_time_live
             clone.backup_delay_minutes = stream.backup_delay_minutes
-            if clone.status in {"draft", "scheduled", "disconnected", "ended", "stopped", "error"} and clone.claimed_by_worker_id is None:
+            clone_status = str(clone.status or "").strip().lower()
+            if clone.claimed_by_worker_id is None and clone_status in {"draft", "scheduled", "disconnected", "ended", "stopped"}:
                 self._reset_live_backup_clone_runtime(clone, now=now)
+            elif clone.claimed_by_worker_id is None and clone_status == "error":
+                if self._live_runtime_retry_ready(clone, now=now):
+                    self._reset_live_backup_clone_runtime(clone, now=now)
             else:
                 clone.updated_at = now
 
@@ -4703,6 +4745,7 @@ class AppStore:
         now: datetime,
         reason: str,
     ) -> tuple[list[str], str] | None:
+        should_notify_disconnect = self._should_notify_live_disconnect(stream, now=now)
         if self._is_runtime_backup_clone(stream):
             stream.status = "error"
             stream.log_label = "Lỗi"
@@ -4714,8 +4757,12 @@ class AppStore:
             stream.error_message = None
             stream.disconnected_at = now
             notification_payload = (
-                self._live_stream_recipient_chat_ids(stream),
-                self._live_stream_disconnected_message(stream, now=now, reason=reason),
+                (
+                    self._live_stream_recipient_chat_ids(stream),
+                    self._live_stream_disconnected_message(stream, now=now, reason=reason),
+                )
+                if should_notify_disconnect
+                else None
             )
         stream.status_message = None
         stream.is_live_now = False
@@ -5157,6 +5204,7 @@ class AppStore:
             worker = self._authenticate_live_worker(worker_id, shared_secret)
             stream = self._find_claimed_live_stream(stream_id, worker_id)
             now = self._now(trim=False)
+            should_notify_disconnect = self._should_notify_live_disconnect(stream, now=now)
             if stream.status == "stopped":
                 stream.status_message = None
                 stream.lease_expires_at = None
@@ -5171,8 +5219,9 @@ class AppStore:
                 stream.status = "disconnected"
                 stream.log_label = "Mất kết nối"
                 stream.disconnected_at = now
-                notification_chat_ids = self._live_stream_recipient_chat_ids(stream)
-                notification_message = self._live_stream_disconnected_message(stream, now=now, reason=message)
+                if should_notify_disconnect:
+                    notification_chat_ids = self._live_stream_recipient_chat_ids(stream)
+                    notification_message = self._live_stream_disconnected_message(stream, now=now, reason=message)
             else:
                 stream.status = "error"
                 stream.log_label = "Lỗi"
