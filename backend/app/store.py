@@ -1238,6 +1238,35 @@ class AppStore:
     def _worker_operation_is_finished(task: dict[str, Any]) -> bool:
         return str(task.get("status") or "").strip() == "completed"
 
+    def _has_pending_install_for_other_workspace(self, worker_id: str, *, workspace_mode: str) -> bool:
+        normalized_worker_id = str(worker_id or "").strip()
+        resolved_workspace_mode = self._normalize_workspace_mode(workspace_mode)
+        if not normalized_worker_id:
+            return False
+        for task in self.worker_operation_tasks:
+            if str(task.get("kind") or "").strip() != "install":
+                continue
+            if str(task.get("worker_id") or "").strip() != normalized_worker_id:
+                continue
+            if str(task.get("status") or "").strip() in {"completed", "failed"}:
+                continue
+            if self._restore_worker_operation_workspace_mode(task) == resolved_workspace_mode:
+                continue
+            return True
+        return False
+
+    def _remove_workspace_worker_row(self, worker_id: str, *, workspace_mode: str) -> None:
+        cleaned_worker_id = str(worker_id or "").strip()
+        resolved_workspace_mode = self._normalize_workspace_mode(workspace_mode)
+        if not cleaned_worker_id:
+            return
+        if resolved_workspace_mode == "live":
+            self.live_workers = [
+                worker for worker in self.live_workers if str(worker.id or "").strip() != cleaned_worker_id
+            ]
+            return
+        self.workers = [worker for worker in self.workers if str(worker.id or "").strip() != cleaned_worker_id]
+
     def _find_worker_operation(self, operation_id: str) -> dict[str, Any]:
         normalized_id = str(operation_id or "").strip()
         for task in self.worker_operation_tasks:
@@ -1420,6 +1449,7 @@ class AppStore:
         requested_role: str = "system",
         requested_user_id: str | None = None,
         post_install_config: dict[str, Any] | None = None,
+        replace_other_workspace_mode: str | None = None,
     ) -> dict[str, Any]:
         with self._worker_state_lock:
             normalized_worker_id = str(worker_id or "").strip()
@@ -1428,6 +1458,11 @@ class AppStore:
             workspace_workers = self._workspace_worker_pool(resolved_workspace_mode)
             other_workspace_mode = "upload" if resolved_workspace_mode == "live" else "live"
             other_workspace_workers = self._workspace_worker_pool(other_workspace_mode)
+            normalized_replace_other_workspace_mode = (
+                self._normalize_workspace_mode(replace_other_workspace_mode)
+                if str(replace_other_workspace_mode or "").strip()
+                else None
+            )
             if not normalized_worker_id or not normalized_ip:
                 raise ValueError("Worker bootstrap task thiếu worker_id hoặc VPS IP.")
             self._clear_deleted_worker(normalized_worker_id)
@@ -1445,20 +1480,29 @@ class AppStore:
                 for worker in workspace_workers
             ):
                 raise ValueError("VPS này đã tồn tại trong danh sách BOT.")
-            if any(
-                str(
-                    self._resolve_workspace_worker_display_name(
-                        worker.id,
-                        workspace_mode=other_workspace_mode,
+            conflicting_other_workspace_worker = next(
+                (
+                    worker
+                    for worker in other_workspace_workers
+                    if str(worker.id or "").strip() == normalized_worker_id
+                    or str(
+                        self._resolve_workspace_worker_display_name(
+                            worker.id,
+                            workspace_mode=other_workspace_mode,
+                        )
+                        or ""
+                    ).strip()
+                    == normalized_ip
+                ),
+                None,
+            )
+            if conflicting_other_workspace_worker is not None:
+                if normalized_replace_other_workspace_mode != other_workspace_mode:
+                    raise ValueError(
+                        "VPS này đang được dùng ở workspace còn lại. Hãy gỡ BOT ở workspace kia trước khi cài lại."
                     )
-                    or ""
-                ).strip()
-                == normalized_ip
-                for worker in other_workspace_workers
-            ):
-                raise ValueError(
-                    "VPS này đang được dùng ở workspace còn lại. Hãy gỡ BOT ở workspace kia trước khi cài lại."
-                )
+                if str(conflicting_other_workspace_worker.id or "").strip() != normalized_worker_id:
+                    raise ValueError("Không thể chuyển workspace khi VPS đang thuộc BOT khác.")
             removed_failed_worker_ids: set[str] = set()
             remaining_tasks: list[dict[str, Any]] = []
             for task in self.worker_operation_tasks:
@@ -1482,15 +1526,25 @@ class AppStore:
                 if not any(str(worker.id or "").strip() == failed_worker_id for worker in workspace_workers):
                     self.worker_connection_profiles.pop(failed_worker_id, None)
             for task in self.worker_operation_tasks:
-                if self._worker_operation_is_finished(task):
-                    continue
-                if self._normalize_workspace_mode(task.get("workspace_mode")) != resolved_workspace_mode:
+                if str(task.get("status") or "").strip() in {"completed", "failed"}:
                     continue
                 if (
                     str(task.get("worker_id") or "").strip() == normalized_worker_id
                     or str(task.get("vps_ip") or "").strip() == normalized_ip
                 ):
                     raise ValueError("BOT này đang có một tiến trình cài đặt hoặc gỡ BOT khác chưa xong.")
+            if conflicting_other_workspace_worker is not None:
+                if other_workspace_mode == "live":
+                    self._purge_live_worker_assignment_scope(conflicting_other_workspace_worker.id)
+                else:
+                    self._purge_worker_assignment_scope(
+                        conflicting_other_workspace_worker.id,
+                        session_reason="BOT đang được chuyển sang workspace khác.",
+                    )
+                self._remove_workspace_worker_row(
+                    conflicting_other_workspace_worker.id,
+                    workspace_mode=other_workspace_mode,
+                )
             now = self._now(trim=False)
             normalized_threads = (
                 self._normalize_live_worker_threads(threads)
@@ -2709,7 +2763,11 @@ class AppStore:
                 continue
 
             mapping = dict(raw_mapping)
-            mapping["threads"] = self._normalize_live_worker_threads(mapping.get("threads"))
+            allocated_threads = self._normalize_live_worker_threads(
+                mapping.get("allocated_threads") if mapping.get("allocated_threads") is not None else mapping.get("threads")
+            )
+            mapping["allocated_threads"] = allocated_threads
+            mapping["threads"] = allocated_threads
             mapping["live_role"] = self._normalize_live_assignment_role(
                 mapping.get("live_role"),
                 fallback_note=mapping.get("note"),
@@ -3814,6 +3872,7 @@ class AppStore:
             "running_threads": running_threads,
             "max_threads": max_threads,
             "thread_text": f"{running_threads}/{max_threads}",
+            "note_text": "Chạy / Tổng",
         }
 
     def _sync_worker_runtime_status(self, worker: WorkerRecord) -> None:
@@ -3888,6 +3947,8 @@ class AppStore:
             if payload.shared_secret != self.get_worker_shared_secret():
                 raise ValueError("Worker shared secret không hợp lệ.")
             self._ensure_worker_not_deleted(payload.worker_id)
+            if self._has_pending_install_for_other_workspace(payload.worker_id, workspace_mode="upload"):
+                raise ValueError("BOT này đang được chuyển sang workspace live. Worker upload hiện tại sẽ tự khởi động lại.")
 
             now = self._now(trim=False)
             worker_display_name = self._default_worker_display_name(payload.worker_id, payload.name)
@@ -4402,11 +4463,58 @@ class AppStore:
     def _has_live_stream_started(stream: LiveStreamRecord) -> bool:
         return stream.streaming_started_at is not None
 
+    def _live_runtime_role(self, stream: LiveStreamRecord) -> str:
+        if self._is_runtime_backup_clone(stream):
+            return "backup"
+        return "backup" if str(stream.runtime_role or "").strip().lower() == "backup" else "primary"
+
+    def _live_runtime_user_active_stream_count(
+        self,
+        *,
+        owner_user_id: str,
+        worker_id: str,
+        role: str,
+        excluding_stream_id: str | None = None,
+    ) -> int:
+        active_statuses = self._live_worker_active_statuses()
+        normalized_role = self._normalize_live_assignment_role(role)
+        total = 0
+        for stream in self.live_streams:
+            if excluding_stream_id and stream.id == excluding_stream_id:
+                continue
+            if str(stream.owner_user_id or "").strip() != str(owner_user_id or "").strip():
+                continue
+            if str(stream.claimed_by_worker_id or "").strip() != str(worker_id or "").strip():
+                continue
+            if str(stream.status or "").strip().lower() not in active_statuses:
+                continue
+            if self._live_runtime_role(stream) != normalized_role:
+                continue
+            total += 1
+        return total
+
     def _can_claim_live_stream(self, stream: LiveStreamRecord, *, worker_id: str, now: datetime) -> bool:
         normalized_status = str(stream.status or "").strip().lower() or "scheduled"
         if normalized_status not in self._live_worker_claimable_statuses():
             return False
         if self._has_live_stream_started(stream) and not self._can_reclaim_started_live_stream(stream):
+            return False
+        visible_stream = self._visible_live_stream_for_runtime(stream)
+        runtime_role = self._live_runtime_role(stream)
+        allocated_threads = self._live_user_worker_allocated_threads(
+            visible_stream.owner_user_id,
+            worker_id,
+            role=runtime_role,
+        )
+        if allocated_threads < 1:
+            return False
+        current_user_active_streams = self._live_runtime_user_active_stream_count(
+            owner_user_id=visible_stream.owner_user_id,
+            worker_id=worker_id,
+            role=runtime_role,
+            excluding_stream_id=stream.id,
+        )
+        if current_user_active_streams >= allocated_threads:
             return False
         claimed_by_worker_id = str(stream.claimed_by_worker_id or "").strip()
         if claimed_by_worker_id in {"", worker_id}:
@@ -4636,6 +4744,8 @@ class AppStore:
             if payload.shared_secret != self.get_worker_shared_secret():
                 raise ValueError("Worker shared secret không hợp lệ.")
             self._ensure_worker_not_deleted(payload.worker_id)
+            if self._has_pending_install_for_other_workspace(payload.worker_id, workspace_mode="live"):
+                raise ValueError("BOT này đang được chuyển sang workspace upload. Worker live hiện tại sẽ tự khởi động lại.")
             now = self._now(trim=False)
             existing = next((worker for worker in self.live_workers if worker.id == payload.worker_id), None)
             worker_display_name = self._default_worker_display_name(payload.worker_id, payload.name)
@@ -4673,13 +4783,13 @@ class AppStore:
                 manager.username if manager else (install_task_manager_name or str(payload.manager_name or "").strip() or "system")
             )
             resolved_group = install_task_group or str(payload.group or "").strip() or "S - Việt 3"
-            requested_threads = (
-                install_task.get("threads")
-                if install_task is not None and install_task.get("threads") is not None
-                else (existing.threads if existing is not None and int(existing.threads or 0) > 0 else payload.threads)
-            )
-            normalized_threads = self._normalize_live_worker_threads(
-                requested_threads or (existing.threads if existing is not None else 1)
+            normalized_capacity = self._normalize_live_worker_threads(
+                (
+                    existing.capacity
+                    if existing is not None and int(existing.capacity or 0) > 0
+                    else payload.capacity
+                )
+                or self._fixed_live_worker_thread_limit()
             )
             if existing is None:
                 worker = WorkerRecord(
@@ -4690,7 +4800,7 @@ class AppStore:
                     group=resolved_group,
                     created_at=now,
                     status="online",
-                    capacity=normalized_threads,
+                    capacity=normalized_capacity,
                     load_percent=0,
                     ram_percent=0,
                     ram_used_gb=0.0,
@@ -4698,7 +4808,7 @@ class AppStore:
                     bandwidth_kbps=0.0,
                     disk_used_gb=0.0,
                     disk_total_gb=float(payload.disk_total_gb or 0),
-                    threads=normalized_threads,
+                    threads=normalized_capacity,
                     last_seen_at=now,
                 )
                 self.live_workers.append(worker)
@@ -4708,17 +4818,14 @@ class AppStore:
                 existing.manager_name = resolved_manager_name
                 existing.group = resolved_group
                 existing.created_at = existing.created_at or now
-                existing.capacity = normalized_threads
-                existing.threads = normalized_threads
+                existing.capacity = normalized_capacity
+                existing.threads = normalized_capacity
                 existing.disk_total_gb = float(payload.disk_total_gb or existing.disk_total_gb or 0)
                 existing.status = "online"
                 existing.last_seen_at = now
                 existing.offline_since_at = None
                 existing.offline_alert_sent_at = None
                 worker = existing
-            for link in self.live_user_worker_links:
-                if str(link.get("worker_id") or "").strip() == worker.id:
-                    link["threads"] = normalized_threads
             if self._looks_like_ipv4(worker_display_name):
                 existing_profile = self.worker_connection_profiles.get(payload.worker_id) or {}
                 self._remember_worker_connection_profile(
@@ -4779,12 +4886,11 @@ class AppStore:
             worker.bandwidth_kbps = payload.bandwidth_kbps
             worker.disk_used_gb = payload.disk_used_gb
             worker.disk_total_gb = payload.disk_total_gb or worker.disk_total_gb
-            normalized_threads = self._normalize_live_worker_threads(worker.threads or worker.capacity or payload.threads or 1)
-            worker.threads = normalized_threads
-            worker.capacity = normalized_threads
-            for link in self.live_user_worker_links:
-                if str(link.get("worker_id") or "").strip() == worker.id:
-                    link["threads"] = normalized_threads
+            normalized_capacity = self._normalize_live_worker_threads(
+                worker.capacity or payload.capacity or self._fixed_live_worker_thread_limit()
+            )
+            worker.threads = normalized_capacity
+            worker.capacity = normalized_capacity
             worker.last_seen_at = now
             worker.offline_since_at = None
             worker.offline_alert_sent_at = None
@@ -5185,6 +5291,23 @@ class AppStore:
         ]
         links.sort(key=lambda item: int(item.get("id") or 0))
         return links
+
+    def _live_user_worker_allocated_threads(self, user_id: str, worker_id: str, *, role: str | None = None) -> int:
+        normalized_worker_id = str(worker_id or "").strip()
+        normalized_role = self._normalize_live_assignment_role(role) if role is not None else None
+        total = 0
+        for link in self.live_user_worker_links:
+            if str(link.get("user_id") or "").strip() != str(user_id or "").strip():
+                continue
+            if str(link.get("worker_id") or "").strip() != normalized_worker_id:
+                continue
+            if normalized_role is not None and self._normalize_live_assignment_role(
+                link.get("live_role"),
+                fallback_note=link.get("note"),
+            ) != normalized_role:
+                continue
+            total += self._live_link_allocated_threads(link)
+        return total
 
     def _assigned_workers_for_user(self, user: UserSummary | str) -> list[WorkerRecord]:
         user_id = user.id if isinstance(user, UserSummary) else user
@@ -7382,13 +7505,149 @@ class AppStore:
             requested = 1
         return max(1, min(self._fixed_live_worker_thread_limit(), requested))
 
-    def _effective_live_worker_thread_limit(self, worker: WorkerRecord) -> int:
-        configured = max(
-            1,
-            int(worker.threads or 0),
-            int(worker.capacity or 0),
+    def _live_link_allocated_threads(self, link: dict[str, Any]) -> int:
+        return self._normalize_live_worker_threads(
+            link.get("allocated_threads") if link.get("allocated_threads") is not None else link.get("threads")
         )
+
+    def _live_worker_allocated_threads(self, worker_id: str, *, role: str | None = None) -> int:
+        normalized_worker_id = str(worker_id or "").strip()
+        normalized_role = self._normalize_live_assignment_role(role) if role is not None else None
+        total = 0
+        for link in self.live_user_worker_links:
+            if str(link.get("worker_id") or "").strip() != normalized_worker_id:
+                continue
+            if normalized_role is not None and self._normalize_live_assignment_role(
+                link.get("live_role"),
+                fallback_note=link.get("note"),
+            ) != normalized_role:
+                continue
+            total += self._live_link_allocated_threads(link)
+        return total
+
+    def _live_user_allocated_threads(self, user_id: str, *, role: str | None = None) -> int:
+        return sum(
+            self._live_link_allocated_threads(link)
+            for link in self._assigned_live_worker_links_for_user(user_id, role=role)
+        )
+
+    def _live_worker_default_assignment_threads(self, worker_id: str) -> int:
+        allocations = {
+            self._live_link_allocated_threads(link)
+            for link in self.live_user_worker_links
+            if str(link.get("worker_id") or "").strip() == str(worker_id or "").strip()
+        }
+        if not allocations:
+            worker = self._find_live_worker_optional(worker_id)
+            if worker is not None:
+                return self._effective_live_worker_thread_limit(worker)
+            return self._fixed_live_worker_thread_limit()
+        if len(allocations) == 1:
+            return next(iter(allocations))
+        return max(allocations)
+
+    def _effective_live_worker_thread_limit(self, worker: WorkerRecord) -> int:
+        configured = int(worker.capacity or self._fixed_live_worker_thread_limit())
         return self._normalize_live_worker_threads(configured)
+
+    def _overlapping_visible_live_streams(
+        self,
+        *,
+        worker_id: str | None,
+        start_time_live: datetime | None,
+        end_time_live: datetime | None,
+        is_forever: bool,
+        excluding_stream_id: str | None = None,
+        owner_user_id: str | None = None,
+        role: str | None = None,
+    ) -> list[LiveStreamRecord]:
+        normalized_worker_id = str(worker_id or "").strip()
+        normalized_owner_user_id = str(owner_user_id or "").strip()
+        normalized_role = self._normalize_live_assignment_role(role) if role is not None else None
+        matches: list[LiveStreamRecord] = []
+        for stream in self.live_streams:
+            if not self._is_visible_live_stream(stream):
+                continue
+            if excluding_stream_id and stream.id == excluding_stream_id:
+                continue
+            normalized_status = str(stream.status or "").strip().lower()
+            if normalized_status in {"stopped", "ended", "error"}:
+                continue
+            if normalized_owner_user_id and stream.owner_user_id != normalized_owner_user_id:
+                continue
+            if normalized_role == "primary":
+                if stream.primary_worker_id != normalized_worker_id:
+                    continue
+            elif normalized_role == "backup":
+                if str(stream.backup_worker_id or "").strip() != normalized_worker_id:
+                    continue
+            elif normalized_worker_id:
+                if (
+                    stream.primary_worker_id != normalized_worker_id
+                    and str(stream.backup_worker_id or "").strip() != normalized_worker_id
+                ):
+                    continue
+            if not self._live_schedule_windows_overlap(
+                start_time_live=start_time_live,
+                end_time_live=end_time_live,
+                is_forever=is_forever,
+                other_start_time_live=stream.start_time_live,
+                other_end_time_live=stream.end_time_live,
+                other_is_forever=stream.is_forever,
+            ):
+                continue
+            matches.append(stream)
+        return matches
+
+    def _assert_live_worker_quota_available(
+        self,
+        *,
+        owner: UserSummary,
+        worker_id: str | None,
+        role: str,
+        field_label: str,
+        start_time_live: datetime | None,
+        end_time_live: datetime | None,
+        is_forever: bool,
+        excluding_stream_id: str | None = None,
+    ) -> None:
+        normalized_worker_id = str(worker_id or "").strip()
+        if not normalized_worker_id:
+            return
+        worker = self._find_live_worker(normalized_worker_id)
+        worker_name = self._resolve_live_worker_display_name(normalized_worker_id)
+        allocated_threads = self._live_user_worker_allocated_threads(owner.id, normalized_worker_id, role=role)
+        if allocated_threads < 1:
+            raise ValueError(f"{field_label} {worker_name} chưa có quota được cấp cho tài khoản này.")
+
+        overlapping_user_streams = self._overlapping_visible_live_streams(
+            worker_id=normalized_worker_id,
+            owner_user_id=owner.id,
+            role=role,
+            start_time_live=start_time_live,
+            end_time_live=end_time_live,
+            is_forever=is_forever,
+            excluding_stream_id=excluding_stream_id,
+        )
+        if len(overlapping_user_streams) >= allocated_threads:
+            raise ValueError(
+                f"{field_label} {worker_name} chỉ còn {allocated_threads} luồng được cấp cho tài khoản này, "
+                f"nhưng đã có {len(overlapping_user_streams)}/{allocated_threads} luồng trùng lịch."
+            )
+
+        worker_capacity = self._effective_live_worker_thread_limit(worker)
+        overlapping_worker_streams = self._overlapping_visible_live_streams(
+            worker_id=normalized_worker_id,
+            start_time_live=start_time_live,
+            end_time_live=end_time_live,
+            is_forever=is_forever,
+            excluding_stream_id=excluding_stream_id,
+        )
+        if len(overlapping_worker_streams) >= worker_capacity:
+            raise ValueError(
+                f"{field_label} {worker_name} đã kín {len(overlapping_worker_streams)}/{worker_capacity} luồng "
+                "trong khoảng thời gian trùng nhau."
+            )
 
     @staticmethod
     def _resolve_live_schedule_window(
@@ -7621,15 +7880,19 @@ class AppStore:
             is_live_now=is_live_now,
             is_forever=is_forever,
         )
-        self._assert_live_worker_schedule_available(
+        self._assert_live_worker_quota_available(
+            owner=owner,
             worker_id=primary_worker.id,
+            role="primary",
             field_label="BOT chính",
             start_time_live=start_time_live,
             end_time_live=end_time_live,
             is_forever=is_forever,
         )
-        self._assert_live_worker_schedule_available(
+        self._assert_live_worker_quota_available(
+            owner=owner,
             worker_id=backup_worker.id if backup_worker else None,
+            role="backup",
             field_label="BOT backup",
             start_time_live=start_time_live,
             end_time_live=end_time_live,
@@ -7754,16 +8017,20 @@ class AppStore:
             is_live_now=is_live_now,
             is_forever=is_forever,
         )
-        self._assert_live_worker_schedule_available(
+        self._assert_live_worker_quota_available(
+            owner=owner,
             worker_id=primary_worker.id,
+            role="primary",
             field_label="BOT chính",
             start_time_live=start_time_live,
             end_time_live=end_time_live,
             is_forever=is_forever,
             excluding_stream_id=stream.id,
         )
-        self._assert_live_worker_schedule_available(
+        self._assert_live_worker_quota_available(
+            owner=owner,
             worker_id=backup_worker.id if backup_worker else None,
+            role="backup",
             field_label="BOT backup",
             start_time_live=start_time_live,
             end_time_live=end_time_live,
@@ -8042,41 +8309,47 @@ class AppStore:
 
     def _live_worker_thread_summary(self, worker: WorkerRecord) -> dict[str, int | str]:
         running_threads = self._count_live_worker_running_streams(worker)
+        allocated_threads = self._live_worker_allocated_threads(worker.id)
         max_threads = self._effective_live_worker_thread_limit(worker)
+        is_overallocated = allocated_threads > max_threads
         return {
             "running_threads": running_threads,
+            "allocated_threads": allocated_threads,
             "max_threads": max_threads,
-            "thread_text": f"{running_threads}/{max_threads}",
+            "thread_text": f"{running_threads}/{allocated_threads}/{max_threads}",
+            "note_text": "Chạy / Cấp phát / Trần",
+            "is_overallocated": is_overallocated,
         }
+
+    def _live_backup_running_for_stream(self, stream: LiveStreamRecord) -> bool:
+        clone = self._find_live_backup_clone_optional(stream)
+        return bool(clone and str(clone.status or "").strip().lower() == "streaming")
+
+    def _live_backup_pending_for_stream(self, stream: LiveStreamRecord) -> bool:
+        if not stream.is_forever or not stream.backup_worker_id:
+            return False
+        if str(stream.status or "").strip().lower() in {"stopped", "ended", "error"}:
+            return False
+        clone = self._find_live_backup_clone_optional(stream)
+        if clone is None:
+            return True
+        return str(clone.status or "").strip().lower() in self._live_pre_stream_statuses()
 
     def _live_user_metrics(self, user: UserSummary) -> dict[str, Any]:
         live_streams = [stream for stream in self.live_streams if stream.owner_user_id == user.id and self._is_visible_live_stream(stream)]
         live_primary_bots = self._assigned_live_workers_for_user(user, role="primary")
-        backup_worker_ids = {stream.backup_worker_id for stream in live_streams if stream.backup_worker_id}
+        live_backup_bots = self._assigned_live_workers_for_user(user, role="backup")
         return {
             "live_threads_running": len(
-                [stream for stream in live_streams if self._effective_live_runtime_stream(stream).status == "streaming"]
+                [stream for stream in live_streams if str(stream.status or "").strip().lower() == "streaming"]
             ),
-            "live_threads_total": len(live_streams),
+            "live_threads_total": self._live_user_allocated_threads(user.id, role="primary"),
             "live_bots_total": len(live_primary_bots),
-            "live_threads_backup_running": len(
-                [
-                    stream
-                    for stream in live_streams
-                    if stream.backup_worker_id and self._effective_live_runtime_stream(stream).status == "streaming"
-                ]
-            ),
-            "live_threads_backup_pending": len(
-                [
-                    stream
-                    for stream in live_streams
-                    if stream.backup_worker_id
-                    and self._effective_live_runtime_stream(stream).status in self._live_pre_stream_statuses()
-                ]
-            ),
-            "live_threads_backup_total": len([stream for stream in live_streams if stream.backup_worker_id]),
-            "live_bots_backup_total": len(backup_worker_ids),
-            "live_total_bots": len(live_primary_bots),
+            "live_threads_backup_running": len([stream for stream in live_streams if self._live_backup_running_for_stream(stream)]),
+            "live_threads_backup_pending": len([stream for stream in live_streams if self._live_backup_pending_for_stream(stream)]),
+            "live_threads_backup_total": self._live_user_allocated_threads(user.id, role="backup"),
+            "live_bots_backup_total": len(live_backup_bots),
+            "live_total_bots": len(live_primary_bots) + len(live_backup_bots),
         }
 
     def _live_stream_display_row(self, stream: LiveStreamRecord) -> dict[str, Any]:
@@ -9400,7 +9673,16 @@ class AppStore:
         bot_type = self._bot_type_badge_data(workspace_kind, task_live_role)
         bot_function_key = "upload" if workspace_kind != "live" else "backup" if task_live_role == "backup" else "primary"
         requested_threads = self._normalize_live_worker_threads(task.get("threads") or 1) if workspace_kind == "live" else 0
-        workload_text = f"0/{requested_threads}" if workspace_kind == "live" else "--"
+        pending_config = self._pending_install_config(task)
+        assigned_user_ids = [
+            str(value).strip()
+            for value in ((pending_config or {}).get("assigned_user_ids") or [])
+            if str(value).strip()
+        ]
+        allocated_threads = requested_threads * len(assigned_user_ids) if workspace_kind == "live" else 0
+        max_threads = self._fixed_live_worker_thread_limit() if workspace_kind == "live" else requested_threads
+        workload_text = f"0/{allocated_threads}/{max_threads}" if workspace_kind == "live" else "--"
+        workload_note = "Chạy / Cấp phát / Trần" if workspace_kind == "live" else "Chạy / Tổng"
         bot_function_label = {
             "upload": "Upload",
             "backup": "Backup",
@@ -9438,9 +9720,11 @@ class AppStore:
             "thread_text": workload_text,
             "live_thread_text": workload_text,
             "workload_text": workload_text,
+            "workload_note": workload_note,
             "workload_badge_class": bot_type["badge_class"],
             "running_threads": 0,
-            "max_threads": requested_threads,
+            "allocated_threads": allocated_threads,
+            "max_threads": max_threads,
             "threads": requested_threads,
             "ram_text": "--",
             "ram_percent": 0,
@@ -9613,10 +9897,20 @@ class AppStore:
                     "thread_text": thread_summary["thread_text"],
                     "live_thread_text": thread_summary["thread_text"],
                     "workload_text": thread_summary["thread_text"],
-                    "workload_badge_class": bot_type["badge_class"],
+                    "workload_note": thread_summary.get("note_text", "Chạy / Tổng"),
+                    "workload_badge_class": (
+                        "border-rose-100 bg-rose-50 text-rose-700"
+                        if is_live_workspace and bool(thread_summary.get("is_overallocated"))
+                        else bot_type["badge_class"]
+                    ),
                     "running_threads": thread_summary["running_threads"],
+                    "allocated_threads": thread_summary.get("allocated_threads", 0),
                     "max_threads": thread_summary["max_threads"],
-                    "threads": worker.threads,
+                    "threads": (
+                        self._live_worker_default_assignment_threads(worker.id)
+                        if is_live_workspace
+                        else worker.threads
+                    ),
                     "ram_text": f"{worker.ram_used_gb:.1f}GB / {worker.ram_total_gb:.1f}GB"
                     if worker.ram_total_gb > 0
                     else "--",
@@ -10358,7 +10652,7 @@ class AppStore:
         normalized_name = str(name or "").strip()
         if not normalized_name:
             raise ValueError("Tên BOT là bắt buộc.")
-        normalized_threads = self._normalize_live_worker_threads(threads)
+        normalized_capacity = self._fixed_live_worker_thread_limit()
         manager: UserSummary | None = None
         if manager_id:
             manager = self._find_user(manager_id)
@@ -10375,7 +10669,7 @@ class AppStore:
             group="S - Việt 3",
             created_at=self._now(trim=False),
             status="offline",
-            capacity=normalized_threads,
+            capacity=normalized_capacity,
             load_percent=0,
             ram_percent=0,
             ram_used_gb=0.0,
@@ -10383,7 +10677,7 @@ class AppStore:
             bandwidth_kbps=0,
             disk_used_gb=0.0,
             disk_total_gb=512.0,
-            threads=normalized_threads,
+            threads=normalized_capacity,
             last_seen_at=self._now(trim=False),
         )
         self.live_workers.append(worker)
@@ -10455,7 +10749,9 @@ class AppStore:
             if str(live_role or "").strip()
             else None
         )
-        normalized_threads = self._normalize_live_worker_threads(threads or worker.threads or 1)
+        normalized_threads = self._normalize_live_worker_threads(
+            threads if threads is not None else self._live_worker_default_assignment_threads(worker.id)
+        )
         if normalized_manager_id:
             manager = self._find_user(normalized_manager_id)
             if manager.role != "manager":
@@ -10483,11 +10779,8 @@ class AppStore:
 
         self._apply_live_worker_manager(worker, manager)
         worker.group = normalized_group
-        worker.threads = normalized_threads
-        worker.capacity = normalized_threads
-        for link in self.live_user_worker_links:
-            if str(link.get("worker_id") or "").strip() == worker.id:
-                link["threads"] = normalized_threads
+        worker.capacity = self._effective_live_worker_thread_limit(worker)
+        worker.threads = worker.capacity
 
         selected_users: list[UserSummary] = []
         target_user_ids = normalized_user_ids if assigned_user_ids is not None else ([normalized_user_id] if normalized_user_id else [])
@@ -10510,6 +10803,13 @@ class AppStore:
 
         if assigned_user_ids is not None or normalized_user_id:
             selected_user_id_set = {item.id for item in selected_users}
+            requested_total_allocated_threads = normalized_threads * len(selected_user_id_set)
+            worker_capacity = self._effective_live_worker_thread_limit(worker)
+            if requested_total_allocated_threads > worker_capacity:
+                raise ValueError(
+                    f"BOT {self._resolve_live_worker_display_name(worker.id)} chỉ có trần {worker_capacity} luồng, "
+                    f"nhưng cấu hình hiện tại đang cấp phát {requested_total_allocated_threads} luồng cho {len(selected_user_id_set)} user."
+                )
             self.live_user_worker_links = [
                 link
                 for link in self.live_user_worker_links
@@ -10540,6 +10840,7 @@ class AppStore:
                             "id": next_id,
                             "user_id": assigned_user.id,
                             "worker_id": worker.id,
+                            "allocated_threads": normalized_threads,
                             "threads": normalized_threads,
                             "live_role": selected_role,
                             "note": self._live_assignment_note(selected_role),
@@ -10547,6 +10848,7 @@ class AppStore:
                     )
                     next_id += 1
                 else:
+                    existing_link["allocated_threads"] = normalized_threads
                     existing_link["threads"] = normalized_threads
                     existing_link["live_role"] = selected_role
                     existing_link["note"] = self._live_assignment_note(selected_role)
@@ -10614,8 +10916,25 @@ class AppStore:
         if thread < 1:
             raise ValueError("Số luồng phải lớn hơn hoặc bằng 1.")
         normalized_threads = self._normalize_live_worker_threads(thread)
-        worker.threads = normalized_threads
-        worker.capacity = normalized_threads
+        worker.threads = self._effective_live_worker_thread_limit(worker)
+        worker.capacity = self._effective_live_worker_thread_limit(worker)
+        worker_link_count = len(
+            [
+                link
+                for link in self.live_user_worker_links
+                if str(link.get("worker_id") or "").strip() == worker.id
+            ]
+        )
+        if normalized_threads * worker_link_count > self._effective_live_worker_thread_limit(worker):
+            raise ValueError(
+                f"BOT {self._resolve_live_worker_display_name(worker.id)} đang vượt trần "
+                f"{normalized_threads * worker_link_count}/{self._effective_live_worker_thread_limit(worker)} luồng."
+            )
+        for link in self.live_user_worker_links:
+            if str(link.get("worker_id") or "").strip() != worker.id:
+                continue
+            link["allocated_threads"] = normalized_threads
+            link["threads"] = normalized_threads
         self._save_state()
 
     def update_bot(

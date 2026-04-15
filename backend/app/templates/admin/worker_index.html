@@ -219,6 +219,12 @@
         line-height: 1.35;
     }
 
+    .worker-metric-note {
+        font-size: 11px;
+        line-height: 1.35;
+        color: rgb(100 116 139);
+    }
+
 </style>
 <section class="worker-page-shell space-y-6">
 
@@ -346,9 +352,12 @@
                             <p class="mt-1 text-[11px] text-slate-500">{{ ' '.join(created_parts[1:]) if created_parts|length > 1 else '--' }}</p>
                         </td>
                         <td>
-                            <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold {{ worker.workload_badge_class or worker.bot_type_badge_class }}">
-                                {{ worker.workload_text }}
-                            </span>
+                            <div class="space-y-1">
+                                <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold {{ worker.workload_badge_class or worker.bot_type_badge_class }}">
+                                    {{ worker.workload_text }}
+                                </span>
+                                <p class="worker-metric-note">{{ worker.workload_note or 'Chạy / Tổng' }}</p>
+                            </div>
                         </td>
                         <td>
                             <span class="inline-flex items-center rounded-full border border-sky-100 bg-sky-50 px-2.5 py-1 text-[10px] font-semibold text-sky-700">
@@ -488,7 +497,7 @@
                     </select>
                 </div>
                 <div data-create-bot-thread-field hidden>
-                    <label class="field-label" for="create-bot-threads">Lu&#7891;ng</label>
+                    <label class="field-label" for="create-bot-threads">Quota c&#7845;p / user</label>
                     <input
                         class="toolbar-input"
                         id="create-bot-threads"
@@ -497,10 +506,10 @@
                         min="1"
                         max="6"
                         step="1"
-                        value="1"
+                        value="6"
                         inputmode="numeric"
                     >
-                    <p class="mt-1 text-[11px] text-slate-500" data-create-bot-thread-help>T&#7889;i &#273;a 6 lu&#7891;ng cho m&#7895;i BOT live ho&#7863;c backup tr&#234;n m&#7897;t VPS.</p>
+                    <p class="mt-1 text-[11px] text-slate-500" data-create-bot-thread-help>Quota n&#224;y &#225;p cho m&#7895;i user &#273;&#432;&#7907;c g&#225;n tr&#234;n BOT live/backup; tr&#7847;n VPS v&#7851;n t&#7889;i &#273;a 6 lu&#7891;ng.</p>
                 </div>
                 <div>
                     <label class="field-label" for="create-bot-name">T&#234;n BOT</label>
@@ -604,6 +613,7 @@
             <input type="hidden" name="return_manager_ids" value="{{ manager_id }}">
             {% endfor %}
             <input type="hidden" name="workspace" value="upload" id="edit-bot-workspace">
+            <input type="hidden" name="current_workspace" value="upload" id="edit-bot-current-workspace">
             {% if dashboard.focus_user %}
             <input type="hidden" name="return_user_id" value="{{ dashboard.focus_user.id }}">
             {% endif %}
@@ -616,6 +626,7 @@
                 <input type="hidden" name="Id" id="edit-bot-id">
                 <input type="hidden" name="manage_user_assignments" value="1">
                 <input type="hidden" name="confirm_manager_transfer_cleanup" id="edit-bot-manager-transfer-cleanup" value="0">
+                <input type="hidden" name="confirm_workspace_transfer_cleanup" id="edit-bot-workspace-transfer-cleanup" value="0">
                 <div>
                     <label class="field-label" for="edit-bot-name">T&#234;n BOT</label>
                     <input class="toolbar-input" id="edit-bot-name" name="Name" required>
@@ -660,7 +671,7 @@
                     </select>
                 </div>
                 <div data-edit-bot-thread-field hidden>
-                    <label class="field-label" for="edit-bot-threads">Lu&#7891;ng</label>
+                    <label class="field-label" for="edit-bot-threads">Quota c&#7845;p / user</label>
                     <input
                         class="toolbar-input"
                         id="edit-bot-threads"
@@ -672,7 +683,7 @@
                         value="1"
                         inputmode="numeric"
                     >
-                    <p class="mt-1 text-[11px] text-slate-500" data-edit-bot-thread-help>T&#7889;i &#273;a 6 lu&#7891;ng cho m&#7895;i BOT live ho&#7863;c backup tr&#234;n m&#7897;t VPS.</p>
+                    <p class="mt-1 text-[11px] text-slate-500" data-edit-bot-thread-help>Quota n&#224;y &#225;p cho m&#7895;i user &#273;ang &#273;&#432;&#7907;c g&#225;n; t&#7893;ng c&#7845;p ph&#225;t tr&#234;n VPS kh&#244;ng &#273;&#432;&#7907;c v&#432;&#7907;t 6 lu&#7891;ng.</p>
                 </div>
                 <div>
                     <label class="field-label" for="edit-bot-user-picker-button">Users</label>
@@ -744,7 +755,9 @@
     const editBotDialog = document.getElementById('edit-bot-dialog');
     const editBotForm = document.querySelector('#edit-bot-dialog form');
     const editBotWorkspaceInput = document.getElementById('edit-bot-workspace');
+    const editBotCurrentWorkspaceInput = document.getElementById('edit-bot-current-workspace');
     const editBotManagerTransferCleanupInput = document.getElementById('edit-bot-manager-transfer-cleanup');
+    const editBotWorkspaceTransferCleanupInput = document.getElementById('edit-bot-workspace-transfer-cleanup');
     const editBotThreadField = document.querySelector('[data-edit-bot-thread-field]');
     const editBotThreadInput = document.getElementById('edit-bot-threads');
     const editBotThreadHelp = document.querySelector('[data-edit-bot-thread-help]');
@@ -813,6 +826,7 @@
     let initialEditBotManagerId = '';
     let initialEditBotUserIds = [];
     let initialEditBotWorkspaceKind = 'upload';
+    let initialEditBotFunctionValue = 'upload';
     let pollingTimer = null;
     let liveFetchInFlight = false;
     let lastPayloadSignature = '';
@@ -864,6 +878,10 @@
       initialEditBotManagerId = '';
       initialEditBotUserIds = [];
       initialEditBotWorkspaceKind = 'upload';
+      initialEditBotFunctionValue = 'upload';
+      if (editBotCurrentWorkspaceInput) {
+        editBotCurrentWorkspaceInput.value = 'upload';
+      }
       if (editBotThreadInput) {
         editBotThreadInput.value = '1';
       }
@@ -871,6 +889,9 @@
       syncEditBotWorkspaceState();
       if (editBotManagerTransferCleanupInput) {
         editBotManagerTransferCleanupInput.value = '0';
+      }
+      if (editBotWorkspaceTransferCleanupInput) {
+        editBotWorkspaceTransferCleanupInput.value = '0';
       }
     }
 
@@ -1006,13 +1027,13 @@
     }
 
     function roleOptionsForWorkspace(workspaceKind, mode) {
-      const resolvedWorkspaceKind = normalizeWorkspaceKind(workspaceKind);
-      if (resolvedWorkspaceKind !== 'live') {
-        return [
-          { value: 'upload', label: 'Upload' }
-        ];
-      }
       if (mode === 'create') {
+        const resolvedWorkspaceKind = normalizeWorkspaceKind(workspaceKind);
+        if (resolvedWorkspaceKind !== 'live') {
+          return [
+            { value: 'upload', label: 'Upload' }
+          ];
+        }
         return [
           { value: '', label: '-- Ch\u01b0a c\u1ea5u h\u00ecnh --' },
           { value: 'primary', label: 'Live ch\u00ednh' },
@@ -1020,6 +1041,7 @@
         ];
       }
       return [
+        { value: 'upload', label: 'Upload' },
         { value: 'primary', label: 'Live ch\u00ednh' },
         { value: 'backup', label: 'Backup' }
       ];
@@ -1050,7 +1072,7 @@
         createBotThreadInput.required = isLiveWorkspace;
       }
       if (createBotThreadHelp) {
-        createBotThreadHelp.textContent = 'T\u1ed1i \u0111a ' + String(MAX_LIVE_BOT_THREADS) + ' lu\u1ed3ng cho m\u1ed7i BOT live ho\u1eb7c backup tr\u00ean m\u1ed9t VPS.';
+        createBotThreadHelp.textContent = 'Quota c\u1ea5p cho m\u1ed7i user tr\u00ean BOT live/backup. T\u1ed5ng quota c\u1ee7a c\u1ea3 VPS v\u1eabn b\u1ecb ch\u1eb7n t\u1ed1i \u0111a ' + String(MAX_LIVE_BOT_THREADS) + ' lu\u1ed3ng.';
       }
     }
 
@@ -1297,6 +1319,7 @@
         worker.live_type_label,
         worker.live_thread_text,
         worker.workload_text,
+        worker.workload_note,
         worker.cpu_percent,
         worker.meta_text
       ].filter(Boolean).join(' ');
@@ -1461,7 +1484,8 @@
       const assignedUserId = escapeHtml(worker.assigned_user_id || '');
       const statusLabel = escapeHtml(worker.status_label);
       const statusClass = escapeHtml(worker.status_class);
-      const workloadText = escapeHtml(worker.workload_text || worker.live_thread_text || worker.thread_text || '1/1');
+      const workloadText = escapeHtml(worker.workload_text || worker.live_thread_text || worker.thread_text || '0/0/0');
+      const workloadNote = escapeHtml(worker.workload_note || 'Chạy / Tổng');
       const bandwidthText = escapeHtml(worker.bandwidth_text || '0.00KB/s');
       const diskText = escapeHtml(worker.disk_text || '--');
       const spaceText = escapeHtml(worker.space_text || diskText);
@@ -1495,7 +1519,7 @@
         '  <td><span class="inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold ', botTypeTone, '">', botTypeLabel, '</span></td>',
         '  <td><span class="', statusClass, '">', statusLabel, '</span></td>',
         '  <td class="table-mono text-slate-600"><p>', escapeHtml(createdAt.date), '</p><p class="mt-1 text-[11px] text-slate-500">', escapeHtml(createdAt.time), '</p></td>',
-        '  <td><span class="inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold ', workloadTone, '">', workloadText, '</span></td>',
+        '  <td><div class="space-y-1"><span class="inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold ', workloadTone, '">', workloadText, '</span><p class="worker-metric-note">', workloadNote, '</p></div></td>',
         '  <td>', renderCountBadge(totalUsers, 'border-sky-100 bg-sky-50 text-sky-700', 'user'), '</td>',
         '  <td><p class="table-mono font-semibold text-slate-800">', String(cpuPercent), '%</p></td>',
         '  <td>',
@@ -1532,7 +1556,7 @@
 
     function currentBotFunctionValue() {
       if (!editBotLiveRoleSelect) {
-        return initialEditBotWorkspaceKind === 'live' ? 'primary' : 'upload';
+        return initialEditBotFunctionValue;
       }
       const normalized = String(editBotLiveRoleSelect.value || '').trim().toLowerCase();
       if (normalized === 'upload') {
@@ -1554,7 +1578,7 @@
 
     function syncEditBotRoleOptions(preferredValue) {
       if (!editBotLiveRoleSelect) {
-        return initialEditBotWorkspaceKind === 'live' ? 'primary' : 'upload';
+        return initialEditBotFunctionValue;
       }
       const workspaceKind = normalizeWorkspaceKind(initialEditBotWorkspaceKind);
       const options = roleOptionsForWorkspace(workspaceKind, 'edit');
@@ -1579,7 +1603,7 @@
         editBotThreadInput.required = workspaceKind === 'live';
       }
       if (editBotThreadHelp) {
-        editBotThreadHelp.textContent = 'T\u1ed1i \u0111a ' + String(MAX_LIVE_BOT_THREADS) + ' lu\u1ed3ng cho m\u1ed7i BOT live ho\u1eb7c backup tr\u00ean m\u1ed9t VPS.';
+        editBotThreadHelp.textContent = 'Quota c\u1ea5p cho m\u1ed7i user tr\u00ean BOT live/backup. T\u1ed5ng quota c\u1ee7a c\u1ea3 VPS v\u1eabn b\u1ecb ch\u1eb7n t\u1ed1i \u0111a ' + String(MAX_LIVE_BOT_THREADS) + ' lu\u1ed3ng.';
       }
       if (editBotUserPickerHelp) {
         editBotUserPickerHelp.textContent = workspaceKind === 'live'
@@ -1793,15 +1817,22 @@
         document.getElementById('edit-bot-name').value = button.dataset.workerName || '';
         document.getElementById('edit-bot-group').value = button.dataset.workerGroup || '';
         initialEditBotWorkspaceKind = normalizeWorkspaceKind(button.dataset.workspaceKind);
+        initialEditBotFunctionValue = String(button.dataset.liveRole || (initialEditBotWorkspaceKind === 'live' ? 'primary' : 'upload')).trim().toLowerCase() || 'upload';
         syncEditBotRoleOptions(
-          String(button.dataset.liveRole || (initialEditBotWorkspaceKind === 'live' ? 'primary' : 'upload')).trim()
+          initialEditBotFunctionValue
         );
         if (editBotThreadInput) {
           editBotThreadInput.value = String(clampLiveBotThreads(button.dataset.workerThreads || '1'));
         }
         initialEditBotManagerId = String(button.dataset.managerId || '').trim();
+        if (editBotCurrentWorkspaceInput) {
+          editBotCurrentWorkspaceInput.value = initialEditBotWorkspaceKind;
+        }
         if (editBotManagerTransferCleanupInput) {
           editBotManagerTransferCleanupInput.value = '0';
+        }
+        if (editBotWorkspaceTransferCleanupInput) {
+          editBotWorkspaceTransferCleanupInput.value = '0';
         }
         if (editManagerSelect && editManagerSelect.tagName === 'SELECT') {
           editManagerSelect.value = initialEditBotManagerId || EMPTY_MANAGER_OPTION_VALUE;
@@ -1988,14 +2019,30 @@
         }
         const nextWorkspaceKind = currentEditWorkspaceKind();
         if (initialEditBotWorkspaceKind !== nextWorkspaceKind) {
-          event.preventDefault();
-          editBotManagerTransferCleanupInput.value = '0';
-          if (editBotLiveRoleSelect) {
-            editBotLiveRoleSelect.value = initialEditBotWorkspaceKind === 'live' ? 'primary' : 'upload';
+          const confirmMessage = initialEditBotWorkspaceKind === 'upload'
+            ? 'Chuy\u1ec3n BOT upload sang live/backup s\u1ebd x\u00f3a s\u1ea1ch user, k\u00eanh, profile Chrome v\u00e0 job render \u0111ang g\u1eafn v\u1edbi BOT n\u00e0y.\n\nH\u1ec7 th\u1ed1ng c\u0169ng s\u1ebd c\u00e0i l\u1ea1i service tr\u00ean ch\u00ednh VPS n\u00e0y sang runtime live.\n\nB\u1ea1n c\u00f3 ch\u1eafc mu\u1ed1n ti\u1ebfp t\u1ee5c kh\u00f4ng?'
+            : 'Chuy\u1ec3n BOT live/backup sang upload s\u1ebd x\u00f3a s\u1ea1ch g\u00e1n user live v\u00e0 c\u00e1c lu\u1ed3ng live \u0111ang d\u00f9ng BOT n\u00e0y.\n\nH\u1ec7 th\u1ed1ng c\u0169ng s\u1ebd c\u00e0i l\u1ea1i service tr\u00ean ch\u00ednh VPS n\u00e0y sang runtime upload.\n\nB\u1ea1n c\u00f3 ch\u1eafc mu\u1ed1n ti\u1ebfp t\u1ee5c kh\u00f4ng?';
+          const confirmed = window.confirm(confirmMessage);
+          if (!confirmed) {
+            event.preventDefault();
+            if (editBotWorkspaceTransferCleanupInput) {
+              editBotWorkspaceTransferCleanupInput.value = '0';
+            }
+            editBotManagerTransferCleanupInput.value = '0';
+            if (editBotLiveRoleSelect) {
+              editBotLiveRoleSelect.value = initialEditBotFunctionValue;
+            }
+            syncEditBotWorkspaceState();
+            syncBotUserPickerOptions({ pruneInvalid: false, resetSearch: true });
+            return;
           }
-          syncEditBotWorkspaceState();
-          syncBotUserPickerOptions({ pruneInvalid: false, resetSearch: true });
-          showSystemNotice('\u0110\u1ed5i BOT gi\u1eefa Upload v\u00e0 Live ch\u01b0a h\u1ed7 tr\u1ee3. H\u00e3y g\u1ee1 BOT r\u1ed3i c\u00e0i l\u1ea1i \u0111\u00fang lo\u1ea1i.', 'error');
+          if (editBotWorkspaceTransferCleanupInput) {
+            editBotWorkspaceTransferCleanupInput.value = '1';
+          }
+          editBotManagerTransferCleanupInput.value = '0';
+          if (nextWorkspaceKind === 'live' && editBotThreadInput) {
+            editBotThreadInput.value = String(currentEditBotThreads());
+          }
           return;
         }
         const nextManagerId = currentBotUserManagerId();

@@ -40,6 +40,8 @@
 | DEC-034 | Live worker phai coi `rendered.flv` la artifact tam ngan han: janitor quet nhanh hon voi `live-streams/*`, con `xrdp` neu co la van de van hanh host, khong phai bootstrap worker mac dinh can thiep | Active | live worker storage hygiene | Medium |
 | DEC-035 | Telegram BOT-operation notifications phai route `admin = tat ca`, `manager = chi khi chinh manager do thao tac`; offline alert van theo `admin all + manager so huu BOT` | Active | ops notifications + role routing | Medium |
 | DEC-036 | Telegram livestream notifications dung bot rieng va luu recipient o account-level `telegram_live`; recipient chi la owner cua luong live, khong bam theo BOT/VPS | Active | live notifications + account settings | Medium |
+| DEC-037 | Live quota phai tach `worker.capacity` (tran cung cua VPS) khoi `allocated_threads` theo tung mapping `user + worker + role`; UI user/BOT phai hien theo quota cap phat va admin assignment phai chan tong quota vuot tran | Active | live admin assignment + scheduling | High |
+| DEC-038 | Chuyen BOT giua `upload` va `live/backup` phai di qua SSH bootstrap lai tren cung VPS; source workspace bi cleanup truoc khi BOT quay lai pool moi | Active | admin BOT conversion + bootstrap | High |
 
 ## Notes
 - `docs/DECISIONS.md` van giu full history va ly do chi tiet.

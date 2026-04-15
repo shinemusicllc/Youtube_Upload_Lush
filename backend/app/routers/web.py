@@ -4,6 +4,7 @@ import csv
 from datetime import datetime
 from io import StringIO
 from pathlib import Path
+from typing import Any
 from urllib.parse import quote, urlencode
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -347,6 +348,97 @@ def _enforce_user_bot_mapping_scope(current_user: AdminSessionUser, user_id: str
     mapping = next((item for item in store.user_worker_links if int(item.get("id") or 0) == mapping_id), None)
     if mapping is None or str(mapping.get("user_id") or "").strip() != user_id:
         raise HTTPException(status_code=403, detail="Không đủ quyền thao tác mapping BOT này.")
+
+
+def _start_bot_workspace_conversion(
+    request: Request,
+    current_admin: AdminSessionUser,
+    *,
+    worker_id: str,
+    current_workspace_mode: str,
+    target_workspace_mode: str,
+    name: str,
+    group: str | None,
+    manager_id: str | None,
+    live_role: str | None,
+    threads: int | None,
+    assigned_user_ids: list[str],
+) -> dict[str, Any]:
+    resolved_current_workspace_mode = _resolve_admin_workspace(current_workspace_mode)
+    resolved_target_workspace_mode = _resolve_admin_workspace(target_workspace_mode)
+    if resolved_current_workspace_mode == resolved_target_workspace_mode:
+        raise ValueError("BOT này không đổi workspace.")
+    if assigned_user_ids and not manager_id:
+        raise ValueError("Hãy chọn manager trước khi gán user cho BOT.")
+
+    manager_name = "system"
+    if manager_id:
+        selected_manager = store._find_user(manager_id)
+        if selected_manager.role != "manager":
+            raise ValueError("Manager được chọn không hợp lệ.")
+        manager_name = selected_manager.username
+    elif current_admin.role == "manager":
+        manager_name = current_admin.username
+
+    desired_live_role = str(live_role or "").strip().lower() or None
+    desired_threads = (
+        store._normalize_live_worker_threads(threads)
+        if resolved_target_workspace_mode == "live"
+        else 1
+    )
+    if resolved_target_workspace_mode == "live":
+        if desired_live_role not in {"primary", "backup"}:
+            raise ValueError("Chức năng BOT live không hợp lệ.")
+        if assigned_user_ids and not desired_live_role:
+            raise ValueError("Hãy chọn chức năng BOT live trước khi gán user.")
+        if assigned_user_ids and desired_threads * len(assigned_user_ids) > store._fixed_live_worker_thread_limit():
+            raise ValueError(
+                f"BOT live mới chỉ có trần {store._fixed_live_worker_thread_limit()} luồng, "
+                f"nhưng cấu hình hiện tại đang cấp phát {desired_threads * len(assigned_user_ids)} luồng "
+                f"cho {len(assigned_user_ids)} user."
+            )
+    else:
+        desired_live_role = "upload"
+
+    profile = store.get_worker_connection_profile(worker_id, workspace_mode=resolved_current_workspace_mode)
+    bootstrap_request = build_worker_bootstrap_request(
+        vps_ip=profile["vps_ip"],
+        ssh_user=profile["ssh_user"],
+        password=profile["password"],
+        ssh_private_key=profile["ssh_private_key"],
+        shared_secret=store.get_worker_shared_secret(),
+        control_plane_url=_resolve_worker_bootstrap_control_plane_url(request),
+        worker_id=worker_id,
+        manager_name=manager_name,
+        runtime_mode=resolved_target_workspace_mode,
+    )
+    bootstrap_request.capacity = (
+        store._fixed_live_worker_thread_limit() if resolved_target_workspace_mode == "live" else 1
+    )
+    bootstrap_request.threads = bootstrap_request.capacity
+    return start_worker_install_operation(
+        store=store,
+        request=bootstrap_request,
+        ssh_user=profile["ssh_user"],
+        auth_mode=profile["auth_mode"],
+        password=profile["password"],
+        ssh_private_key=profile["ssh_private_key"],
+        manager_id=manager_id,
+        manager_name=manager_name,
+        group=group or "",
+        requested_by=current_admin.username,
+        requested_role=current_admin.role,
+        requested_user_id=current_admin.id,
+        post_install_config={
+            "name": name,
+            "group": group,
+            "manager_id": manager_id,
+            "live_role": desired_live_role if resolved_target_workspace_mode == "live" else "upload",
+            "threads": desired_threads,
+            "assigned_user_ids": assigned_user_ids,
+        },
+        replace_other_workspace_mode=resolved_current_workspace_mode,
+    )
 
 
 def _admin_forbidden_redirect(path: str = "/admin/user/index") -> RedirectResponse:
@@ -1332,8 +1424,9 @@ async def admin_bot_update(request: Request):
     current_admin = require_admin_access(request)
     form = await request.form()
     workspace_mode = _resolve_admin_workspace(str(form.get("workspace") or "").strip())
+    current_workspace_mode = _resolve_admin_workspace(str(form.get("current_workspace") or form.get("workspace") or "").strip())
     worker_id = str(form.get("Id") or form.get("worker_id") or "").strip()
-    _enforce_worker_scope(current_admin, worker_id, workspace_mode=workspace_mode)
+    _enforce_worker_scope(current_admin, worker_id, workspace_mode=current_workspace_mode)
     name = str(form.get("Name") or form.get("name") or "").strip()
     group = str(form.get("Group") or form.get("group") or "").strip() or None
     raw_manager_id = str(form.get("UserIdManager") or form.get("manager_id") or "").strip()
@@ -1353,6 +1446,7 @@ async def admin_bot_update(request: Request):
         if str(value).strip()
     ]
     confirm_manager_transfer_cleanup = str(form.get("confirm_manager_transfer_cleanup") or "").strip() == "1"
+    confirm_workspace_transfer_cleanup = str(form.get("confirm_workspace_transfer_cleanup") or "").strip() == "1"
     manage_user_assignments = str(form.get("manage_user_assignments") or "").strip() == "1"
     return_user_id = str(form.get("return_user_id") or "").strip() or None
     return_manager_ids = [str(value).strip() for value in form.getlist("return_manager_ids") if str(value).strip()]
@@ -1363,7 +1457,7 @@ async def admin_bot_update(request: Request):
                 user.id
                 for user in (
                     store._assigned_live_users_for_worker(worker_id)
-                    if workspace_mode == "live"
+                    if current_workspace_mode == "live"
                     else store._assigned_users_for_worker(worker_id)
                 )
             }
@@ -1384,6 +1478,33 @@ async def admin_bot_update(request: Request):
         _enforce_user_scope(current_admin, selected_user_id)
 
     try:
+        if current_workspace_mode != workspace_mode:
+            if not confirm_workspace_transfer_cleanup:
+                raise ValueError("Hãy xác nhận cảnh báo chuyển loại BOT rồi thử lại.")
+            _start_bot_workspace_conversion(
+                request,
+                current_admin,
+                worker_id=worker_id,
+                current_workspace_mode=current_workspace_mode,
+                target_workspace_mode=workspace_mode,
+                name=name,
+                group=group,
+                manager_id=manager_id,
+                live_role=live_role,
+                threads=requested_threads,
+                assigned_user_ids=assigned_user_ids if manage_user_assignments else [],
+            )
+            if workspace_mode == "live":
+                target_label = "BOT backup" if str(live_role or "").strip().lower() == "backup" else "BOT live chính"
+            else:
+                target_label = "BOT upload"
+            return _redirect_bot_page_with_scope(
+                f"Đã bắt đầu chuyển BOT sang {target_label}. Hệ thống sẽ cài lại service trên chính VPS này.",
+                "success",
+                manager_ids=return_manager_ids,
+                user_id=return_user_id,
+                workspace=workspace_mode,
+            )
         store.update_bot(
             worker_id,
             name,
@@ -1465,6 +1586,12 @@ async def admin_bot_create(request: Request):
                 raise ValueError("Chức năng BOT live không hợp lệ.")
             if requested_user_ids and not requested_live_role:
                 raise ValueError("Hãy chọn chức năng BOT live trước khi gán user.")
+            if requested_user_ids and requested_threads * len(requested_user_ids) > store._fixed_live_worker_thread_limit():
+                raise ValueError(
+                    f"BOT live mới chỉ có trần {store._fixed_live_worker_thread_limit()} luồng, "
+                    f"nhưng cấu hình hiện tại đang cấp phát {requested_threads * len(requested_user_ids)} luồng "
+                    f"cho {len(requested_user_ids)} user."
+                )
         else:
             requested_live_role = "upload"
         for selected_user_id in requested_user_ids:
@@ -1493,8 +1620,8 @@ async def admin_bot_create(request: Request):
             manager_name=manager_name,
             runtime_mode=workspace_mode,
         )
-        bootstrap_request.capacity = requested_threads
-        bootstrap_request.threads = requested_threads
+        bootstrap_request.capacity = store._fixed_live_worker_thread_limit() if workspace_mode == "live" else requested_threads
+        bootstrap_request.threads = store._fixed_live_worker_thread_limit() if workspace_mode == "live" else requested_threads
         task = start_worker_install_operation(
             store=store,
             request=bootstrap_request,

@@ -57,6 +57,8 @@ class AdminBotUpdatePayload(BaseModel):
     assigned_user_id: str | None = None
     assigned_user_ids: list[str] | None = None
     confirm_manager_transfer_cleanup: bool = False
+    confirm_workspace_transfer_cleanup: bool = False
+    current_workspace: str | None = None
     workspace: str | None = None
 
 
@@ -140,6 +142,97 @@ def _enforce_worker_scope(request: Request, worker_id: str, *, workspace_mode: s
     worker = store._find_live_worker(worker_id) if workspace_mode == "live" else store._find_worker(worker_id)
     if worker.manager_id != current_user.id:
         raise HTTPException(status_code=403, detail="Không đủ quyền thao tác BOT ngoài scope manager.")
+
+
+def _start_bot_workspace_conversion(
+    request: Request,
+    current_user,
+    *,
+    worker_id: str,
+    current_workspace_mode: str,
+    target_workspace_mode: str,
+    name: str,
+    group: str | None,
+    manager_id: str | None,
+    live_role: str | None,
+    threads: int | None,
+    assigned_user_ids: list[str],
+) -> dict[str, Any]:
+    resolved_current_workspace_mode = _resolve_workspace_mode(current_workspace_mode)
+    resolved_target_workspace_mode = _resolve_workspace_mode(target_workspace_mode)
+    if resolved_current_workspace_mode == resolved_target_workspace_mode:
+        raise ValueError("BOT này không đổi workspace.")
+    if assigned_user_ids and not manager_id:
+        raise ValueError("Hãy chọn manager trước khi gán user cho BOT.")
+
+    manager_name = "system"
+    if manager_id:
+        selected_manager = store._find_user(manager_id)
+        if selected_manager.role != "manager":
+            raise ValueError("Manager được chọn không hợp lệ.")
+        manager_name = selected_manager.username
+    elif current_user.role == "manager":
+        manager_name = current_user.username
+
+    desired_live_role = str(live_role or "").strip().lower() or None
+    desired_threads = (
+        store._normalize_live_worker_threads(threads)
+        if resolved_target_workspace_mode == "live"
+        else 1
+    )
+    if resolved_target_workspace_mode == "live":
+        if desired_live_role not in {"primary", "backup"}:
+            raise ValueError("Chức năng BOT live không hợp lệ.")
+        if assigned_user_ids and not desired_live_role:
+            raise ValueError("Hãy chọn chức năng BOT live trước khi gán user.")
+        if assigned_user_ids and desired_threads * len(assigned_user_ids) > store._fixed_live_worker_thread_limit():
+            raise ValueError(
+                f"BOT live mới chỉ có trần {store._fixed_live_worker_thread_limit()} luồng, "
+                f"nhưng cấu hình hiện tại đang cấp phát {desired_threads * len(assigned_user_ids)} luồng "
+                f"cho {len(assigned_user_ids)} user."
+            )
+    else:
+        desired_live_role = "upload"
+
+    profile = store.get_worker_connection_profile(worker_id, workspace_mode=resolved_current_workspace_mode)
+    bootstrap_request = build_worker_bootstrap_request(
+        vps_ip=profile["vps_ip"],
+        ssh_user=profile["ssh_user"],
+        password=profile["password"],
+        ssh_private_key=profile["ssh_private_key"],
+        shared_secret=store.get_worker_shared_secret(),
+        control_plane_url=resolve_worker_bootstrap_control_plane_url(request),
+        worker_id=worker_id,
+        manager_name=manager_name,
+        runtime_mode=resolved_target_workspace_mode,
+    )
+    bootstrap_request.capacity = (
+        store._fixed_live_worker_thread_limit() if resolved_target_workspace_mode == "live" else 1
+    )
+    bootstrap_request.threads = bootstrap_request.capacity
+    return start_worker_install_operation(
+        store=store,
+        request=bootstrap_request,
+        ssh_user=profile["ssh_user"],
+        auth_mode=profile["auth_mode"],
+        password=profile["password"],
+        ssh_private_key=profile["ssh_private_key"],
+        manager_id=manager_id,
+        manager_name=manager_name,
+        group=group or "",
+        requested_by=current_user.username,
+        requested_role=current_user.role,
+        requested_user_id=current_user.id,
+        post_install_config={
+            "name": name,
+            "group": group,
+            "manager_id": manager_id,
+            "live_role": desired_live_role if resolved_target_workspace_mode == "live" else "upload",
+            "threads": desired_threads,
+            "assigned_user_ids": assigned_user_ids,
+        },
+        replace_other_workspace_mode=resolved_current_workspace_mode,
+    )
 
 
 def _enforce_channel_scope(request: Request, channel_id: str) -> None:
@@ -443,6 +536,15 @@ async def install_admin_bot(request: Request, payload: AdminBotInstallPayload):
             raise HTTPException(status_code=400, detail="Chức năng BOT live không hợp lệ.")
         if requested_user_ids and not requested_live_role:
             raise HTTPException(status_code=400, detail="Hãy chọn chức năng BOT live trước khi gán user.")
+        if requested_user_ids and requested_threads * len(requested_user_ids) > store._fixed_live_worker_thread_limit():
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"BOT live mới chỉ có trần {store._fixed_live_worker_thread_limit()} luồng, "
+                    f"nhưng cấu hình hiện tại đang cấp phát {requested_threads * len(requested_user_ids)} luồng "
+                    f"cho {len(requested_user_ids)} user."
+                ),
+            )
     else:
         requested_live_role = "upload"
     for user_id in requested_user_ids:
@@ -480,8 +582,8 @@ async def install_admin_bot(request: Request, payload: AdminBotInstallPayload):
             manager_name=manager_name,
             runtime_mode=workspace_mode,
         )
-        bootstrap_request.capacity = requested_threads
-        bootstrap_request.threads = requested_threads
+        bootstrap_request.capacity = store._fixed_live_worker_thread_limit() if workspace_mode == "live" else requested_threads
+        bootstrap_request.threads = store._fixed_live_worker_thread_limit() if workspace_mode == "live" else requested_threads
         task = start_worker_install_operation(
             store=store,
             request=bootstrap_request,
@@ -520,7 +622,8 @@ async def get_admin_workers_legacy(request: Request, manager_ids: list[str] | No
 async def update_admin_bot(request: Request, bot_id: str, payload: AdminBotUpdatePayload):
     current_user = require_admin_access(request)
     workspace_mode = _resolve_workspace_mode(payload.workspace)
-    _enforce_worker_scope(request, bot_id, workspace_mode=workspace_mode)
+    current_workspace_mode = _resolve_workspace_mode(payload.current_workspace or payload.workspace)
+    _enforce_worker_scope(request, bot_id, workspace_mode=current_workspace_mode)
     manager_id = current_user.id if current_user.role == "manager" else payload.manager_id
     assigned_user_id = payload.assigned_user_id
     assigned_user_ids = [str(value).strip() for value in (payload.assigned_user_ids or []) if str(value).strip()]
@@ -531,7 +634,7 @@ async def update_admin_bot(request: Request, bot_id: str, payload: AdminBotUpdat
                 user.id
                 for user in (
                     store._assigned_live_users_for_worker(bot_id)
-                    if workspace_mode == "live"
+                    if current_workspace_mode == "live"
                     else store._assigned_users_for_worker(bot_id)
                 )
             }
@@ -550,6 +653,23 @@ async def update_admin_bot(request: Request, bot_id: str, payload: AdminBotUpdat
         if current_user.role == "manager" and selected_user_id in existing_assigned_user_ids:
             continue
         _enforce_user_scope(request, selected_user_id)
+    if current_workspace_mode != workspace_mode:
+        if not payload.confirm_workspace_transfer_cleanup:
+            raise HTTPException(status_code=400, detail="Hãy xác nhận cảnh báo chuyển loại BOT rồi thử lại.")
+        _start_bot_workspace_conversion(
+            request,
+            current_user,
+            worker_id=bot_id,
+            current_workspace_mode=current_workspace_mode,
+            target_workspace_mode=workspace_mode,
+            name=payload.name,
+            group=payload.group,
+            manager_id=manager_id,
+            live_role=payload.live_role,
+            threads=payload.threads,
+            assigned_user_ids=assigned_user_ids if payload.assigned_user_ids is not None else [],
+        )
+        return {"ok": True, "conversion_started": True}
     store.update_bot(
         bot_id,
         payload.name,

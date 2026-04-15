@@ -776,6 +776,7 @@ def start_worker_install_operation(
     requested_role: str = "system",
     requested_user_id: str | None = None,
     post_install_config: dict | None = None,
+    replace_other_workspace_mode: str | None = None,
 ) -> dict:
     task = store.enqueue_worker_install_operation(
         worker_id=request.worker_id,
@@ -795,6 +796,7 @@ def start_worker_install_operation(
         requested_role=requested_role,
         requested_user_id=requested_user_id,
         post_install_config=post_install_config,
+        replace_other_workspace_mode=replace_other_workspace_mode,
     )
     ensure_worker_operation_threads(store)
     return task
