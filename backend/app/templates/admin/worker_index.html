@@ -774,8 +774,8 @@
     let initialEditBotManagerId = '';
     let initialEditBotUserIds = [];
     let initialEditBotWorkspaceKind = 'upload';
-    let pollingController = null;
     let pollingTimer = null;
+    let liveFetchInFlight = false;
     let lastPayloadSignature = '';
     let lastEventCursor = tbody ? String(tbody.dataset.initialEventCursor || '').trim() : '';
     const shownEventIds = new Set();
@@ -2110,86 +2110,84 @@
       if (document.hidden) {
         return;
       }
-
-      if (pollingController) {
-        pollingController.abort();
-      }
-      pollingController = new AbortController();
-
-      const endpoint = tbody.dataset.liveEndpoint;
-      const requestUrl = new URL(endpoint, window.location.origin);
-      buildManagerQuery(requestUrl);
-      requestUrl.searchParams.set('ts', String(Date.now()));
-      if (lastEventCursor) {
-        requestUrl.searchParams.set('after_event_id', lastEventCursor);
-      }
-
-      const response = await fetch(requestUrl.toString(), {
-        method: 'GET',
-        credentials: 'same-origin',
-        headers: {
-          'Accept': 'application/json',
-          'Cache-Control': 'no-cache, no-store, max-age=0',
-          'Pragma': 'no-cache',
-          'X-Requested-With': 'XMLHttpRequest'
-        },
-        cache: 'no-store',
-        signal: pollingController.signal
-      });
-      if (!response.ok) {
-        throw new Error('Failed to fetch live BOT rows.');
-      }
-
-      const payload = await response.json();
-      const latestEventCursor = String(payload.event_cursor || '').trim();
-      if (latestEventCursor) {
-        lastEventCursor = latestEventCursor;
-      }
-      const events = Array.isArray(payload.events) ? payload.events : [];
-      events.forEach(function (item) {
-        const eventId = String(item && item.id ? item.id : '').trim();
-        if (eventId) {
-          if (shownEventIds.has(eventId)) {
-            return;
-          }
-          shownEventIds.add(eventId);
-          if (shownEventIds.size > 100) {
-            shownEventIds.clear();
-            shownEventIds.add(eventId);
-          }
-        }
-        showSystemNotice(item && item.message ? item.message : '', item && item.level ? item.level : 'info');
-      });
-      const items = Array.isArray(payload.items) ? payload.items : [];
-      const summaryStrip = Array.isArray(payload.summary_strip) ? payload.summary_strip : [];
-      const signature = JSON.stringify({ items, summaryStrip });
-      if (signature === lastPayloadSignature) {
+      if (liveFetchInFlight) {
         return;
       }
+      liveFetchInFlight = true;
 
-      lastPayloadSignature = signature;
-      if (botSummaryStrip) {
-        botSummaryStrip.innerHTML = buildSummaryStripMarkup(summaryStrip);
-      }
-      tbody.innerHTML = items.map(buildWorkerRowMarkup).join('');
-      table.dispatchEvent(new CustomEvent('admin-table:refresh-rows'));
-      if (window.lucide && typeof window.lucide.createIcons === 'function') {
-        window.lucide.createIcons({ attrs: { 'stroke-width': 1.75 } });
+      try {
+        const endpoint = tbody.dataset.liveEndpoint;
+        const requestUrl = new URL(endpoint, window.location.origin);
+        buildManagerQuery(requestUrl);
+        requestUrl.searchParams.set('ts', String(Date.now()));
+        if (lastEventCursor) {
+          requestUrl.searchParams.set('after_event_id', lastEventCursor);
+        }
+
+        const response = await fetch(requestUrl.toString(), {
+          method: 'GET',
+          credentials: 'same-origin',
+          headers: {
+            'Accept': 'application/json',
+            'Cache-Control': 'no-cache, no-store, max-age=0',
+            'Pragma': 'no-cache',
+            'X-Requested-With': 'XMLHttpRequest'
+          },
+          cache: 'no-store'
+        });
+        if (!response.ok) {
+          throw new Error('Failed to fetch live BOT rows.');
+        }
+
+        const payload = await response.json();
+        const latestEventCursor = String(payload.event_cursor || '').trim();
+        if (latestEventCursor) {
+          lastEventCursor = latestEventCursor;
+        }
+        const events = Array.isArray(payload.events) ? payload.events : [];
+        events.forEach(function (item) {
+          const eventId = String(item && item.id ? item.id : '').trim();
+          if (eventId) {
+            if (shownEventIds.has(eventId)) {
+              return;
+            }
+            shownEventIds.add(eventId);
+            if (shownEventIds.size > 100) {
+              shownEventIds.clear();
+              shownEventIds.add(eventId);
+            }
+          }
+          showSystemNotice(item && item.message ? item.message : '', item && item.level ? item.level : 'info');
+        });
+        const items = Array.isArray(payload.items) ? payload.items : [];
+        const summaryStrip = Array.isArray(payload.summary_strip) ? payload.summary_strip : [];
+        const signature = JSON.stringify({ items, summaryStrip });
+        if (signature === lastPayloadSignature) {
+          return;
+        }
+
+        lastPayloadSignature = signature;
+        if (botSummaryStrip) {
+          botSummaryStrip.innerHTML = buildSummaryStripMarkup(summaryStrip);
+        }
+        tbody.innerHTML = items.map(buildWorkerRowMarkup).join('');
+        table.dispatchEvent(new CustomEvent('admin-table:refresh-rows'));
+        if (window.lucide && typeof window.lucide.createIcons === 'function') {
+          window.lucide.createIcons({ attrs: { 'stroke-width': 1.75 } });
+        }
+      } finally {
+        liveFetchInFlight = false;
       }
     }
 
-    function scheduleLivePoll() {
-      window.clearTimeout(pollingTimer);
-      pollingTimer = window.setTimeout(async function () {
-        try {
-          await fetchLiveWorkers();
-        } catch (error) {
-          if (!error || error.name !== 'AbortError') {
-            console.error(error);
-          }
-        } finally {
-          scheduleLivePoll();
-        }
+    function ensureLivePollStarted() {
+      if (pollingTimer) {
+        return;
+      }
+      pollingTimer = window.setInterval(function () {
+        fetchLiveWorkers().catch(function (error) {
+          console.error(error);
+        });
       }, pollMs);
     }
 
@@ -2219,11 +2217,9 @@
 
     fetchLiveWorkers()
       .catch(function (error) {
-        if (!error || error.name !== 'AbortError') {
-          console.error(error);
-        }
+        console.error(error);
       })
-      .finally(scheduleLivePoll);
+      .finally(ensureLivePollStarted);
   });
 </script>
 {% endblock %}
