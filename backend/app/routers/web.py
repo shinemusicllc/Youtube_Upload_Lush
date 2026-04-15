@@ -1341,6 +1341,11 @@ async def admin_bot_update(request: Request):
         raw_manager_id = ""
     manager_id = _force_manager_binding(current_admin, raw_manager_id or None)
     live_role = str(form.get("LiveRole") or form.get("live_role") or "").strip() or None
+    requested_threads = (
+        store._normalize_live_worker_threads(form.get("Threads") or form.get("threads"))
+        if workspace_mode == "live"
+        else None
+    )
     assigned_user_id = str(form.get("UserId") or form.get("user_id") or "").strip() or None
     assigned_user_ids = [
         str(value).strip()
@@ -1386,6 +1391,7 @@ async def admin_bot_update(request: Request):
             manager_id,
             workspace_mode=workspace_mode,
             live_role=live_role,
+            threads=requested_threads,
             assigned_user_id=assigned_user_id,
             assigned_user_ids=assigned_user_ids if manage_user_assignments else None,
             confirm_manager_transfer_cleanup=confirm_manager_transfer_cleanup,
@@ -1432,6 +1438,11 @@ async def admin_bot_create(request: Request):
     requested_name = str(form.get("name") or "").strip() or None
     requested_group = str(form.get("group") or "").strip() or None
     requested_live_role = str(form.get("live_role") or "").strip().lower() or None
+    requested_threads = (
+        store._normalize_live_worker_threads(form.get("threads"))
+        if workspace_mode == "live"
+        else 1
+    )
     if requested_bot_kind in {"upload", "primary", "backup"}:
         requested_live_role = "upload" if requested_bot_kind == "upload" else requested_bot_kind
     requested_user_ids = [str(value).strip() for value in form.getlist("assigned_user_ids") if str(value).strip()]
@@ -1482,6 +1493,8 @@ async def admin_bot_create(request: Request):
             manager_name=manager_name,
             runtime_mode=workspace_mode,
         )
+        bootstrap_request.capacity = requested_threads
+        bootstrap_request.threads = requested_threads
         task = start_worker_install_operation(
             store=store,
             request=bootstrap_request,
@@ -1500,6 +1513,7 @@ async def admin_bot_create(request: Request):
                 "group": requested_group,
                 "manager_id": manager_id,
                 "live_role": requested_live_role if workspace_mode == "live" else "upload",
+                "threads": requested_threads,
                 "assigned_user_ids": requested_user_ids,
             },
         )

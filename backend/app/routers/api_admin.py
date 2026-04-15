@@ -53,6 +53,7 @@ class AdminBotUpdatePayload(BaseModel):
     group: str | None = None
     manager_id: str | None = None
     live_role: str | None = None
+    threads: int | None = None
     assigned_user_id: str | None = None
     assigned_user_ids: list[str] | None = None
     confirm_manager_transfer_cleanup: bool = False
@@ -75,6 +76,7 @@ class AdminBotInstallPayload(BaseModel):
     group: str | None = None
     manager_id: str | None = None
     live_role: str | None = None
+    threads: int | None = None
     assigned_user_ids: list[str] | None = None
 
 
@@ -425,6 +427,7 @@ async def install_admin_bot(request: Request, payload: AdminBotInstallPayload):
     requested_name = str(payload.name or "").strip() or None
     requested_group = str(payload.group or "").strip() or None
     requested_live_role = str(payload.live_role or "").strip().lower() or None
+    requested_threads = store._normalize_live_worker_threads(payload.threads) if workspace_mode == "live" else 1
     if requested_bot_kind in {"upload", "primary", "backup"}:
         requested_live_role = "upload" if requested_bot_kind == "upload" else requested_bot_kind
     requested_user_ids = [str(value).strip() for value in (payload.assigned_user_ids or []) if str(value).strip()]
@@ -462,6 +465,7 @@ async def install_admin_bot(request: Request, payload: AdminBotInstallPayload):
         "group": requested_group,
         "manager_id": manager_id,
         "live_role": requested_live_role if workspace_mode == "live" else "upload",
+        "threads": requested_threads,
         "assigned_user_ids": requested_user_ids,
     }
     try:
@@ -476,6 +480,8 @@ async def install_admin_bot(request: Request, payload: AdminBotInstallPayload):
             manager_name=manager_name,
             runtime_mode=workspace_mode,
         )
+        bootstrap_request.capacity = requested_threads
+        bootstrap_request.threads = requested_threads
         task = start_worker_install_operation(
             store=store,
             request=bootstrap_request,
@@ -551,6 +557,7 @@ async def update_admin_bot(request: Request, bot_id: str, payload: AdminBotUpdat
         manager_id,
         workspace_mode=workspace_mode,
         live_role=payload.live_role,
+        threads=payload.threads,
         assigned_user_id=assigned_user_id,
         assigned_user_ids=assigned_user_ids if payload.assigned_user_ids is not None else None,
         confirm_manager_transfer_cleanup=bool(payload.confirm_manager_transfer_cleanup),

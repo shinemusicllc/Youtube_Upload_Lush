@@ -781,6 +781,7 @@ def start_worker_install_operation(
         worker_id=request.worker_id,
         worker_name=request.worker_name,
         vps_ip=request.vps_ip,
+        threads=request.threads,
         ssh_user=ssh_user,
         control_plane_url=request.control_plane_url,
         auth_mode=auth_mode,
@@ -835,7 +836,7 @@ def _install_request_from_task(store, task: dict[str, str]) -> WorkerBootstrapRe
     profile = store.get_worker_connection_profile(worker_id, workspace_mode=workspace_mode)
     auth_mode = str(profile.get("auth_mode") or "password").strip().lower() or "password"
     control_plane_url = str(task.get("control_plane_url") or "").strip()
-    return build_worker_bootstrap_request(
+    request = build_worker_bootstrap_request(
         vps_ip=str(profile.get("vps_ip") or task.get("vps_ip") or "").strip(),
         ssh_user=str(profile.get("ssh_user") or "root").strip() or "root",
         password=(str(profile.get("password") or "").strip() or None) if auth_mode != "ssh_key" else None,
@@ -846,6 +847,14 @@ def _install_request_from_task(store, task: dict[str, str]) -> WorkerBootstrapRe
         manager_name=str(task.get("manager_name") or "").strip() or "system",
         runtime_mode=workspace_mode,
     )
+    requested_threads = (
+        store._normalize_live_worker_threads(task.get("threads") or 1)
+        if workspace_mode == "live"
+        else max(1, int(task.get("threads") or 1))
+    )
+    request.threads = requested_threads
+    request.capacity = requested_threads
+    return request
 
 
 def _decommission_request_from_task(store, task: dict[str, str]) -> WorkerDecommissionRequest:

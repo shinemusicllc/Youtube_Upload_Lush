@@ -1406,6 +1406,7 @@ class AppStore:
         worker_id: str,
         worker_name: str,
         vps_ip: str,
+        threads: int = 1,
         ssh_user: str,
         control_plane_url: str | None = None,
         auth_mode: str = "password",
@@ -1491,11 +1492,17 @@ class AppStore:
                 ):
                     raise ValueError("BOT này đang có một tiến trình cài đặt hoặc gỡ BOT khác chưa xong.")
             now = self._now(trim=False)
+            normalized_threads = (
+                self._normalize_live_worker_threads(threads)
+                if resolved_workspace_mode == "live"
+                else self._normalize_requested_worker_threads(threads)
+            )
             task = {
                 "id": f"worker-op-{uuid4().hex[:10]}",
                 "worker_id": normalized_worker_id,
                 "worker_name": str(worker_name or normalized_ip).strip() or normalized_ip,
                 "vps_ip": normalized_ip,
+                "threads": normalized_threads,
                 "control_plane_url": str(control_plane_url or "").strip() or None,
                 "manager_id": str(manager_id or "").strip() or None,
                 "manager_name": str(manager_name or "").strip() or "system",
@@ -1517,6 +1524,7 @@ class AppStore:
                     "group": str(post_install_config.get("group") or "").strip() or None,
                     "manager_id": str(post_install_config.get("manager_id") or "").strip() or None,
                     "live_role": str(post_install_config.get("live_role") or "").strip() or None,
+                    "threads": normalized_threads,
                     "assigned_user_ids": [
                         str(value).strip()
                         for value in (post_install_config.get("assigned_user_ids") or [])
@@ -1528,6 +1536,8 @@ class AppStore:
                     for key in ("name", "group", "manager_id", "live_role")
                 ) or normalized_post_install_config["assigned_user_ids"]:
                     task["post_install_config"] = normalized_post_install_config
+                    if resolved_workspace_mode == "live":
+                        task["live_role"] = normalized_post_install_config.get("live_role")
             self.worker_operation_tasks.append(task)
             self._remember_worker_connection_profile(
                 normalized_worker_id,
@@ -2699,7 +2709,7 @@ class AppStore:
                 continue
 
             mapping = dict(raw_mapping)
-            mapping["threads"] = 1
+            mapping["threads"] = self._normalize_live_worker_threads(mapping.get("threads"))
             mapping["live_role"] = self._normalize_live_assignment_role(
                 mapping.get("live_role"),
                 fallback_note=mapping.get("note"),
@@ -3848,6 +3858,7 @@ class AppStore:
         desired_group = str(config.get("group") or "").strip() or None
         desired_manager_id = str(config.get("manager_id") or "").strip() or None
         desired_live_role = str(config.get("live_role") or "").strip() or None
+        desired_threads = config.get("threads")
         desired_user_ids = [
             str(value).strip()
             for value in (config.get("assigned_user_ids") or [])
@@ -3862,6 +3873,7 @@ class AppStore:
             desired_manager_id,
             workspace_mode=workspace_mode,
             live_role=desired_live_role,
+            threads=desired_threads,
             assigned_user_ids=desired_user_ids if desired_user_ids else None,
             viewer_role=requested_role,
             viewer_id=requested_user_id,
@@ -4661,7 +4673,14 @@ class AppStore:
                 manager.username if manager else (install_task_manager_name or str(payload.manager_name or "").strip() or "system")
             )
             resolved_group = install_task_group or str(payload.group or "").strip() or "S - Việt 3"
-            normalized_threads = self._fixed_live_worker_thread_limit()
+            requested_threads = (
+                install_task.get("threads")
+                if install_task is not None and install_task.get("threads") is not None
+                else payload.threads
+            )
+            normalized_threads = self._normalize_live_worker_threads(
+                requested_threads or (existing.threads if existing is not None else 1)
+            )
             if existing is None:
                 worker = WorkerRecord(
                     id=payload.worker_id,
@@ -4671,7 +4690,7 @@ class AppStore:
                     group=resolved_group,
                     created_at=now,
                     status="online",
-                    capacity=self._fixed_live_worker_thread_limit(),
+                    capacity=normalized_threads,
                     load_percent=0,
                     ram_percent=0,
                     ram_used_gb=0.0,
@@ -4689,7 +4708,7 @@ class AppStore:
                 existing.manager_name = resolved_manager_name
                 existing.group = resolved_group
                 existing.created_at = existing.created_at or now
-                existing.capacity = self._fixed_live_worker_thread_limit()
+                existing.capacity = normalized_threads
                 existing.threads = normalized_threads
                 existing.disk_total_gb = float(payload.disk_total_gb or existing.disk_total_gb or 0)
                 existing.status = "online"
@@ -4697,6 +4716,9 @@ class AppStore:
                 existing.offline_since_at = None
                 existing.offline_alert_sent_at = None
                 worker = existing
+            for link in self.live_user_worker_links:
+                if str(link.get("worker_id") or "").strip() == worker.id:
+                    link["threads"] = normalized_threads
             if self._looks_like_ipv4(worker_display_name):
                 existing_profile = self.worker_connection_profiles.get(payload.worker_id) or {}
                 self._remember_worker_connection_profile(
@@ -4757,8 +4779,12 @@ class AppStore:
             worker.bandwidth_kbps = payload.bandwidth_kbps
             worker.disk_used_gb = payload.disk_used_gb
             worker.disk_total_gb = payload.disk_total_gb or worker.disk_total_gb
-            worker.threads = self._fixed_live_worker_thread_limit()
-            worker.capacity = self._fixed_live_worker_thread_limit()
+            normalized_threads = self._normalize_live_worker_threads(payload.threads or worker.threads or 1)
+            worker.threads = normalized_threads
+            worker.capacity = normalized_threads
+            for link in self.live_user_worker_links:
+                if str(link.get("worker_id") or "").strip() == worker.id:
+                    link["threads"] = normalized_threads
             worker.last_seen_at = now
             worker.offline_since_at = None
             worker.offline_alert_sent_at = None
@@ -4796,7 +4822,7 @@ class AppStore:
             worker = self._authenticate_live_worker(worker_id, shared_secret)
             now = self._now(trim=False)
             self._sync_live_backup_policy(now=now)
-            max_threads = self._fixed_live_worker_thread_limit()
+            max_threads = self._effective_live_worker_thread_limit(worker)
             if self._count_live_worker_running_streams(worker) >= max_threads:
                 self._sync_live_worker_runtime_status(worker)
                 self._save_state()
@@ -7347,7 +7373,22 @@ class AppStore:
 
     @staticmethod
     def _fixed_live_worker_thread_limit() -> int:
-        return 1
+        return 6
+
+    def _normalize_live_worker_threads(self, requested_threads: int | str | None) -> int:
+        try:
+            requested = int(requested_threads if requested_threads is not None else 1)
+        except (TypeError, ValueError):
+            requested = 1
+        return max(1, min(self._fixed_live_worker_thread_limit(), requested))
+
+    def _effective_live_worker_thread_limit(self, worker: WorkerRecord) -> int:
+        configured = max(
+            1,
+            int(worker.threads or 0),
+            int(worker.capacity or 0),
+        )
+        return self._normalize_live_worker_threads(configured)
 
     @staticmethod
     def _resolve_live_schedule_window(
@@ -8001,7 +8042,7 @@ class AppStore:
 
     def _live_worker_thread_summary(self, worker: WorkerRecord) -> dict[str, int | str]:
         running_threads = self._count_live_worker_running_streams(worker)
-        max_threads = self._fixed_live_worker_thread_limit()
+        max_threads = self._effective_live_worker_thread_limit(worker)
         return {
             "running_threads": running_threads,
             "max_threads": max_threads,
@@ -9358,6 +9399,8 @@ class AppStore:
         task_live_role = self._normalize_live_assignment_role(task.get("live_role")) if str(task.get("live_role") or "").strip() else ""
         bot_type = self._bot_type_badge_data(workspace_kind, task_live_role)
         bot_function_key = "upload" if workspace_kind != "live" else "backup" if task_live_role == "backup" else "primary"
+        requested_threads = self._normalize_live_worker_threads(task.get("threads") or 1) if workspace_kind == "live" else 0
+        workload_text = f"0/{requested_threads}" if workspace_kind == "live" else "--"
         bot_function_label = {
             "upload": "Upload",
             "backup": "Backup",
@@ -9392,13 +9435,13 @@ class AppStore:
             "created_at": self._format_full_datetime(self._parse_datetime(task.get("created_at"))),
             "total_channels": 0,
             "total_users": 0,
-            "thread_text": "--",
-            "live_thread_text": "--",
-            "workload_text": "--",
+            "thread_text": workload_text,
+            "live_thread_text": workload_text,
+            "workload_text": workload_text,
             "workload_badge_class": bot_type["badge_class"],
             "running_threads": 0,
-            "max_threads": 0,
-            "threads": 0,
+            "max_threads": requested_threads,
+            "threads": requested_threads,
             "ram_text": "--",
             "ram_percent": 0,
             "disk_text": "--",
@@ -10308,12 +10351,14 @@ class AppStore:
         *,
         name: str,
         manager_id: str | None,
+        threads: int | None = None,
         viewer_role: str = "admin",
         viewer_id: str | None = None,
     ) -> WorkerRecord:
         normalized_name = str(name or "").strip()
         if not normalized_name:
             raise ValueError("Tên BOT là bắt buộc.")
+        normalized_threads = self._normalize_live_worker_threads(threads)
         manager: UserSummary | None = None
         if manager_id:
             manager = self._find_user(manager_id)
@@ -10330,7 +10375,7 @@ class AppStore:
             group="S - Việt 3",
             created_at=self._now(trim=False),
             status="offline",
-            capacity=1,
+            capacity=normalized_threads,
             load_percent=0,
             ram_percent=0,
             ram_used_gb=0.0,
@@ -10338,7 +10383,7 @@ class AppStore:
             bandwidth_kbps=0,
             disk_used_gb=0.0,
             disk_total_gb=512.0,
-            threads=1,
+            threads=normalized_threads,
             last_seen_at=self._now(trim=False),
         )
         self.live_workers.append(worker)
@@ -10380,6 +10425,7 @@ class AppStore:
         manager_id: str | None,
         *,
         live_role: str | None = None,
+        threads: int | None = None,
         assigned_user_id: str | None = None,
         assigned_user_ids: list[str] | None = None,
         confirm_manager_transfer_cleanup: bool = False,
@@ -10409,6 +10455,7 @@ class AppStore:
             if str(live_role or "").strip()
             else None
         )
+        normalized_threads = self._normalize_live_worker_threads(threads or worker.threads or 1)
         if normalized_manager_id:
             manager = self._find_user(normalized_manager_id)
             if manager.role != "manager":
@@ -10436,6 +10483,11 @@ class AppStore:
 
         self._apply_live_worker_manager(worker, manager)
         worker.group = normalized_group
+        worker.threads = normalized_threads
+        worker.capacity = normalized_threads
+        for link in self.live_user_worker_links:
+            if str(link.get("worker_id") or "").strip() == worker.id:
+                link["threads"] = normalized_threads
 
         selected_users: list[UserSummary] = []
         target_user_ids = normalized_user_ids if assigned_user_ids is not None else ([normalized_user_id] if normalized_user_id else [])
@@ -10488,14 +10540,14 @@ class AppStore:
                             "id": next_id,
                             "user_id": assigned_user.id,
                             "worker_id": worker.id,
-                            "threads": 1,
+                            "threads": normalized_threads,
                             "live_role": selected_role,
                             "note": self._live_assignment_note(selected_role),
                         }
                     )
                     next_id += 1
                 else:
-                    existing_link["threads"] = 1
+                    existing_link["threads"] = normalized_threads
                     existing_link["live_role"] = selected_role
                     existing_link["note"] = self._live_assignment_note(selected_role)
 
@@ -10561,8 +10613,9 @@ class AppStore:
         worker = self._find_live_worker(worker_id)
         if thread < 1:
             raise ValueError("Số luồng phải lớn hơn hoặc bằng 1.")
-        worker.threads = 1
-        worker.capacity = 1
+        normalized_threads = self._normalize_live_worker_threads(thread)
+        worker.threads = normalized_threads
+        worker.capacity = normalized_threads
         self._save_state()
 
     def update_bot(
@@ -10574,6 +10627,7 @@ class AppStore:
         *,
         workspace_mode: str = "upload",
         live_role: str | None = None,
+        threads: int | None = None,
         assigned_user_id: str | None = None,
         assigned_user_ids: list[str] | None = None,
         confirm_manager_transfer_cleanup: bool = False,
@@ -10588,6 +10642,7 @@ class AppStore:
                 group,
                 manager_id,
                 live_role=live_role,
+                threads=threads,
                 assigned_user_id=assigned_user_id,
                 assigned_user_ids=assigned_user_ids,
                 confirm_manager_transfer_cleanup=confirm_manager_transfer_cleanup,
