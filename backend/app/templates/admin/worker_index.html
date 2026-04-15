@@ -1439,7 +1439,8 @@
       const workerIdParam = encodeURIComponent(String(worker.id || ''));
       const workerNameParam = encodeURIComponent(String(worker.raw_name || worker.name || ''));
       const assignedUserIds = escapeHtml(Array.isArray(worker.assigned_user_ids) ? worker.assigned_user_ids.join(',') : '');
-      const functionValue = escapeHtml(resolveWorkerFunctionValue(worker));
+      const workerFunctionValue = resolveWorkerFunctionValue(worker);
+      const functionValue = escapeHtml(workerFunctionValue);
       const workerThreads = escapeHtml(worker.threads || 1);
       if (workspaceKind === 'live') {
         return [
@@ -1484,8 +1485,11 @@
       const assignedUserId = escapeHtml(worker.assigned_user_id || '');
       const statusLabel = escapeHtml(worker.status_label);
       const statusClass = escapeHtml(worker.status_class);
-      const workloadText = escapeHtml(worker.workload_text || worker.live_thread_text || worker.thread_text || '0/0/0');
-      const workloadNote = escapeHtml(worker.workload_note || 'Chạy / Tổng');
+      const workloadFallback = workerFunctionValue === 'backup' ? '0/0/0' : '0/0';
+      const workloadText = escapeHtml(worker.workload_text || worker.live_thread_text || worker.thread_text || workloadFallback);
+      const workloadNote = escapeHtml(
+        worker.workload_note || (workerFunctionValue === 'backup' ? 'Chạy / Chờ / Tổng' : 'Chạy / Tổng')
+      );
       const bandwidthText = escapeHtml(worker.bandwidth_text || '0.00KB/s');
       const diskText = escapeHtml(worker.disk_text || '--');
       const spaceText = escapeHtml(worker.space_text || diskText);

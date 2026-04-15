@@ -4353,12 +4353,18 @@ class AppStore:
     def _live_pre_stream_statuses(cls) -> set[str]:
         return {"scheduled", "downloading", "preparing", "waiting"}
 
-    def _count_live_worker_running_streams(self, worker: WorkerRecord) -> int:
+    def _count_live_worker_running_streams(self, worker: WorkerRecord, *, role: str | None = None) -> int:
         active_statuses = self._live_worker_active_statuses()
+        normalized_role = (
+            self._normalize_live_assignment_role(role)
+            if str(role or "").strip()
+            else None
+        )
         return sum(
             1
             for stream in self.live_streams
             if stream.claimed_by_worker_id == worker.id and stream.status in active_statuses
+            and (normalized_role is None or self._live_runtime_role(stream) == normalized_role)
         )
 
     def _sync_live_worker_runtime_status(self, worker: WorkerRecord) -> None:
@@ -8307,17 +8313,54 @@ class AppStore:
             if stream.primary_worker_id == normalized_worker_id or stream.backup_worker_id == normalized_worker_id
         ]
 
-    def _live_worker_thread_summary(self, worker: WorkerRecord) -> dict[str, int | str]:
-        running_threads = self._count_live_worker_running_streams(worker)
-        allocated_threads = self._live_worker_allocated_threads(worker.id)
+    def _count_live_worker_pending_backups(self, worker_id: str) -> int:
+        normalized_worker_id = str(worker_id or "").strip()
+        if not normalized_worker_id:
+            return 0
+        return sum(
+            1
+            for stream in self.live_streams
+            if self._is_visible_live_stream(stream)
+            and str(stream.backup_worker_id or "").strip() == normalized_worker_id
+            and self._live_backup_pending_for_stream(stream)
+        )
+
+    def _live_worker_thread_summary(self, worker: WorkerRecord, *, live_role: str | None = None) -> dict[str, int | str]:
+        normalized_role = (
+            self._normalize_live_assignment_role(live_role)
+            if str(live_role or "").strip() in {"primary", "backup"}
+            else None
+        )
         max_threads = self._effective_live_worker_thread_limit(worker)
+        if normalized_role == "backup":
+            running_threads = self._count_live_worker_running_streams(worker, role="backup")
+            pending_threads = self._count_live_worker_pending_backups(worker.id)
+            allocated_threads = self._live_worker_allocated_threads(worker.id, role="backup")
+            is_overallocated = allocated_threads > max_threads
+            return {
+                "running_threads": running_threads,
+                "pending_threads": pending_threads,
+                "allocated_threads": allocated_threads,
+                "max_threads": max_threads,
+                "thread_text": f"{running_threads}/{pending_threads}/{allocated_threads}",
+                "note_text": "Chạy / Chờ / Tổng",
+                "is_overallocated": is_overallocated,
+            }
+        running_threads = self._count_live_worker_running_streams(
+            worker,
+            role="primary" if normalized_role == "primary" else None,
+        )
+        allocated_threads = self._live_worker_allocated_threads(
+            worker.id,
+            role="primary" if normalized_role == "primary" else None,
+        )
         is_overallocated = allocated_threads > max_threads
         return {
             "running_threads": running_threads,
             "allocated_threads": allocated_threads,
             "max_threads": max_threads,
-            "thread_text": f"{running_threads}/{allocated_threads}/{max_threads}",
-            "note_text": "Chạy / Cấp phát / Trần",
+            "thread_text": f"{running_threads}/{allocated_threads}",
+            "note_text": "Chạy / Tổng",
             "is_overallocated": is_overallocated,
         }
 
@@ -9681,8 +9724,20 @@ class AppStore:
         ]
         allocated_threads = requested_threads * len(assigned_user_ids) if workspace_kind == "live" else 0
         max_threads = self._fixed_live_worker_thread_limit() if workspace_kind == "live" else requested_threads
-        workload_text = f"0/{allocated_threads}/{max_threads}" if workspace_kind == "live" else "--"
-        workload_note = "Chạy / Cấp phát / Trần" if workspace_kind == "live" else "Chạy / Tổng"
+        is_backup_live_bot = workspace_kind == "live" and bot_function_key == "backup"
+        workload_text = (
+            f"0/0/{allocated_threads}"
+            if is_backup_live_bot
+            else f"0/{allocated_threads}"
+            if workspace_kind == "live"
+            else "--"
+        )
+        workload_note = (
+            "Chạy / Chờ / Tổng"
+            if is_backup_live_bot
+            else "Chạy / Tổng"
+        )
+        is_overallocated = workspace_kind == "live" and allocated_threads > max_threads
         bot_function_label = {
             "upload": "Upload",
             "backup": "Backup",
@@ -9721,10 +9776,15 @@ class AppStore:
             "live_thread_text": workload_text,
             "workload_text": workload_text,
             "workload_note": workload_note,
-            "workload_badge_class": bot_type["badge_class"],
+            "workload_badge_class": (
+                "border-rose-100 bg-rose-50 text-rose-700"
+                if is_overallocated
+                else bot_type["badge_class"]
+            ),
             "running_threads": 0,
             "allocated_threads": allocated_threads,
             "max_threads": max_threads,
+            "pending_threads": 0,
             "threads": requested_threads,
             "ram_text": "--",
             "ram_percent": 0,
@@ -9819,8 +9879,6 @@ class AppStore:
                     manager_name=worker.manager_name,
                     assigned_users=assigned_users,
                 )
-                status_label, status_class = self._worker_status_badge(worker.status)
-                thread_summary = self._live_worker_thread_summary(worker) if is_live_workspace else self._worker_thread_summary(worker)
                 assigned_live_role = ""
                 assigned_live_role_label = ""
                 if is_live_workspace:
@@ -9832,6 +9890,12 @@ class AppStore:
                         if assigned_live_role
                         else ""
                     )
+                status_label, status_class = self._worker_status_badge(worker.status)
+                thread_summary = (
+                    self._live_worker_thread_summary(worker, live_role=assigned_live_role)
+                    if is_live_workspace
+                    else self._worker_thread_summary(worker)
+                )
                 bot_type = self._bot_type_badge_data(current_workspace_kind, assigned_live_role)
                 bot_function_key = (
                     "upload"
