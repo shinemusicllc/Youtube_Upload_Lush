@@ -5835,7 +5835,7 @@ class AppStore:
         active_page: str = "users",
         user_section: str | None = None,
     ) -> list[dict[str, str | bool]]:
-        if active_page in {"channels", "workers"}:
+        if active_page in {"channels", "workers", "users"}:
             return []
         workspace_tab_active = not (active_page == "users" and user_section in {"create", "managers", "admins"})
         return [
@@ -5861,7 +5861,7 @@ class AppStore:
 
     def _admin_nav_items(self, workspace_mode: str = "upload") -> list[dict[str, str]]:
         items = [
-            {"key": "users", "label": "Người dùng", "href": self._admin_workspace_href("/admin/user/index", workspace_mode), "icon": "users"},
+            {"key": "users", "label": "Người dùng", "href": "/admin/user/index", "icon": "users"},
             {"key": "workers", "label": "Danh sách BOT", "href": "/admin/ManagerBOT/index", "icon": "server"},
             {"key": "upload_jobs", "label": "Danh sách Upload", "href": "/admin/upload/index", "icon": "video"},
             {"key": "live_stream_jobs", "label": "Danh sách Live Stream", "href": "/admin/livestream/index", "icon": "radio"},
@@ -5883,17 +5883,16 @@ class AppStore:
         self,
         active_key: str,
         viewer_role: str = "admin",
-        workspace_mode: str = "upload",
     ) -> list[dict[str, str | bool]]:
         tabs = [
-            {"key": "users", "label": "Danh sách user", "href": self._admin_workspace_href("/admin/user/index", workspace_mode)},
-            {"key": "create", "label": "Tạo user", "href": self._admin_workspace_href("/admin/user/create", workspace_mode)},
+            {"key": "users", "label": "Danh sách user", "href": "/admin/user/index"},
+            {"key": "create", "label": "Tạo user", "href": "/admin/user/create"},
         ]
         if viewer_role != "manager":
             tabs.extend(
                 [
-                    {"key": "managers", "label": "Manager", "href": self._admin_workspace_href("/admin/user/manager", workspace_mode)},
-                    {"key": "admins", "label": "Admin", "href": self._admin_workspace_href("/admin/user/admins", workspace_mode)},
+                    {"key": "managers", "label": "Manager", "href": "/admin/user/manager"},
+                    {"key": "admins", "label": "Admin", "href": "/admin/user/admins"},
                 ]
             )
         for item in tabs:
@@ -6093,7 +6092,6 @@ class AppStore:
             context["user_tabs"] = self._user_section_tabs(
                 user_section,
                 viewer_role=viewer_role,
-                workspace_mode=workspace_mode,
             )
             context["user_section"] = user_section
         return context
@@ -6348,6 +6346,96 @@ class AppStore:
 
     def _user_channel_count(self, user: UserSummary) -> int:
         return len(self._user_channel_ids(user.id))
+
+    def _user_bot_triplet_metrics(self, user: UserSummary) -> dict[str, int]:
+        return {
+            "upload_bots_total": len(self._assigned_workers_for_user(user)),
+            "live_primary_bots_total": len(self._assigned_live_workers_for_user(user, role="primary")),
+            "live_backup_bots_total": len(self._assigned_live_workers_for_user(user, role="backup")),
+        }
+
+    def _admin_user_summary_strip(
+        self,
+        *,
+        viewer_role: str = "admin",
+        viewer_id: str | None = None,
+        manager_ids: list[str] | None = None,
+    ) -> list[dict[str, str]]:
+        summary = self._scoped_admin_summary(
+            viewer_role=viewer_role,
+            viewer_id=viewer_id,
+            manager_ids=manager_ids,
+        )
+        selected_manager_ids = self._effective_manager_scope_ids(
+            viewer_role=viewer_role,
+            viewer_id=viewer_id,
+            manager_ids=manager_ids,
+        )
+        upload_jobs = self.jobs
+        if selected_manager_ids:
+            upload_jobs = [job for job in upload_jobs if self._resolve_job_manager_id(job) in selected_manager_ids]
+        uploading_count = len([job for job in upload_jobs if job.status == "uploading"])
+        scoped_streams = self._scoped_live_streams(
+            viewer_role=viewer_role,
+            viewer_id=viewer_id,
+            manager_ids=manager_ids,
+        )
+        active_live_count = len(
+            [stream for stream in scoped_streams if self._effective_live_runtime_stream(stream).status == "streaming"]
+        )
+        backup_live_count = len({stream.backup_worker_id for stream in scoped_streams if stream.backup_worker_id})
+        return [
+            {
+                "value": str(summary.channels_connected),
+                "label": "Tổng Kênh",
+                "icon": "radio",
+                "icon_class": "text-emerald-500",
+                "accent": "Upload",
+                "accent_badge_class": "border-emerald-200 bg-emerald-50 text-emerald-700",
+                "value_class": "text-emerald-600",
+                "bar_color": "#10b981",
+            },
+            {
+                "value": str(summary.total_users),
+                "label": "Tổng User",
+                "icon": "users",
+                "icon_class": "text-rose-500",
+                "accent": "Accounts",
+                "accent_badge_class": "border-rose-200 bg-rose-50 text-rose-700",
+                "value_class": "text-slate-900",
+                "bar_color": "#f43f5e",
+            },
+            {
+                "value": str(uploading_count),
+                "label": "Đang Upload",
+                "icon": "cloud-upload",
+                "icon_class": "text-sky-500",
+                "accent": "Upload",
+                "accent_badge_class": "border-sky-200 bg-sky-50 text-sky-700",
+                "value_class": "text-slate-900" if uploading_count == 0 else "text-sky-600",
+                "bar_color": "#0ea5e9",
+            },
+            {
+                "value": str(active_live_count),
+                "label": "Đang Live",
+                "icon": "radio",
+                "icon_class": "text-brand-500",
+                "accent": "Live",
+                "accent_badge_class": "border-brand-100 bg-brand-50 text-brand-700",
+                "value_class": "text-slate-900" if active_live_count == 0 else "text-brand-600",
+                "bar_color": "#6b74f0",
+            },
+            {
+                "value": str(backup_live_count),
+                "label": "BOT Backup",
+                "icon": "shield-check",
+                "icon_class": "text-amber-500",
+                "accent": "Fallback",
+                "accent_badge_class": "border-amber-200 bg-amber-50 text-amber-700",
+                "value_class": "text-slate-900" if backup_live_count == 0 else "text-amber-600",
+                "bar_color": "#f59e0b",
+            },
+        ]
 
     def _channel_users(self, channel: ChannelRecord) -> list[str]:
         assigned_ids = [link["user_id"] for link in self.channel_user_links if link["channel_id"] == channel.id]
@@ -8286,7 +8374,6 @@ class AppStore:
         self,
         manager_ids: list[str] | None = None,
         *,
-        workspace_mode: str = "upload",
         viewer_role: str = "admin",
         viewer_id: str | None = None,
     ) -> list[dict[str, Any]]:
@@ -8324,7 +8411,11 @@ class AppStore:
             meta = self._user_meta_record(user.id)
             row_manager_name = user.manager_name or (user.username if user.role == "manager" else "-")
             row_manager_id = manager.id if manager else (user.id if user.role == "manager" else "")
-            row_telegram = (meta.get("telegram_live") or "") if user.role == "user" else (meta.get("telegram") or "")
+            row_telegram = (
+                (meta.get("telegram_live") or meta.get("telegram") or "")
+                if user.role == "user"
+                else (meta.get("telegram") or "")
+            )
             row = {
                 "index": len(rows) + 1,
                 "id": user.id,
@@ -8347,9 +8438,8 @@ class AppStore:
                     or (user.role == "admin" and len([item for item in self.users if item.role == "admin"]) <= 1)
                 ),
             }
-            if workspace_mode == "live":
-                row.update(self._live_user_metrics(user))
-                row["total_workers"] = self._user_live_worker_count(user)
+            row.update(self._live_user_metrics(user))
+            row.update(self._user_bot_triplet_metrics(user))
             rows.append(row)
         return rows
 
@@ -8435,6 +8525,8 @@ class AppStore:
                     }
                     for user in sorted(self.users, key=lambda item: (item.username or "").lower())
                 ],
+                "hide_workspace_tabs": True,
+                "workspace_heading": "Admin",
             }
         )
         return context
@@ -9007,7 +9099,7 @@ class AppStore:
             page_title="Danh sách người dùng",
             active_page="users",
             user_section="users",
-            workspace_mode=workspace_mode,
+            workspace_mode="upload",
             viewer_role=viewer_role,
             viewer_id=viewer_id,
             manager_ids=manager_ids,
@@ -9019,7 +9111,6 @@ class AppStore:
                 "template": "admin/user_index.html",
                 "users": self._build_user_rows(
                     manager_ids,
-                    workspace_mode=workspace_mode,
                     viewer_role=viewer_role,
                     viewer_id=viewer_id,
                 ),
@@ -9028,6 +9119,13 @@ class AppStore:
                     for user in self.users
                     if user.role == "manager" and (viewer_role != "manager" or user.id == viewer_id)
                 ],
+                "hide_workspace_tabs": True,
+                "workspace_heading": "Admin",
+                "summary_strip": self._admin_user_summary_strip(
+                    viewer_role=viewer_role,
+                    viewer_id=viewer_id,
+                    manager_ids=manager_ids,
+                ),
             }
         )
         if viewer_role == "manager" and viewer_id:
@@ -9065,6 +9163,8 @@ class AppStore:
                 },
                 "error": error,
                 "manager_candidates": [{"id": user.id, "username": user.username} for user in self.users if user.role == "manager"],
+                "hide_workspace_tabs": True,
+                "workspace_heading": "Admin",
             }
         )
         return context
@@ -9108,6 +9208,8 @@ class AppStore:
                     "telegram_live": meta.get("telegram_live") or "",
                     "password": "",
                 },
+                "hide_workspace_tabs": True,
+                "workspace_heading": "Admin",
             }
         )
         return context

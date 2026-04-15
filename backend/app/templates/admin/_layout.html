@@ -1145,7 +1145,9 @@
 
             <div class="flex-1 min-w-0 overflow-y-auto pb-16">
                 <div class="space-y-6 px-8 py-6 min-w-0">
-                    {% if not dashboard.hide_workspace_tabs %}
+                    {% if dashboard.active_page == 'users' and dashboard.user_tabs %}
+                    {% include "admin/_user_tabs.html" %}
+                    {% elif not dashboard.hide_workspace_tabs %}
                     {% include "admin/_workspace_tabs.html" %}
                     {% endif %}
                     {% block content %}{% endblock %}
