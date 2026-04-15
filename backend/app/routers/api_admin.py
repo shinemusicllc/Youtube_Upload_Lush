@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from ..request_urls import resolve_worker_bootstrap_control_plane_url
@@ -388,12 +389,20 @@ async def get_admin_bots(
         manager_ids=selected_manager_ids,
         after_id=after_event_id,
     )
-    return {
-        "items": dashboard.get("workers", []),
-        "summary_strip": dashboard.get("summary_strip", []),
-        "events": notifications.get("items", []),
-        "event_cursor": notifications.get("cursor", ""),
-    }
+    return JSONResponse(
+        {
+            "items": dashboard.get("workers", []),
+            "summary_strip": dashboard.get("summary_strip", []),
+            "events": notifications.get("items", []),
+            "event_cursor": notifications.get("cursor", ""),
+        },
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "Vary": "Cookie",
+        },
+    )
 
 
 @router.post("/admin/bots/install")
