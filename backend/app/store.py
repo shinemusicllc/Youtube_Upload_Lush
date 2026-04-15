@@ -8010,14 +8010,14 @@ class AppStore:
 
     def _live_user_metrics(self, user: UserSummary) -> dict[str, Any]:
         live_streams = [stream for stream in self.live_streams if stream.owner_user_id == user.id and self._is_visible_live_stream(stream)]
-        live_bots = self._assigned_live_workers_for_user(user)
+        live_primary_bots = self._assigned_live_workers_for_user(user, role="primary")
         backup_worker_ids = {stream.backup_worker_id for stream in live_streams if stream.backup_worker_id}
         return {
             "live_threads_running": len(
                 [stream for stream in live_streams if self._effective_live_runtime_stream(stream).status == "streaming"]
             ),
             "live_threads_total": len(live_streams),
-            "live_bots_total": len(live_bots),
+            "live_bots_total": len(live_primary_bots),
             "live_threads_backup_running": len(
                 [
                     stream
@@ -8035,7 +8035,7 @@ class AppStore:
             ),
             "live_threads_backup_total": len([stream for stream in live_streams if stream.backup_worker_id]),
             "live_bots_backup_total": len(backup_worker_ids),
-            "live_total_bots": len(live_bots),
+            "live_total_bots": len(live_primary_bots),
         }
 
     def _live_stream_display_row(self, stream: LiveStreamRecord) -> dict[str, Any]:
