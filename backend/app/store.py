@@ -5812,8 +5812,8 @@ class AppStore:
                 return "/admin/user/index?workspace=live"
             if active_page == "channels":
                 return "/app/live"
-            if active_page == "renders":
-                return "/admin/render/index?workspace=live"
+            if active_page in {"renders", "upload_jobs", "live_stream_jobs"}:
+                return "/admin/livestream/index"
             return "/app/live"
 
         if active_page == "users":
@@ -5822,8 +5822,8 @@ class AppStore:
             return "/admin/ManagerBOT/index"
         if active_page == "channels":
             return "/admin/channel/index"
-        if active_page == "renders":
-            return "/admin/render/index"
+        if active_page in {"renders", "upload_jobs", "live_stream_jobs"}:
+            return "/admin/upload/index"
         if active_page in {"live_workspace", "render_workspace"}:
             return "/app"
         return "/admin/user/index"
@@ -5863,20 +5863,20 @@ class AppStore:
         items = [
             {"key": "users", "label": "Người dùng", "href": self._admin_workspace_href("/admin/user/index", workspace_mode), "icon": "users"},
             {"key": "workers", "label": "Danh sách BOT", "href": "/admin/ManagerBOT/index", "icon": "server"},
-            {"key": "renders", "label": "Danh sách Render", "href": self._admin_workspace_href("/admin/render/index", workspace_mode), "icon": "video"},
+            {"key": "upload_jobs", "label": "Danh sách Upload", "href": "/admin/upload/index", "icon": "video"},
+            {"key": "live_stream_jobs", "label": "Danh sách Live Stream", "href": "/admin/livestream/index", "icon": "radio"},
             {"key": "render_workspace", "label": "Điều phối Upload", "href": "/app", "icon": "clapperboard"},
             {"key": "live_workspace", "label": "Điều phối Live Stream", "href": "/app/live", "icon": "radio-tower"},
         ]
-        if workspace_mode != "live":
-            items.insert(
-                2,
-                {
-                    "key": "channels",
-                    "label": "Danh sách Kênh",
-                    "href": self._admin_workspace_href("/admin/channel/index", workspace_mode),
-                    "icon": "link",
-                },
-            )
+        items.insert(
+            2,
+            {
+                "key": "channels",
+                "label": "Danh sách Kênh",
+                "href": "/admin/channel/index",
+                "icon": "link",
+            },
+        )
         return items
 
     def _user_section_tabs(
@@ -9576,16 +9576,6 @@ class AppStore:
                     viewer_role=viewer_role,
                     viewer_id=viewer_id,
                 ),
-                "bot_user_options_upload": self._bot_user_options(
-                    viewer_role=viewer_role,
-                    viewer_id=viewer_id,
-                    workspace_mode="upload",
-                ),
-                "bot_user_options_live": self._bot_user_options(
-                    viewer_role=viewer_role,
-                    viewer_id=viewer_id,
-                    workspace_mode="live",
-                ),
                 "selected_manager_labels": [
                     item["username"] for item in context.get("manager_options", []) if item.get("selected")
                 ],
@@ -11526,9 +11516,10 @@ class AppStore:
         notice: str | None = None,
         notice_level: str = "success",
     ) -> dict[str, Any]:
+        is_live_workspace = workspace_mode == "live"
         context = self._admin_shell_context(
-            page_title="Danh sách Render",
-            active_page="renders",
+            page_title="Danh sách Live Stream" if is_live_workspace else "Danh sách Upload",
+            active_page="live_stream_jobs" if is_live_workspace else "upload_jobs",
             workspace_mode=workspace_mode,
             viewer_role=viewer_role,
             viewer_id=viewer_id,
@@ -11536,8 +11527,9 @@ class AppStore:
             notice=notice,
             notice_level=notice_level,
         )
+        context["hide_workspace_tabs"] = True
 
-        if workspace_mode == "live":
+        if is_live_workspace:
             scoped_streams = self._scoped_live_streams(
                 viewer_role=viewer_role,
                 viewer_id=viewer_id,
@@ -11554,6 +11546,7 @@ class AppStore:
                         manager_ids=manager_ids,
                     ),
                     "renders": render_rows,
+                    "render_list_href": "/admin/livestream/index",
                     "render_heading": "Danh sách live stream",
                     "render_note": "Theo dõi luồng live stream theo bộ cột quản trị hiện tại, gộp timeline và cấu hình để bảng gọn và dễ rà soát hơn.",
                     "render_summary": (
@@ -11614,6 +11607,13 @@ class AppStore:
                 "template": "admin/render_index.html",
                 "renders": render_rows,
                 "filtered_channel": filtered_channel,
+                "render_list_href": "/admin/upload/index",
+                "render_channel_href": "/admin/upload/channel",
+                "render_detail_href": "/admin/upload/renderinfo",
+                "render_heading": "Danh sách upload",
+                "render_note": "Theo dõi queue upload, timeline download/upload và thao tác nhanh trên từng job upload.",
+                "render_table_heading": "Danh sách job upload",
+                "render_table_note": "Theo dõi tiến trình xử lý, mốc thời gian và thao tác nhanh trên từng job upload.",
                 "delete_render_meta": {
                     "user": self.render_delete_meta["user"],
                     "deleted_at": self._format_compact_datetime(self.render_delete_meta["deleted_at"]),
@@ -11642,8 +11642,8 @@ class AppStore:
             return asset.url or asset.file_name or ""
 
         context = self._admin_shell_context(
-            page_title="Thông tin Render",
-            active_page="renders",
+            page_title="Thông tin Upload",
+            active_page="upload_jobs",
             viewer_role=viewer_role,
             viewer_id=viewer_id,
             notice=notice,
@@ -11652,6 +11652,8 @@ class AppStore:
         context.update(
             {
                 "template": "admin/render_detail.html",
+                "hide_workspace_tabs": True,
+                "render_list_href": "/admin/upload/index",
                 "render_detail": {
                     "id": job.id,
                     "title": job.title,
@@ -11674,7 +11676,7 @@ class AppStore:
             return self.get_admin_user_index_context()
         if active_page == "channels":
             return self.get_admin_channel_index_context(user_id=user_id, bot_id=bot_id)
-        if active_page == "renders":
+        if active_page in {"renders", "upload_jobs", "live_stream_jobs"}:
             return self.get_admin_render_index_context()
         raise KeyError(active_page)
 

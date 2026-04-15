@@ -1095,6 +1095,18 @@
                     <p class="text-[11px] font-medium text-slate-400">Điều hướng</p>
                 </div>
                 <div class="space-y-0.5">
+                    {% set nav_state = namespace(has_channels=false) %}
+                    {% for item in dashboard.nav_items %}
+                    {% if item.key == "channels" %}
+                    {% set nav_state.has_channels = true %}
+                    {% endif %}
+                    {% endfor %}
+                    {% if dashboard.active_page in ["live_stream_jobs", "live_workspace"] and not nav_state.has_channels %}
+                    <a href="/admin/channel/index" class="nav-item">
+                        <i data-lucide="link" class="h-4 w-4"></i>
+                        <span class="text-[13px] font-medium">Danh sách Kênh</span>
+                    </a>
+                    {% endif %}
                     {% for item in dashboard.nav_items %}
                     <a href="{{ item.href }}" class="nav-item {% if dashboard.active_page == item.key %}active{% endif %}">
                         <i data-lucide="{{ item.icon }}" class="h-4 w-4"></i>

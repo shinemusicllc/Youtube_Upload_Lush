@@ -1,7 +1,7 @@
 {% extends "admin/_layout.html" %}
 
 {% block content %}
-<section class="space-y-6">
+<section class="mt-0 space-y-6">
     {% include "admin/_admin_notice.html" %}
 
     <div class="panel p-5">
@@ -11,8 +11,8 @@
                     <i data-lucide="file-text" class="h-4.5 w-4.5 text-brand-600"></i>
                 </div>
                 <div>
-                    <h2 class="section-title">Chi tiết tiến trình render</h2>
-                    <p class="section-note">Xem nhanh cấu hình nguồn, thời lượng và lịch chạy của job render đang chọn.</p>
+                    <h2 class="section-title">Chi tiết tiến trình upload</h2>
+                    <p class="section-note">Xem nhanh cấu hình nguồn, thời lượng và lịch chạy của job upload đang chọn.</p>
                 </div>
             </div>
         </div>
@@ -24,9 +24,9 @@
                 <h3 class="section-title">Cấu hình chi tiết</h3>
                 <p class="section-note">Job: {{ dashboard.render_detail.title }} • {{ dashboard.render_detail.id }}</p>
             </div>
-            <a href="/admin/render/index" class="action-btn action-btn-slate self-start">
+            <a href="{{ dashboard.render_list_href }}" class="action-btn action-btn-slate self-start">
                 <i data-lucide="arrow-left" class="h-3.5 w-3.5"></i>
-                Quay lại danh sách render
+                Quay lại danh sách upload
             </a>
         </div>
 

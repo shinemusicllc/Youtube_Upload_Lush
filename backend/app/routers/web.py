@@ -2096,16 +2096,14 @@ async def admin_channel_delete_ajax(request: Request, id: str | None = None):
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
 
 
-@router.get("/admin/render/index", response_class=HTMLResponse)
-async def admin_render_index(
+@router.get("/admin/upload/index", response_class=HTMLResponse)
+async def admin_upload_index(
     request: Request,
     manager_ids: list[str] = Query(default=[]),
-    workspace: str = "upload",
     notice: str | None = None,
     notice_level: str = "success",
 ):
     current_admin = require_admin_access(request)
-    workspace_mode = _resolve_admin_workspace(workspace)
     selected_manager_ids = _resolve_manager_ids(request, manager_ids)
     return _render(
         request,
@@ -2115,30 +2113,21 @@ async def admin_render_index(
             viewer_id=current_admin.id,
             notice=notice,
             notice_level=notice_level,
-            workspace_mode=workspace_mode,
+            workspace_mode="upload",
         ),
     )
 
 
-@router.get("/admin/render/channel", response_class=HTMLResponse)
-async def admin_render_of_channel(
+@router.get("/admin/upload/channel", response_class=HTMLResponse)
+async def admin_upload_of_channel(
     request: Request,
     channelId: str,
     channelName: str | None = None,
     manager_ids: list[str] = Query(default=[]),
-    workspace: str = "upload",
     notice: str | None = None,
     notice_level: str = "success",
 ):
     current_admin = require_admin_access(request)
-    workspace_mode = _resolve_admin_workspace(workspace)
-    if workspace_mode == "live":
-        return _redirect_with_notice(
-            "/admin/render/index",
-            "Workspace Live Stream không có Danh sách Kênh.",
-            "info",
-            workspace="live",
-        )
     _enforce_channel_scope(current_admin, channelId)
     selected_manager_ids = _resolve_manager_ids(request, manager_ids)
     return _render(
@@ -2150,13 +2139,13 @@ async def admin_render_of_channel(
             viewer_id=current_admin.id,
             notice=notice,
             notice_level=notice_level,
-            workspace_mode=workspace_mode,
+            workspace_mode="upload",
         ),
     )
 
 
-@router.get("/admin/render/renderinfo", response_class=HTMLResponse)
-async def admin_render_info(
+@router.get("/admin/upload/renderinfo", response_class=HTMLResponse)
+async def admin_upload_info(
     request: Request,
     id: str,
     notice: str | None = None,
@@ -2176,6 +2165,82 @@ async def admin_render_info(
     )
 
 
+@router.get("/admin/livestream/index", response_class=HTMLResponse)
+async def admin_livestream_index(
+    request: Request,
+    manager_ids: list[str] = Query(default=[]),
+    notice: str | None = None,
+    notice_level: str = "success",
+):
+    current_admin = require_admin_access(request)
+    selected_manager_ids = _resolve_manager_ids(request, manager_ids)
+    return _render(
+        request,
+        store.get_admin_render_index_context(
+            manager_ids=selected_manager_ids,
+            viewer_role=current_admin.role,
+            viewer_id=current_admin.id,
+            notice=notice,
+            notice_level=notice_level,
+            workspace_mode="live",
+        ),
+    )
+
+
+@router.get("/admin/render/index", response_class=HTMLResponse)
+async def admin_render_index(
+    request: Request,
+    manager_ids: list[str] = Query(default=[]),
+    workspace: str = "upload",
+):
+    require_admin_access(request)
+    workspace_mode = _resolve_admin_workspace(workspace)
+    if workspace_mode == "live":
+        destination = request.url_for("admin_livestream_index")
+        if manager_ids:
+            destination = destination.include_query_params(manager_ids=manager_ids)
+        return RedirectResponse(str(destination), status_code=302)
+    destination = request.url_for("admin_upload_index")
+    if manager_ids:
+        destination = destination.include_query_params(manager_ids=manager_ids)
+    return RedirectResponse(str(destination), status_code=302)
+
+
+@router.get("/admin/render/channel", response_class=HTMLResponse)
+async def admin_render_of_channel(
+    request: Request,
+    channelId: str,
+    channelName: str | None = None,
+    manager_ids: list[str] = Query(default=[]),
+    workspace: str = "upload",
+):
+    require_admin_access(request)
+    workspace_mode = _resolve_admin_workspace(workspace)
+    if workspace_mode == "live":
+        return _redirect_with_notice(
+            "/admin/livestream/index",
+            "Workspace Live Stream không có Danh sách Kênh.",
+            "info",
+        )
+    destination = request.url_for("admin_upload_of_channel")
+    params: dict[str, str | list[str]] = {"channelId": channelId}
+    if channelName:
+        params["channelName"] = channelName
+    if manager_ids:
+        params["manager_ids"] = manager_ids
+    destination = destination.include_query_params(**params)
+    return RedirectResponse(str(destination), status_code=302)
+
+
+@router.get("/admin/render/renderinfo", response_class=HTMLResponse)
+async def admin_render_info(
+    request: Request,
+    id: str,
+):
+    require_admin_access(request)
+    return RedirectResponse(str(request.url_for("admin_upload_info").include_query_params(id=id)), status_code=302)
+
+
 @router.post("/admin/render/delete")
 async def admin_render_delete_all(request: Request):
     current_admin = require_admin_access(request)
@@ -2190,8 +2255,8 @@ async def admin_render_delete_all(request: Request):
     else:
         store.delete_jobs(scoped_job_ids)
     if channel_id:
-        return _redirect_with_notice("/admin/render/channel", "Đã xóa toàn bộ dữ liệu render.", "success", channelId=channel_id)
-    return _redirect_with_notice("/admin/render/index", "Đã xóa toàn bộ dữ liệu render.", "success")
+        return _redirect_with_notice("/admin/upload/channel", "Đã xóa toàn bộ dữ liệu render.", "success", channelId=channel_id)
+    return _redirect_with_notice("/admin/upload/index", "Đã xóa toàn bộ dữ liệu render.", "success")
 
 
 @router.post("/admin/render/deletejob")
@@ -2204,9 +2269,9 @@ async def admin_render_delete_job(request: Request):
         _enforce_job_scope(current_admin, job_id)
         store.delete_job(job_id)
         if channel_id:
-            return _redirect_with_notice("/admin/render/channel", "Đã xóa job render.", "success", channelId=channel_id)
-        return _redirect_with_notice("/admin/render/index", "Đã xóa job render.", "success")
+            return _redirect_with_notice("/admin/upload/channel", "Đã xóa job render.", "success", channelId=channel_id)
+        return _redirect_with_notice("/admin/upload/index", "Đã xóa job render.", "success")
     except KeyError as exc:
         if channel_id:
-            return _redirect_with_notice("/admin/render/channel", str(exc), "error", channelId=channel_id)
-        return _redirect_with_notice("/admin/render/index", str(exc), "error")
+            return _redirect_with_notice("/admin/upload/channel", str(exc), "error", channelId=channel_id)
+        return _redirect_with_notice("/admin/upload/index", str(exc), "error")

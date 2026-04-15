@@ -195,9 +195,9 @@
                                     <i data-lucide="users" class="h-3.5 w-3.5"></i>
                                     DS User
                                 </a>
-                                <a href="/admin/render/channel?channelId={{ channel.id }}&channelName={{ channel.name | urlencode }}" class="action-btn action-btn-sky">
+                                <a href="/admin/upload/channel?channelId={{ channel.id }}&channelName={{ channel.name | urlencode }}" class="action-btn action-btn-sky">
                                     <i data-lucide="video" class="h-3.5 w-3.5"></i>
-                                    DS Render
+                                    DS Upload
                                 </a>
                                 <form method="post" action="/admin/channel/updateprofile" class="inline-flex">
                                     <input type="hidden" name="channelId" value="{{ channel.id }}">

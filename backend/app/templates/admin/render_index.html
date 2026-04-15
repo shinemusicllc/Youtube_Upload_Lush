@@ -1,6 +1,7 @@
 {% extends "admin/_layout.html" %}
 
 {% block content %}
+<section class="render-page-shell">
 <style>
     .admin-table-render-list {
         width: 100%;
@@ -66,7 +67,7 @@
         justify-content: flex-end;
     }
 </style>
-<section class="render-page-shell space-y-6">
+    <div class="space-y-6">
     {% include "admin/_admin_notice.html" %}
 
     <div class="panel p-5">
@@ -76,12 +77,12 @@
                     <i data-lucide="layers-3" class="h-4.5 w-4.5 text-brand-600"></i>
                 </div>
                 <div>
-                    <h2 class="section-title">Danh sách render</h2>
-                    <p class="section-note">Theo dõi queue, timeline download/upload và thao tác nhanh trên từng job render.</p>
+                    <h2 class="section-title">{{ dashboard.render_heading }}</h2>
+                    <p class="section-note">{{ dashboard.render_note }}</p>
                 </div>
             </div>
 
-            <form method="get" action="{% if dashboard.filtered_channel %}/admin/render/channel{% else %}/admin/render/index{% endif %}" class="flex w-full min-w-0 flex-col gap-3 xl:max-w-[720px] xl:flex-row xl:items-center xl:justify-end" data-manager-auto-submit="true">
+            <form method="get" action="{% if dashboard.filtered_channel %}{{ dashboard.render_channel_href }}{% else %}{{ dashboard.render_list_href }}{% endif %}" class="flex w-full min-w-0 flex-col gap-3 xl:max-w-[720px] xl:flex-row xl:items-center xl:justify-end" data-manager-auto-submit="true">
                 {% if dashboard.filtered_channel %}
                 <input type="hidden" name="channelId" value="{{ dashboard.filtered_channel.id }}">
                 <input type="hidden" name="channelName" value="{{ dashboard.filtered_channel.name }}">
@@ -94,7 +95,7 @@
 
         {% if dashboard.filtered_channel %}
         <div class="mt-4 inline-flex items-center rounded-lg border border-brand-100 bg-brand-50 px-3 py-2 text-[12px] font-medium text-brand-700">
-            Đang lọc render theo kênh: {{ dashboard.filtered_channel.name }}
+            Đang lọc upload theo kênh: {{ dashboard.filtered_channel.name }}
         </div>
         {% endif %}
     </div>
@@ -105,8 +106,8 @@
         {% set show_local_render_demo = (not dashboard.renders) and (request.url.hostname in ['127.0.0.1', 'localhost', '::1']) %}
         <div class="border-b border-slate-200/80 px-5 py-4">
             <div>
-                <h3 class="section-title">Danh sách job render</h3>
-                <p class="section-note">Theo dõi tiến trình xử lý, mốc thời gian và thao tác nhanh trên từng job render.</p>
+                <h3 class="section-title">{{ dashboard.render_table_heading }}</h3>
+                <p class="section-note">{{ dashboard.render_table_note }}</p>
             </div>
         </div>
 
@@ -185,7 +186,7 @@
                         <td class="table-mono text-slate-500">{{ render.queue_order }}</td>
                         <td class="render-actions-cell">
                             <div class="render-actions-wrap flex items-center gap-2">
-                                <a href="/admin/render/renderinfo?id={{ render.id }}" class="action-btn action-btn-slate">
+                                <a href="{{ dashboard.render_detail_href }}?id={{ render.id }}" class="action-btn action-btn-slate">
                                     <i data-lucide="eye" class="h-3.5 w-3.5"></i>
                                     Chi tiết
                                 </a>
@@ -266,5 +267,6 @@
             </form>
         </div>
     </div>
+</div>
 </section>
 {% endblock %}

@@ -1,92 +1,6 @@
 {% extends "admin/_layout.html" %}
 
 {% block content %}
-<style>
-    /* Width tokens for the admin live-stream table.
-       Edit only the px values below when you want to rebalance columns. */
-    .live-render-table {
-        width: 100%;
-        table-layout: fixed;
-        white-space: normal;
-    }
-    .live-render-table thead th,
-    .live-render-table tbody td {
-        vertical-align: top;
-        white-space: normal;
-        overflow-wrap: anywhere;
-        word-break: break-word;
-    }
-    .live-render-col-stt { width: 80px; }
-    .live-render-col-scope { width: 150px; }
-    .live-render-col-bot { width: 140px; }
-    .live-render-col-name { width: 150px; }
-    .live-render-col-key { width: 156px; }
-    .live-render-col-backup { width: 140px; }
-    .live-render-col-config { width: 112px; }
-    .live-render-col-timeline { width: 220px; }
-    .live-render-col-log { width: 110px; }
-    .live-render-col-status { width: 116px; }
-    .live-render-col-actions { width: 116px; }
-    .live-render-stack {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-        min-width: 0;
-    }
-    .live-render-title {
-        font-size: 13px;
-        font-weight: 700;
-        line-height: 1.45;
-        color: rgb(30 41 59);
-        white-space: normal;
-        overflow-wrap: anywhere;
-        word-break: break-word;
-    }
-    .live-render-meta {
-        font-size: 11px;
-        line-height: 1.45;
-        color: rgb(100 116 139);
-        white-space: normal;
-        overflow-wrap: anywhere;
-        word-break: break-word;
-    }
-    .live-render-mono {
-        font-family: "IBM Plex Mono", monospace;
-    }
-    .live-render-chip-stack {
-        display: flex;
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 6px;
-    }
-    .live-render-timeline {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-        font-size: 11px;
-        line-height: 1.45;
-        color: rgb(51 65 85);
-        font-family: "IBM Plex Mono", monospace;
-        white-space: normal;
-        overflow-wrap: anywhere;
-        word-break: break-word;
-    }
-    .live-render-timeline-label {
-        font-weight: 700;
-        color: rgb(71 85 105);
-    }
-    .live-render-status-cell {
-        white-space: normal;
-    }
-    .live-render-action-row {
-        display: flex;
-        align-items: center;
-        justify-content: flex-end;
-        gap: 8px;
-        flex-wrap: wrap;
-    }
-</style>
-
 <section class="space-y-6">
     {% set live_index_href = '/admin/live' %}
     {% include "admin/_admin_notice.html" %}
@@ -103,8 +17,7 @@
                 </div>
             </div>
 
-            <form method="get" action="/admin/render/index" class="flex w-full min-w-0 flex-col gap-3 xl:max-w-[720px] xl:flex-row xl:items-center xl:justify-end" data-manager-auto-submit="true">
-                <input type="hidden" name="workspace" value="live">
+            <form method="get" action="{{ dashboard.render_list_href }}" class="flex w-full min-w-0 flex-col gap-3 xl:max-w-[720px] xl:flex-row xl:items-center xl:justify-end" data-manager-auto-submit="true">
                 <div class="min-w-0 flex-1">
                     {% include "admin/_manager_picker.html" %}
                 </div>
@@ -238,4 +151,89 @@
         </div>
     </div>
 </section>
+<style>
+    /* Width tokens for the admin live-stream table.
+       Edit only the px values below when you want to rebalance columns. */
+    .live-render-table {
+        width: 100%;
+        table-layout: fixed;
+        white-space: normal;
+    }
+    .live-render-table thead th,
+    .live-render-table tbody td {
+        vertical-align: top;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+    .live-render-col-stt { width: 80px; }
+    .live-render-col-scope { width: 150px; }
+    .live-render-col-bot { width: 140px; }
+    .live-render-col-name { width: 150px; }
+    .live-render-col-key { width: 156px; }
+    .live-render-col-backup { width: 140px; }
+    .live-render-col-config { width: 112px; }
+    .live-render-col-timeline { width: 220px; }
+    .live-render-col-log { width: 110px; }
+    .live-render-col-status { width: 116px; }
+    .live-render-col-actions { width: 116px; }
+    .live-render-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 0;
+    }
+    .live-render-title {
+        font-size: 13px;
+        font-weight: 700;
+        line-height: 1.45;
+        color: rgb(30 41 59);
+        white-space: normal;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+    .live-render-meta {
+        font-size: 11px;
+        line-height: 1.45;
+        color: rgb(100 116 139);
+        white-space: normal;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+    .live-render-mono {
+        font-family: "IBM Plex Mono", monospace;
+    }
+    .live-render-chip-stack {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+    }
+    .live-render-timeline {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        font-size: 11px;
+        line-height: 1.45;
+        color: rgb(51 65 85);
+        font-family: "IBM Plex Mono", monospace;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+    .live-render-timeline-label {
+        font-weight: 700;
+        color: rgb(71 85 105);
+    }
+    .live-render-status-cell {
+        white-space: normal;
+    }
+    .live-render-action-row {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+</style>
 {% endblock %}
