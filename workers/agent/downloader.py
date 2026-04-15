@@ -256,7 +256,6 @@ def download_remote_asset(
         poller = threading.Thread(target=_poll_partial_file, daemon=True)
         poller.start()
         try:
-            downloaded_path: str | None = None
             if file_id:
                 direct_path = _download_google_drive_direct(
                     file_id,
@@ -266,8 +265,6 @@ def download_remote_asset(
                 )
                 downloaded_path = str(direct_path)
             else:
-                downloaded_path = gdown.download(url=url, output=str(target_path), quiet=True, fuzzy=True)
-            if not downloaded_path:
                 downloaded_path = gdown.download(url=url, output=str(target_path), quiet=True, fuzzy=True)
         finally:
             stop_poll.set()
