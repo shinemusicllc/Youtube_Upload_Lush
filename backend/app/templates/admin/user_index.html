@@ -17,8 +17,6 @@
         white-space: normal;
         vertical-align: middle;
         min-width: 0;
-        overflow-wrap: anywhere;
-        word-break: break-word;
     }
 
     .admin-table-user-unified .user-avatar-compact {
@@ -32,8 +30,7 @@
         min-height: 32px;
         padding: 0 10px;
         font-size: 11px;
-        width: 100%;
-        justify-content: center;
+        white-space: nowrap;
     }
 
     .admin-table-user-unified .stt-col {
@@ -81,10 +78,14 @@
     }
 
     .admin-table-user-unified .action-grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        justify-items: stretch;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
         gap: 8px;
+    }
+
+    .admin-table-user-unified td span.inline-flex {
+        white-space: nowrap;
     }
 
     .admin-table-user-unified .table-meta,
