@@ -1483,6 +1483,7 @@
       const workerGroup = escapeHtml(worker.group || worker.manager_name || '');
       const managerId = escapeHtml(worker.manager_id || '');
       const assignedUserId = escapeHtml(worker.assigned_user_id || '');
+      const workerFunctionValue = resolveWorkerFunctionValue(worker);
       const statusLabel = escapeHtml(worker.status_label);
       const statusClass = escapeHtml(worker.status_class);
       const workloadFallback = workerFunctionValue === 'backup' ? '0/0/0' : '0/0';
