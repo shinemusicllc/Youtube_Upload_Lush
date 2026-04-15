@@ -68,6 +68,13 @@ class AppStore:
     }
 
     @staticmethod
+    def _default_bot_group_label() -> str:
+        return "new"
+
+    def _normalized_bot_group(self, group: str | None) -> str:
+        return str(group or "").strip() or self._default_bot_group_label()
+
+    @staticmethod
     def _env_flag(name: str, *, default: bool) -> bool:
         raw_value = str(os.getenv(name, "")).strip().lower()
         if raw_value in {"1", "true", "yes", "on"}:
@@ -2859,8 +2866,8 @@ class AppStore:
             if manager_name and worker.manager_name != manager_name:
                 worker.manager_name = manager_name
                 changed = True
-            if manager_name and not str(worker.group or "").strip():
-                worker.group = manager_name
+            if not str(worker.group or "").strip():
+                worker.group = self._default_bot_group_label()
                 changed = True
 
         for channel in self.channels:
@@ -2943,7 +2950,7 @@ class AppStore:
                 worker.manager_name = manager_name
                 changed = True
             if not str(worker.group or "").strip():
-                worker.group = "S - Việt 3"
+                worker.group = self._default_bot_group_label()
                 changed = True
         return changed
 
@@ -3982,7 +3989,9 @@ class AppStore:
             resolved_manager_name = (
                 manager.username if manager else (install_task_manager_name or str(payload.manager_name or "").strip() or "system")
             )
-            resolved_group = install_task_group or str(payload.group or "").strip() or resolved_manager_name
+            resolved_group = self._normalized_bot_group(
+                install_task_group or str(payload.group or "").strip()
+            )
             normalized_threads = self._normalize_requested_worker_threads(payload.threads)
             if existing is None:
                 worker = WorkerRecord(
@@ -4026,7 +4035,7 @@ class AppStore:
                     }:
                         existing.group = payload_group
                 elif not current_group:
-                    existing.group = resolved_manager_name
+                    existing.group = self._default_bot_group_label()
                 existing.created_at = existing.created_at or now
                 existing.capacity = max(int(existing.capacity or 1), int(payload.capacity or 1))
                 existing.threads = self._normalize_requested_worker_threads(
@@ -4788,7 +4797,9 @@ class AppStore:
             resolved_manager_name = (
                 manager.username if manager else (install_task_manager_name or str(payload.manager_name or "").strip() or "system")
             )
-            resolved_group = install_task_group or str(payload.group or "").strip() or "S - Việt 3"
+            resolved_group = self._normalized_bot_group(
+                install_task_group or str(payload.group or "").strip()
+            )
             normalized_capacity = self._normalize_live_worker_threads(
                 (
                     existing.capacity
@@ -9276,10 +9287,8 @@ class AppStore:
     def _apply_worker_manager(self, worker: WorkerRecord, manager: UserSummary | None) -> None:
         worker.manager_id = manager.id if manager else None
         worker.manager_name = manager.username if manager else "system"
-        if manager is None:
-            worker.group = None
-        elif not str(worker.group or "").strip():
-            worker.group = manager.username
+        if not str(worker.group or "").strip():
+            worker.group = self._default_bot_group_label()
         updated_manager_name = worker.manager_name
         for channel in self.channels:
             if channel.worker_id == worker.id:
@@ -9932,7 +9941,7 @@ class AppStore:
                     "manager_name": resolved_manager_name,
                     "name": worker_display_name,
                     "raw_name": worker_display_name,
-                    "group": worker.group or resolved_manager_name,
+                    "group": self._normalized_bot_group(worker.group),
                     "bot_type_key": bot_type["key"],
                     "bot_type_label": bot_type["label"],
                     "bot_type_badge_class": bot_type["badge_class"],
@@ -10117,7 +10126,7 @@ class AppStore:
                     "id": worker.id,
                     "bot_id": worker.id,
                     "name": self._resolve_live_worker_display_name(worker.id) if is_live_workspace else self._resolve_worker_display_name(worker.id),
-                    "group": worker.group or worker.manager_name,
+                    "group": self._normalized_bot_group(worker.group),
                     "status_label": status_label,
                     "status_class": status_class,
                     "created_at": self._format_full_datetime(worker.last_seen_at),
@@ -10730,7 +10739,7 @@ class AppStore:
             name=normalized_name,
             manager_id=manager.id if manager else None,
             manager_name=manager.username if manager else "system",
-            group="S - Việt 3",
+            group=self._default_bot_group_label(),
             created_at=self._now(trim=False),
             status="offline",
             capacity=normalized_capacity,
@@ -10752,7 +10761,7 @@ class AppStore:
         worker.manager_id = manager.id if manager else None
         worker.manager_name = manager.username if manager else "system"
         if not str(worker.group or "").strip():
-            worker.group = "S - Việt 3"
+            worker.group = self._default_bot_group_label()
 
     def _purge_live_worker_assignment_scope(self, worker_id: str) -> None:
         cleaned_worker_id = str(worker_id or "").strip()
@@ -10795,7 +10804,7 @@ class AppStore:
         if not normalized_name:
             raise ValueError("Tên BOT là bắt buộc.")
         worker.name = normalized_name
-        normalized_group = str(group or "").strip() or "S - Việt 3"
+        normalized_group = self._normalized_bot_group(group)
         normalized_user_id = str(assigned_user_id or "").strip()
         normalized_user_ids: list[str] = []
         seen_user_ids: set[str] = set()
