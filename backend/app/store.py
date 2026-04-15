@@ -2784,8 +2784,7 @@ class AppStore:
             assigned_user = self._assigned_user_for_worker(worker.id)
             if assigned_user is None:
                 continue
-            manager_id = self._resolved_user_manager_id(assigned_user)
-            manager_name = assigned_user.manager_name or ""
+            manager_id, manager_name = self._resolve_owner_scope_from_assigned_users([assigned_user])
             if manager_id and worker.manager_id != manager_id:
                 worker.manager_id = manager_id
                 changed = True
@@ -2868,8 +2867,7 @@ class AppStore:
             assigned_user = self._assigned_live_user_for_worker(worker.id, role="primary") or self._assigned_live_user_for_worker(worker.id)
             if assigned_user is None:
                 continue
-            manager_id = self._resolved_user_manager_id(assigned_user)
-            manager_name = assigned_user.manager_name or ""
+            manager_id, manager_name = self._resolve_owner_scope_from_assigned_users([assigned_user])
             if manager_id and worker.manager_id != manager_id:
                 worker.manager_id = manager_id
                 changed = True
@@ -5958,13 +5956,31 @@ class AppStore:
         selected_ids = set(self._selected_manager_ids(manager_ids))
         if not selected_ids:
             return list(self.workers)
-        return [worker for worker in self.workers if worker.manager_id in selected_ids]
+        return [
+            worker
+            for worker in self.workers
+            if self._resolved_bot_manager_scope(
+                manager_id=worker.manager_id,
+                manager_name=worker.manager_name,
+                assigned_users=self._assigned_users_for_worker(worker.id),
+            )[0]
+            in selected_ids
+        ]
 
     def _filtered_live_workers(self, manager_ids: list[str] | None = None) -> list[WorkerRecord]:
         selected_ids = set(self._selected_manager_ids(manager_ids))
         if not selected_ids:
             return list(self.live_workers)
-        return [worker for worker in self.live_workers if worker.manager_id in selected_ids]
+        return [
+            worker
+            for worker in self.live_workers
+            if self._resolved_bot_manager_scope(
+                manager_id=worker.manager_id,
+                manager_name=worker.manager_name,
+                assigned_users=self._assigned_live_users_for_worker(worker.id),
+            )[0]
+            in selected_ids
+        ]
 
     def _effective_manager_scope_ids(
         self,
@@ -6231,12 +6247,9 @@ class AppStore:
             viewer_id=viewer_id,
             manager_ids=manager_ids,
         )
-        scoped_upload_workers = [
-            worker for worker in self.workers if not selected_manager_ids or worker.manager_id in selected_manager_ids
-        ]
-        scoped_live_workers = [
-            worker for worker in self.live_workers if not selected_manager_ids or worker.manager_id in selected_manager_ids
-        ]
+        scoped_manager_ids = list(selected_manager_ids) if selected_manager_ids else None
+        scoped_upload_workers = self._filtered_workers(scoped_manager_ids)
+        scoped_live_workers = self._filtered_live_workers(scoped_manager_ids)
         combined_workers = [*scoped_upload_workers, *scoped_live_workers]
         combined_workers_online = len([worker for worker in combined_workers if worker.status in {"online", "busy"}])
         scoped_summary = self._scoped_admin_summary(
@@ -6402,6 +6415,50 @@ class AppStore:
         except KeyError:
             return None
         return user.username if user.role == "manager" else None
+
+    def _resolve_owner_scope_from_assigned_users(
+        self,
+        assigned_users: list[UserSummary] | None = None,
+    ) -> tuple[str | None, str | None]:
+        for assigned_user in assigned_users or []:
+            if assigned_user.role == "manager":
+                return assigned_user.id, assigned_user.username
+            if assigned_user.role == "user":
+                manager_id = self._resolved_user_manager_id(assigned_user)
+                manager_name = (
+                    self._manager_username_from_id(manager_id)
+                    or str(assigned_user.manager_name or "").strip()
+                    or None
+                )
+                if manager_id or manager_name:
+                    return manager_id, manager_name
+            if assigned_user.role == "admin":
+                return None, assigned_user.username
+        return None, None
+
+    def _resolved_bot_manager_scope(
+        self,
+        *,
+        manager_id: str | None = None,
+        manager_name: str | None = None,
+        assigned_users: list[UserSummary] | None = None,
+    ) -> tuple[str | None, str]:
+        normalized_manager_id = str(manager_id or "").strip() or None
+        normalized_manager_name = str(manager_name or "").strip()
+        if normalized_manager_id:
+            resolved_manager_name = self._manager_username_from_id(normalized_manager_id)
+            if resolved_manager_name:
+                return normalized_manager_id, resolved_manager_name
+        if normalized_manager_name and normalized_manager_name not in {"system", "-"}:
+            resolved_manager = self._find_user_by_username(normalized_manager_name)
+            if resolved_manager and resolved_manager.role == "manager":
+                return resolved_manager.id, resolved_manager.username
+        fallback_manager_id, fallback_manager_name = self._resolve_owner_scope_from_assigned_users(assigned_users)
+        if fallback_manager_id or fallback_manager_name:
+            return fallback_manager_id, fallback_manager_name or normalized_manager_name or "system"
+        if normalized_manager_id:
+            return normalized_manager_id, normalized_manager_name or "system"
+        return None, normalized_manager_name or "system"
 
     def _resolve_channel_manager_id(self, channel: ChannelRecord) -> str | None:
         worker = self._find_worker_optional(channel.worker_id)
@@ -8706,6 +8763,67 @@ class AppStore:
         )
         return options
 
+    def _combined_bot_user_options(
+        self,
+        *,
+        viewer_role: str = "admin",
+        viewer_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        merged_by_user_id: dict[str, dict[str, Any]] = {}
+        for workspace_mode in ("upload", "live"):
+            for raw_option in self._bot_user_options(
+                viewer_role=viewer_role,
+                viewer_id=viewer_id,
+                workspace_mode=workspace_mode,
+            ):
+                user_id = str(raw_option.get("id") or "").strip()
+                if not user_id:
+                    continue
+                option = dict(raw_option)
+                option["assigned_worker_ids"] = list(raw_option.get("assigned_worker_ids") or [])
+                option["assigned_worker_names"] = list(raw_option.get("assigned_worker_names") or [])
+                option["assigned_role_labels"] = list(raw_option.get("assigned_role_labels") or [])
+                existing = merged_by_user_id.get(user_id)
+                if existing is None:
+                    merged_by_user_id[user_id] = option
+                    continue
+                if not str(existing.get("manager_id") or "").strip() and str(option.get("manager_id") or "").strip():
+                    existing["manager_id"] = option.get("manager_id") or ""
+                if not str(existing.get("manager_name") or "").strip() and str(option.get("manager_name") or "").strip():
+                    existing["manager_name"] = option.get("manager_name") or ""
+                if not str(existing.get("assigned_worker_id") or "").strip() and str(option.get("assigned_worker_id") or "").strip():
+                    existing["assigned_worker_id"] = option.get("assigned_worker_id") or ""
+                    existing["assigned_worker_name"] = option.get("assigned_worker_name") or ""
+                existing["scope_locked"] = bool(existing.get("scope_locked")) or bool(option.get("scope_locked"))
+                existing["self_assignable"] = bool(existing.get("self_assignable")) or bool(option.get("self_assignable"))
+                combined_worker_ids = list(existing.get("assigned_worker_ids") or [])
+                combined_worker_names = list(existing.get("assigned_worker_names") or [])
+                combined_role_labels = list(existing.get("assigned_role_labels") or [])
+                for worker_id in option["assigned_worker_ids"]:
+                    if worker_id not in combined_worker_ids:
+                        combined_worker_ids.append(worker_id)
+                for worker_name in option["assigned_worker_names"]:
+                    if worker_name not in combined_worker_names:
+                        combined_worker_names.append(worker_name)
+                for role_label in option["assigned_role_labels"]:
+                    if role_label not in combined_role_labels:
+                        combined_role_labels.append(role_label)
+                existing["assigned_worker_ids"] = combined_worker_ids
+                existing["assigned_worker_names"] = combined_worker_names
+                existing["assigned_worker_count"] = len(combined_worker_ids)
+                existing["assigned_worker_names_text"] = ", ".join(combined_worker_names)
+                existing["assigned_role_labels"] = combined_role_labels
+                existing["assigned_role_labels_text"] = ", ".join(combined_role_labels)
+        options = list(merged_by_user_id.values())
+        options.sort(
+            key=lambda item: (
+                0 if item.get("role") == "admin" else 1,
+                (item.get("manager_name") or "").casefold(),
+                item["username"].casefold(),
+            )
+        )
+        return options
+
     def _apply_worker_manager(self, worker: WorkerRecord, manager: UserSummary | None) -> None:
         worker.manager_id = manager.id if manager else None
         worker.manager_name = manager.username if manager else "system"
@@ -9143,13 +9261,17 @@ class AppStore:
             "backup": "Backup",
             "primary": "Live chính",
         }.get(bot_function_key, "Live chính")
+        resolved_manager_id, resolved_manager_name = self._resolved_bot_manager_scope(
+            manager_id=task.get("manager_id"),
+            manager_name=task.get("manager_name"),
+        )
         return {
             "index": 0,
             "id": str(task.get("worker_id") or "").strip(),
             "bot_id": str(task.get("worker_id") or "").strip(),
             "workspace_kind": workspace_kind,
-            "manager_id": str(task.get("manager_id") or "").strip(),
-            "manager_name": str(task.get("manager_name") or "").strip() or "system",
+            "manager_id": str(resolved_manager_id or "").strip(),
+            "manager_name": resolved_manager_name,
             "name": placeholder_name,
             "raw_name": placeholder_name,
             "group": str(task.get("group") or "").strip() or "-",
@@ -9262,16 +9384,14 @@ class AppStore:
             worker_source = self._filtered_live_workers(manager_ids) if is_live_workspace else self._filtered_workers(manager_ids)
             operation_by_worker_id = operation_by_workspace.get(current_workspace_kind, {})
             for worker in worker_source:
-                resolved_manager_id = str(worker.manager_id or "").strip()
-                resolved_manager_name = str(worker.manager_name or "").strip()
-                if not resolved_manager_id and resolved_manager_name and resolved_manager_name not in {"system", "-"}:
-                    resolved_manager = self._find_user_by_username(resolved_manager_name)
-                    if resolved_manager and resolved_manager.role == "manager":
-                        resolved_manager_id = resolved_manager.id
-                        resolved_manager_name = resolved_manager.username
+                assigned_users = self._assigned_live_users_for_worker(worker.id) if is_live_workspace else self._assigned_users_for_worker(worker.id)
+                resolved_manager_id, resolved_manager_name = self._resolved_bot_manager_scope(
+                    manager_id=worker.manager_id,
+                    manager_name=worker.manager_name,
+                    assigned_users=assigned_users,
+                )
                 status_label, status_class = self._worker_status_badge(worker.status)
                 thread_summary = self._live_worker_thread_summary(worker) if is_live_workspace else self._worker_thread_summary(worker)
-                assigned_users = self._assigned_live_users_for_worker(worker.id) if is_live_workspace else self._assigned_users_for_worker(worker.id)
                 assigned_live_role = ""
                 assigned_live_role_label = ""
                 if is_live_workspace:
@@ -9316,10 +9436,10 @@ class AppStore:
                     "bot_id": worker.id,
                     "workspace_kind": current_workspace_kind,
                     "manager_id": resolved_manager_id,
-                    "manager_name": resolved_manager_name or worker.manager_name,
+                    "manager_name": resolved_manager_name,
                     "name": worker_display_name,
                     "raw_name": worker_display_name,
-                    "group": worker.group or worker.manager_name,
+                    "group": worker.group or resolved_manager_name,
                     "bot_type_key": bot_type["key"],
                     "bot_type_label": bot_type["label"],
                     "bot_type_badge_class": bot_type["badge_class"],
@@ -9361,7 +9481,7 @@ class AppStore:
                     "bandwidth_text": f"{worker.bandwidth_kbps:.2f}KB/s",
                     "load_percent": worker.load_percent,
                     "cpu_percent": worker.load_percent,
-                    "meta_text": worker.manager_name,
+                    "meta_text": resolved_manager_name,
                     "row_dimmed": False,
                     "actions_disabled": False,
                     "is_operation_placeholder": False,
@@ -9452,10 +9572,9 @@ class AppStore:
                 "focus_user": focus_user,
                 "manager_binding_locked": viewer_role == "manager",
                 "bot_manager_options": self._bot_manager_options(viewer_role=viewer_role, viewer_id=viewer_id),
-                "bot_user_options": self._bot_user_options(
+                "bot_user_options": self._combined_bot_user_options(
                     viewer_role=viewer_role,
                     viewer_id=viewer_id,
-                    workspace_mode=workspace_mode,
                 ),
                 "bot_user_options_upload": self._bot_user_options(
                     viewer_role=viewer_role,

@@ -500,13 +500,6 @@
                     {% if dashboard.bot_manager_options %}
                     <input type="hidden" name="manager_id" value="{{ dashboard.bot_manager_options[0].id }}">
                     {% endif %}
-                    <label class="field-label" for="create-bot-manager-locked">Managers</label>
-                    <input
-                        class="toolbar-input"
-                        id="create-bot-manager-locked"
-                        value="{{ dashboard.bot_manager_options[0].username if dashboard.bot_manager_options else current_user.username }}"
-                        disabled
-                    >
                 </div>
                 {% else %}
                 <div>
@@ -547,9 +540,7 @@
                                 <input type="text" class="admin-select-search-input" autocomplete="off" placeholder="G&#245; &#273;&#7875; t&#236;m user..." data-create-bot-user-picker-search>
                             </div>
                             <div class="bot-user-picker-list" data-create-bot-user-picker-list>
-                                {% for option_group in [('upload', dashboard.bot_user_options_upload), ('live', dashboard.bot_user_options_live)] %}
-                                {% set option_workspace_kind = option_group[0] %}
-                                {% for user in option_group[1] %}
+                                {% for user in dashboard.bot_user_options %}
                                 {% set user_label = user.username %}
                                 {% if user.role in ['manager', 'admin'] %}
                                 {% set user_label = user.username ~ ' (' ~ user.role ~ ')' %}
@@ -557,7 +548,6 @@
                                 <label
                                     class="bot-user-picker-option"
                                     data-create-bot-user-option
-                                    data-workspace-kind="{{ option_workspace_kind }}"
                                     data-user-id="{{ user.id }}"
                                     data-user-label="{{ user_label }}"
                                     data-user-manager-id="{{ user.manager_id or '' }}"
@@ -572,7 +562,6 @@
                                     </span>
                                     <span class="bot-user-picker-label">{{ user_label }}</span>
                                 </label>
-                                {% endfor %}
                                 {% endfor %}
                             </div>
                             <div class="bot-user-picker-empty" data-create-bot-user-picker-empty hidden>Kh&#244;ng t&#236;m th&#7845;y user ph&#249; h&#7907;p.</div>
@@ -672,9 +661,7 @@
                                 <input type="text" class="admin-select-search-input" autocomplete="off" placeholder="G&#245; &#273;&#7875; t&#236;m user..." data-bot-user-picker-search>
                             </div>
                             <div class="bot-user-picker-list" data-bot-user-picker-list>
-                                {% for option_group in [('upload', dashboard.bot_user_options_upload), ('live', dashboard.bot_user_options_live)] %}
-                                {% set option_workspace_kind = option_group[0] %}
-                                {% for user in option_group[1] %}
+                                {% for user in dashboard.bot_user_options %}
                                 {% set user_label = user.username %}
                                 {% if user.role in ['manager', 'admin'] %}
                                 {% set user_label = user.username ~ ' (' ~ user.role ~ ')' %}
@@ -682,7 +669,6 @@
                                 <label
                                     class="bot-user-picker-option"
                                     data-bot-user-option
-                                    data-workspace-kind="{{ option_workspace_kind }}"
                                     data-user-id="{{ user.id }}"
                                     data-user-label="{{ user_label }}"
                                     data-user-manager-id="{{ user.manager_id or '' }}"
@@ -697,7 +683,6 @@
                                     </span>
                                     <span class="bot-user-picker-label">{{ user_label }}</span>
                                 </label>
-                                {% endfor %}
                                 {% endfor %}
                             </div>
                             <div class="bot-user-picker-empty" data-bot-user-picker-empty hidden>Kh&#244;ng t&#236;m th&#7845;y user ph&#249; h&#7907;p.</div>
@@ -1005,15 +990,10 @@
       if (!createBotUserPicker || !createBotUserPickerSummary || !createBotUserPickerToggle) {
         return;
       }
-      const activeWorkspaceKind = currentCreateBotWorkspaceKind();
       createBotUserPickerToggle.disabled = false;
       const checkedOptions = createBotUserPickerOptions.filter(function (option) {
         const input = option.querySelector('[data-create-bot-user-input]');
-        return (
-          !!input
-          && input.checked
-          && normalizeWorkspaceKind(option.dataset.workspaceKind) === activeWorkspaceKind
-        );
+        return !!input && input.checked;
       });
       const labels = checkedOptions.map(function (option) {
         return String(option.dataset.userLabel || '').trim();
@@ -1040,7 +1020,6 @@
       const pruneInvalid = !!config.pruneInvalid;
       const resetSearch = !!config.resetSearch;
       const managerId = currentCreateBotManagerId();
-      const activeWorkspaceKind = currentCreateBotWorkspaceKind();
       const viewerRole = String(createBotUserPicker.dataset.viewerRole || '').trim();
       if (resetSearch && createBotUserPickerSearch) {
         createBotUserPickerSearch.value = '';
@@ -1050,7 +1029,6 @@
 
       createBotUserPickerOptions.forEach(function (option) {
         const input = option.querySelector('[data-create-bot-user-input]');
-        const optionWorkspaceKind = normalizeWorkspaceKind(option.dataset.workspaceKind);
         const optionManagerId = String(option.dataset.userManagerId || '').trim();
         const scopeLocked = String(option.dataset.userScopeLocked || '').trim() === '1';
         const selfAssignable = String(option.dataset.userSelfAssignable || '').trim() === '1';
@@ -1060,14 +1038,13 @@
           : scopeLocked
           ? !!(input && input.checked)
           : (!managerId ? false : optionManagerId === managerId);
-        const inWorkspaceScope = optionWorkspaceKind === activeWorkspaceKind;
         const matchesSearch = !filterText || searchText.indexOf(filterText) !== -1;
-        const visible = inWorkspaceScope && inManagerScope && matchesSearch;
+        const visible = inManagerScope && matchesSearch;
         option.hidden = !visible;
         option.classList.toggle('is-locked', !selfAssignable && scopeLocked && viewerRole === 'manager' && !!(input && input.checked));
         if (input) {
-          input.disabled = !(inWorkspaceScope && inManagerScope);
-          if (pruneInvalid && !(inWorkspaceScope && inManagerScope) && input.checked) {
+          input.disabled = !inManagerScope;
+          if (pruneInvalid && !inManagerScope && input.checked) {
             setCreateBotUserOptionChecked(option, false);
           }
         }
@@ -1136,26 +1113,21 @@
 
     function setCreateBotUserSelections(userIds) {
       const selectedIds = new Set(userIds || []);
-      const activeWorkspaceKind = currentCreateBotWorkspaceKind();
       createBotUserPickerOptions.forEach(function (option) {
         const input = option.querySelector('[data-create-bot-user-input]');
         if (!input) {
           return;
         }
-        const sameWorkspaceKind = normalizeWorkspaceKind(option.dataset.workspaceKind) === activeWorkspaceKind;
-        setCreateBotUserOptionChecked(option, sameWorkspaceKind && selectedIds.has(String(input.value || '').trim()));
+        setCreateBotUserOptionChecked(option, selectedIds.has(String(input.value || '').trim()));
       });
       syncCreateBotUserPickerSummary();
     }
 
     function currentCreateBotUserIds() {
-      const activeWorkspaceKind = currentCreateBotWorkspaceKind();
       return createBotUserPickerOptions
         .map(function (option) {
           const input = option.querySelector('[data-create-bot-user-input]');
-          return input && input.checked && normalizeWorkspaceKind(option.dataset.workspaceKind) === activeWorkspaceKind
-            ? String(input.value || '').trim()
-            : '';
+          return input && input.checked ? String(input.value || '').trim() : '';
         })
         .filter(Boolean);
     }
@@ -1180,7 +1152,9 @@
           : 'BOT live ch\u00ednh d\u00f9ng runtime live; c\u00f3 th\u1ec3 g\u00e1n manager v\u00e0 user ngay l\u00fac c\u00e0i n\u1ebfu mu\u1ed1n.';
       }
       if (createBotUserPickerHelp) {
-        createBotUserPickerHelp.textContent = currentCreateBotWorkspaceKind() === 'live'
+        createBotUserPickerHelp.textContent = String(createBotUserPicker.dataset.viewerRole || '').trim() === 'manager'
+          ? 'C\u00f3 th\u1ec3 \u0111\u1ec3 tr\u1ed1ng user khi c\u00e0i BOT. N\u1ebfu mu\u1ed1n g\u00e1n ngay, h\u00e3y ch\u1ecdn user trong scope manager c\u1ee7a b\u1ea1n.'
+          : currentCreateBotWorkspaceKind() === 'live'
           ? 'C\u00f3 th\u1ec3 \u0111\u1ec3 tr\u1ed1ng user khi c\u00e0i BOT live ho\u1eb7c backup. N\u1ebfu mu\u1ed1n g\u00e1n ngay, h\u00e3y ch\u1ecdn manager tr\u01b0\u1edbc r\u1ed3i m\u1edbi ch\u1ecdn user.'
           : 'C\u00f3 th\u1ec3 \u0111\u1ec3 tr\u1ed1ng user khi c\u00e0i BOT upload. N\u1ebfu g\u00e1n ngay, browser session v\u00e0 k\u00eanh s\u1ebd \u0111i theo user \u0111\u01b0\u1ee3c ch\u1ecdn.';
       }
@@ -1528,15 +1502,10 @@
       if (!editBotUserPicker || !editBotUserPickerSummary || !editBotUserPickerToggle) {
         return;
       }
-      const activeWorkspaceKind = currentEditWorkspaceKind();
       editBotUserPickerToggle.disabled = false;
       const checkedOptions = editBotUserPickerOptions.filter(function (option) {
         const input = option.querySelector('[data-bot-user-input]');
-        return (
-          !!input
-          && input.checked
-          && normalizeWorkspaceKind(option.dataset.workspaceKind) === activeWorkspaceKind
-        );
+        return !!input && input.checked;
       });
       const labels = checkedOptions.map(function (option) {
         return String(option.dataset.userLabel || '').trim();
@@ -1563,7 +1532,6 @@
       const pruneInvalid = !!config.pruneInvalid;
       const resetSearch = !!config.resetSearch;
       const managerId = currentBotUserManagerId();
-      const activeWorkspaceKind = currentEditWorkspaceKind();
       const viewerRole = String(editBotUserPicker.dataset.viewerRole || '').trim();
       const filterText = editBotUserPickerSearch ? String(editBotUserPickerSearch.value || '').trim().toLowerCase() : '';
       let visibleCount = 0;
@@ -1574,7 +1542,6 @@
 
       editBotUserPickerOptions.forEach(function (option) {
         const input = option.querySelector('[data-bot-user-input]');
-        const optionWorkspaceKind = normalizeWorkspaceKind(option.dataset.workspaceKind);
         const optionManagerId = String(option.dataset.userManagerId || '').trim();
         const scopeLocked = String(option.dataset.userScopeLocked || '').trim() === '1';
         const selfAssignable = String(option.dataset.userSelfAssignable || '').trim() === '1';
@@ -1584,14 +1551,13 @@
           : scopeLocked
           ? !!(input && input.checked)
           : (!managerId ? false : optionManagerId === managerId);
-        const inWorkspaceScope = optionWorkspaceKind === activeWorkspaceKind;
         const matchesSearch = !filterText || searchText.indexOf(filterText) !== -1;
-        const visible = inWorkspaceScope && inManagerScope && matchesSearch;
+        const visible = inManagerScope && matchesSearch;
         option.hidden = !visible;
         option.classList.toggle('is-locked', !selfAssignable && scopeLocked && viewerRole === 'manager' && !!(input && input.checked));
         if (input) {
-          input.disabled = !(inWorkspaceScope && inManagerScope);
-          if (pruneInvalid && !(inWorkspaceScope && inManagerScope) && input.checked) {
+          input.disabled = !inManagerScope;
+          if (pruneInvalid && !inManagerScope && input.checked) {
             setBotUserOptionChecked(option, false);
           }
         }
@@ -1660,41 +1626,31 @@
 
     function setBotUserSelections(userIds) {
       const selectedIds = new Set(userIds || []);
-      const activeWorkspaceKind = currentEditWorkspaceKind();
       editBotUserPickerOptions.forEach(function (option) {
         const input = option.querySelector('[data-bot-user-input]');
         if (!input) {
           return;
         }
-        const sameWorkspaceKind = normalizeWorkspaceKind(option.dataset.workspaceKind) === activeWorkspaceKind;
-        setBotUserOptionChecked(option, sameWorkspaceKind && selectedIds.has(String(input.value || '').trim()));
+        setBotUserOptionChecked(option, selectedIds.has(String(input.value || '').trim()));
       });
       syncBotUserPickerSummary();
     }
 
     function currentBotUserIds() {
-      const activeWorkspaceKind = currentEditWorkspaceKind();
       return editBotUserPickerOptions
         .map(function (option) {
           const input = option.querySelector('[data-bot-user-input]');
-          return input && input.checked && normalizeWorkspaceKind(option.dataset.workspaceKind) === activeWorkspaceKind
-            ? String(input.value || '').trim()
-            : '';
+          return input && input.checked ? String(input.value || '').trim() : '';
         })
         .filter(Boolean);
     }
 
     function describeBotUsers(userIds) {
-      const activeWorkspaceKind = currentEditWorkspaceKind();
       const labels = userIds
         .map(function (userId) {
           const matchedOption = editBotUserPickerOptions.find(function (option) {
             const input = option.querySelector('[data-bot-user-input]');
-            return (
-              !!input
-              && normalizeWorkspaceKind(option.dataset.workspaceKind) === activeWorkspaceKind
-              && String(input.value || '').trim() === userId
-            );
+            return !!input && String(input.value || '').trim() === userId;
           });
           return String(matchedOption && matchedOption.dataset.userLabel ? matchedOption.dataset.userLabel : userId).trim();
         })
@@ -2161,6 +2117,7 @@
       const endpoint = tbody.dataset.liveEndpoint;
       const requestUrl = new URL(endpoint, window.location.origin);
       buildManagerQuery(requestUrl);
+      requestUrl.searchParams.set('ts', String(Date.now()));
       if (lastEventCursor) {
         requestUrl.searchParams.set('after_event_id', lastEventCursor);
       }
@@ -2168,7 +2125,13 @@
       const response = await fetch(requestUrl.toString(), {
         method: 'GET',
         credentials: 'same-origin',
-        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        headers: {
+          'Accept': 'application/json',
+          'Cache-Control': 'no-cache, no-store, max-age=0',
+          'Pragma': 'no-cache',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        cache: 'no-store',
         signal: pollingController.signal
       });
       if (!response.ok) {
