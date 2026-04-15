@@ -778,6 +778,7 @@
     let pollingController = null;
     let pollingTimer = null;
     let operationRefreshUntil = 0;
+    const pendingOperationTargets = new Map();
     let lastPayloadSignature = '';
     let lastEventCursor = tbody ? String(tbody.dataset.initialEventCursor || '').trim() : '';
     const shownEventIds = new Set();
@@ -836,7 +837,48 @@
     }
 
     function currentPollDelay() {
-      return operationRefreshUntil > Date.now() ? activeOperationPollMs : pollMs;
+      return pendingOperationTargets.size > 0 || operationRefreshUntil > Date.now() ? activeOperationPollMs : pollMs;
+    }
+
+    function trackOperationTarget(workerId, kind) {
+      const normalizedWorkerId = String(workerId || '').trim();
+      const normalizedKind = String(kind || '').trim();
+      if (!normalizedWorkerId || !normalizedKind) {
+        return;
+      }
+      pendingOperationTargets.set(normalizedWorkerId, normalizedKind);
+      armOperationRefreshWindow(180000);
+    }
+
+    function resolvePendingOperationTargets(items) {
+      const normalizedItems = Array.isArray(items) ? items : [];
+      if (!pendingOperationTargets.size) {
+        return;
+      }
+      pendingOperationTargets.forEach(function (kind, workerId) {
+        const matchedRow = normalizedItems.find(function (worker) {
+          return !!worker && String(worker.id || '').trim() === workerId;
+        });
+        if (kind === 'delete') {
+          if (!matchedRow || String(matchedRow.operation_status || '').trim().toLowerCase() === 'failed') {
+            pendingOperationTargets.delete(workerId);
+          }
+          return;
+        }
+        if (!matchedRow) {
+          return;
+        }
+        const operationStatus = String(matchedRow.operation_status || '').trim().toLowerCase();
+        const installStillPending = (
+          !!matchedRow.is_operation_placeholder
+          || (matchedRow.actions_disabled && operationStatus === 'queued')
+          || (matchedRow.actions_disabled && operationStatus === 'running')
+          || (matchedRow.actions_disabled && operationStatus === 'awaiting_registration')
+        );
+        if (!installStillPending) {
+          pendingOperationTargets.delete(workerId);
+        }
+      });
     }
 
     function closeDialog(dialog) {
@@ -1497,7 +1539,7 @@
       const workspaceKind = normalizeWorkspaceKind(initialEditBotWorkspaceKind);
       const options = roleOptionsForWorkspace(workspaceKind, 'edit');
       const nextValue = rebuildRoleSelectOptions(editBotLiveRoleSelect, options, preferredValue);
-      editBotLiveRoleSelect.disabled = workspaceKind !== 'live';
+      editBotLiveRoleSelect.disabled = options.length === 0;
       return nextValue;
     }
 
@@ -2060,6 +2102,7 @@
         }
         closeDialog(createBotDialog);
         resetCreateBotDialog();
+        trackOperationTarget(responsePayload && responsePayload.worker_id ? responsePayload.worker_id : payload.vps_ip, 'install');
         armOperationRefreshWindow(120000);
         showSystemNotice(
           responsePayload && typeof responsePayload.message === 'string' && responsePayload.message.trim()
@@ -2113,6 +2156,7 @@
               ),
           'success'
         );
+        trackOperationTarget(responsePayload && responsePayload.worker_id ? responsePayload.worker_id : normalizedWorkerId, 'delete');
         armOperationRefreshWindow(60000);
         await fetchLiveWorkers();
       } catch (error) {
@@ -2186,9 +2230,10 @@
       });
       const items = Array.isArray(payload.items) ? payload.items : [];
       const summaryStrip = Array.isArray(payload.summary_strip) ? payload.summary_strip : [];
+      resolvePendingOperationTargets(items);
       if (hasActiveOperationRows(items)) {
         armOperationRefreshWindow(15000);
-      } else {
+      } else if (!pendingOperationTargets.size) {
         clearOperationRefreshWindow();
       }
       const signature = JSON.stringify({ items, summaryStrip });
