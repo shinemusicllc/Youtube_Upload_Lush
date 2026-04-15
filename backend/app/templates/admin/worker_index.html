@@ -744,7 +744,6 @@
     const createBotTitle = document.querySelector('[data-create-bot-title]');
     const createBotDescription = document.querySelector('[data-create-bot-description]');
     const pollMs = 3000;
-    const activeOperationPollMs = 1000;
     const recentNotices = new Map();
     const createBotDefaults = {
       upload: {
@@ -777,8 +776,6 @@
     let initialEditBotWorkspaceKind = 'upload';
     let pollingController = null;
     let pollingTimer = null;
-    let operationRefreshUntil = 0;
-    const pendingOperationTargets = new Map();
     let lastPayloadSignature = '';
     let lastEventCursor = tbody ? String(tbody.dataset.initialEventCursor || '').trim() : '';
     const shownEventIds = new Set();
@@ -816,69 +813,6 @@
       button.innerHTML = isLoading
         ? '<span class="inline-flex h-4 w-4 animate-spin rounded-full border-2 border-white/65 border-t-white"></span><span>' + escapeHtml(loadingLabel) + '</span>'
         : button.dataset.idleHtml;
-    }
-
-    function hasActiveOperationRows(items) {
-      return (Array.isArray(items) ? items : []).some(function (worker) {
-        if (!worker || typeof worker !== 'object') {
-          return false;
-        }
-        return !!worker.is_operation_placeholder || !!worker.actions_disabled || !!worker.row_dimmed;
-      });
-    }
-
-    function armOperationRefreshWindow(durationMs) {
-      const safeDurationMs = Math.max(Number(durationMs) || 0, activeOperationPollMs);
-      operationRefreshUntil = Math.max(operationRefreshUntil, Date.now() + safeDurationMs);
-    }
-
-    function clearOperationRefreshWindow() {
-      operationRefreshUntil = 0;
-    }
-
-    function currentPollDelay() {
-      return pendingOperationTargets.size > 0 || operationRefreshUntil > Date.now() ? activeOperationPollMs : pollMs;
-    }
-
-    function trackOperationTarget(workerId, kind) {
-      const normalizedWorkerId = String(workerId || '').trim();
-      const normalizedKind = String(kind || '').trim();
-      if (!normalizedWorkerId || !normalizedKind) {
-        return;
-      }
-      pendingOperationTargets.set(normalizedWorkerId, normalizedKind);
-      armOperationRefreshWindow(180000);
-    }
-
-    function resolvePendingOperationTargets(items) {
-      const normalizedItems = Array.isArray(items) ? items : [];
-      if (!pendingOperationTargets.size) {
-        return;
-      }
-      pendingOperationTargets.forEach(function (kind, workerId) {
-        const matchedRow = normalizedItems.find(function (worker) {
-          return !!worker && String(worker.id || '').trim() === workerId;
-        });
-        if (kind === 'delete') {
-          if (!matchedRow || String(matchedRow.operation_status || '').trim().toLowerCase() === 'failed') {
-            pendingOperationTargets.delete(workerId);
-          }
-          return;
-        }
-        if (!matchedRow) {
-          return;
-        }
-        const operationStatus = String(matchedRow.operation_status || '').trim().toLowerCase();
-        const installStillPending = (
-          !!matchedRow.is_operation_placeholder
-          || (matchedRow.actions_disabled && operationStatus === 'queued')
-          || (matchedRow.actions_disabled && operationStatus === 'running')
-          || (matchedRow.actions_disabled && operationStatus === 'awaiting_registration')
-        );
-        if (!installStillPending) {
-          pendingOperationTargets.delete(workerId);
-        }
-      });
     }
 
     function closeDialog(dialog) {
@@ -2102,14 +2036,13 @@
         }
         closeDialog(createBotDialog);
         resetCreateBotDialog();
-        trackOperationTarget(responsePayload && responsePayload.worker_id ? responsePayload.worker_id : payload.vps_ip, 'install');
-        armOperationRefreshWindow(120000);
         showSystemNotice(
           responsePayload && typeof responsePayload.message === 'string' && responsePayload.message.trim()
             ? responsePayload.message.trim()
             : config.successLabel,
           'success'
         );
+        lastPayloadSignature = '';
         await fetchLiveWorkers();
       } catch (error) {
         showSystemNotice(error && error.message ? error.message : config.errorLabel, 'error');
@@ -2156,8 +2089,7 @@
               ),
           'success'
         );
-        trackOperationTarget(responsePayload && responsePayload.worker_id ? responsePayload.worker_id : normalizedWorkerId, 'delete');
-        armOperationRefreshWindow(60000);
+        lastPayloadSignature = '';
         await fetchLiveWorkers();
       } catch (error) {
         showSystemNotice(
@@ -2230,12 +2162,6 @@
       });
       const items = Array.isArray(payload.items) ? payload.items : [];
       const summaryStrip = Array.isArray(payload.summary_strip) ? payload.summary_strip : [];
-      resolvePendingOperationTargets(items);
-      if (hasActiveOperationRows(items)) {
-        armOperationRefreshWindow(15000);
-      } else if (!pendingOperationTargets.size) {
-        clearOperationRefreshWindow();
-      }
       const signature = JSON.stringify({ items, summaryStrip });
       if (signature === lastPayloadSignature) {
         return;
@@ -2264,7 +2190,7 @@
         } finally {
           scheduleLivePoll();
         }
-      }, currentPollDelay());
+      }, pollMs);
     }
 
     document.addEventListener('visibilitychange', function () {
