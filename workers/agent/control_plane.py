@@ -4,6 +4,7 @@ import os
 import shutil
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -142,8 +143,47 @@ def worker_auth_headers(config: WorkerConfig) -> dict[str, str]:
     }
 
 
+def _persist_worker_limits(config: WorkerConfig) -> None:
+    env_path = Path(os.getenv("WORKER_ENV_FILE", "/etc/youtube-upload-worker.env")).expanduser()
+    try:
+        original_lines = env_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return
+
+    replacements = {
+        "WORKER_THREADS": str(max(1, int(config.threads or 1))),
+        "WORKER_CAPACITY": str(max(1, int(config.capacity or config.threads or 1))),
+    }
+    seen: set[str] = set()
+    updated_lines: list[str] = []
+    changed = False
+    for line in original_lines:
+        key, separator, _value = line.partition("=")
+        normalized_key = key.strip()
+        if separator and normalized_key in replacements:
+            updated_line = f"{normalized_key}={replacements[normalized_key]}"
+            updated_lines.append(updated_line)
+            seen.add(normalized_key)
+            changed = changed or updated_line != line
+            continue
+        updated_lines.append(line)
+    for key, value in replacements.items():
+        if key in seen:
+            continue
+        updated_lines.append(f"{key}={value}")
+        changed = True
+    if not changed:
+        return
+    try:
+        env_path.write_text("\n".join(updated_lines) + "\n", encoding="utf-8")
+    except OSError:
+        return
+
+
 def _sync_worker_limits_from_response(config: WorkerConfig, payload: dict[str, Any]) -> None:
     worker = payload.get("worker") or {}
+    previous_threads = max(1, int(config.threads or 1))
+    previous_capacity = max(1, int(config.capacity or config.threads or 1))
     try:
         resolved_threads = max(1, int(worker.get("threads") or config.threads or 1))
     except (TypeError, ValueError):
@@ -154,6 +194,8 @@ def _sync_worker_limits_from_response(config: WorkerConfig, payload: dict[str, A
         resolved_capacity = max(1, resolved_threads)
     config.threads = resolved_threads
     config.capacity = resolved_capacity
+    if resolved_threads != previous_threads or resolved_capacity != previous_capacity:
+        _persist_worker_limits(config)
 
 
 def _is_retryable_error(exc: Exception) -> bool:
