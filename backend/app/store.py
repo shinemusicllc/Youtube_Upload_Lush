@@ -4570,8 +4570,11 @@ class AppStore:
         if current_user_active_streams >= allocated_threads:
             return False
         claimed_by_worker_id = str(stream.claimed_by_worker_id or "").strip()
-        if claimed_by_worker_id == "":
+        if not claimed_by_worker_id:
             return True
+        lease_is_active = stream.lease_expires_at is not None and stream.lease_expires_at > now
+        if claimed_by_worker_id == worker_id:
+            return not lease_is_active
         return stream.lease_expires_at is not None and stream.lease_expires_at <= now
 
     def _reset_live_backup_clone_runtime(self, stream: LiveStreamRecord, *, now: datetime) -> None:

@@ -336,8 +336,11 @@ class LiveExecutionPool:
     def _sync_heartbeat_active_ids(self) -> None:
         self.heartbeat_loop.set_active_ids(self.active_stream_ids())
 
-    def start(self, stream: dict) -> None:
+    def start(self, stream: dict) -> bool:
         stream_id = str(stream["id"])
+        with self._lock:
+            if stream_id in self._workers:
+                return False
 
         def _runner() -> None:
             try:
@@ -346,7 +349,13 @@ class LiveExecutionPool:
                 if _is_stopped_live_stream_conflict(exc):
                     print(f"[live] {stream_id} không còn tiếp tục được trên control plane, dừng worker flow sạch sẽ.", flush=True)
                 else:
-                    fail_live_stream(self.client, self.config, stream_id, message=str(exc))
+                    try:
+                        fail_live_stream(self.client, self.config, stream_id, message=str(exc))
+                    except Exception as fail_exc:
+                        if _is_stopped_live_stream_conflict(fail_exc):
+                            print(f"[live] {stream_id} fail report bi control-plane tu choi vi stream da doi trang thai.", flush=True)
+                        else:
+                            raise
             finally:
                 with self._lock:
                     self._workers.pop(stream_id, None)
@@ -358,6 +367,7 @@ class LiveExecutionPool:
             self._workers[stream_id] = thread
         self._sync_heartbeat_active_ids()
         thread.start()
+        return True
 
     def wait(self, timeout_seconds: float) -> bool:
         signaled = self._completion_event.wait(timeout=max(0.1, timeout_seconds))
@@ -503,8 +513,11 @@ def _run_live_worker(client: httpx.Client, config) -> None:
                         raise
                     if not stream:
                         break
+                    stream_id = str(stream["id"])
+                    if not execution_pool.start(stream):
+                        print(f"[live-worker] duplicate claim suppressed for {stream_id}.", flush=True)
+                        break
                     claimed_any = True
-                    execution_pool.start(stream)
                     try:
                         heartbeat_loop.pulse_once()
                     except Exception as exc:
