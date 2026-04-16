@@ -2689,6 +2689,65 @@ class AppStore:
             "Trạng thái: BOT live chưa tự kết nối lại với control-plane"
         )
 
+    def _worker_reconnected_message(
+        self,
+        worker: WorkerRecord,
+        *,
+        now: datetime,
+        offline_since_at: datetime | None = None,
+    ) -> str:
+        worker_name = worker.name or worker.id
+        manager_name = worker.manager_name or "không rõ"
+        lines = [
+            "[THÔNG BÁO] BOT đã kết nối lại",
+            f"BOT: {worker_name}",
+            f"BOT ID: {worker.id}",
+            f"Manager: {manager_name}",
+        ]
+        if offline_since_at is not None:
+            lines.append(f"Mất kết nối từ: {self._format_full_datetime(offline_since_at)}")
+        lines.append(f"Kết nối lại lúc: {self._format_full_datetime(now)}")
+        lines.append("Trạng thái: BOT đã kết nối lại với control-plane")
+        return "\n".join(lines)
+
+    def _live_worker_reconnected_message(
+        self,
+        worker: WorkerRecord,
+        *,
+        now: datetime,
+        offline_since_at: datetime | None = None,
+    ) -> str:
+        worker_name = worker.name or worker.id
+        manager_name = worker.manager_name or "không rõ"
+        lines = [
+            "[THÔNG BÁO] BOT live đã kết nối lại",
+            f"BOT: {worker_name}",
+            f"BOT ID: {worker.id}",
+            f"Manager: {manager_name}",
+        ]
+        if offline_since_at is not None:
+            lines.append(f"Mất kết nối từ: {self._format_full_datetime(offline_since_at)}")
+        lines.append(f"Kết nối lại lúc: {self._format_full_datetime(now)}")
+        lines.append("Trạng thái: BOT live đã kết nối lại với control-plane")
+        return "\n".join(lines)
+
+    def _worker_reconnect_notification(
+        self,
+        worker: WorkerRecord,
+        *,
+        now: datetime,
+        live: bool,
+    ) -> tuple[list[str], str] | None:
+        if worker.offline_alert_sent_at is None:
+            return None
+        offline_since_at = worker.offline_since_at or worker.last_seen_at
+        message = (
+            self._live_worker_reconnected_message(worker, now=now, offline_since_at=offline_since_at)
+            if live
+            else self._worker_reconnected_message(worker, now=now, offline_since_at=offline_since_at)
+        )
+        return self._worker_alert_recipient_chat_ids(worker), message
+
     def _reconcile_worker_connectivity(self, *, now: datetime) -> bool:
         changed = False
         alert_seconds = self._worker_offline_alert_seconds()
@@ -4043,6 +4102,7 @@ class AppStore:
     def register_worker(self, payload: WorkerRegisterPayload) -> WorkerControlResponse:
         completed_task: dict[str, Any] | None = None
         worker_snapshot: WorkerRecord | None = None
+        reconnect_notification: tuple[list[str], str] | None = None
         vps_ip = ""
         with self._worker_state_lock:
             if payload.shared_secret != self.get_worker_shared_secret():
@@ -4117,6 +4177,7 @@ class AppStore:
                 worker.offline_alert_sent_at = None
                 self.workers.append(worker)
             else:
+                reconnect_notification = self._worker_reconnect_notification(existing, now=now, live=False)
                 existing.name = worker_display_name
                 existing.manager_id = manager.id if manager else existing.manager_id
                 existing.manager_name = resolved_manager_name
@@ -4196,12 +4257,16 @@ class AppStore:
                     else ""
                 ),
             )
+        if reconnect_notification is not None:
+            self._notify_telegram_chat_ids(reconnect_notification[0], reconnect_notification[1])
         return WorkerControlResponse(ok=True, worker=worker_snapshot)
 
     def heartbeat_worker(self, payload: WorkerHeartbeatPayload) -> WorkerControlResponse:
+        reconnect_notification: tuple[list[str], str] | None = None
         with self._worker_state_lock:
             worker = self._authenticate_worker(payload.worker_id, payload.shared_secret)
             now = self._now(trim=False)
+            reconnect_notification = self._worker_reconnect_notification(worker, now=now, live=False)
             worker.load_percent = payload.load_percent
             worker.ram_percent = payload.ram_percent
             worker.ram_used_gb = payload.ram_used_gb
@@ -4242,7 +4307,10 @@ class AppStore:
             else:
                 worker.status = payload.status
             self._save_state()
-            return WorkerControlResponse(ok=True, worker=deepcopy(worker))
+            snapshot = deepcopy(worker)
+        if reconnect_notification is not None:
+            self._notify_telegram_chat_ids(reconnect_notification[0], reconnect_notification[1])
+        return WorkerControlResponse(ok=True, worker=snapshot)
 
     def claim_next_job(self, worker_id: str, shared_secret: str) -> tuple[WorkerRecord, RenderJobRecord | None]:
         with self._worker_state_lock:
@@ -4956,6 +5024,7 @@ class AppStore:
     def register_live_worker(self, payload: LiveWorkerRegisterPayload) -> LiveWorkerControlResponse:
         completed_task: dict[str, Any] | None = None
         worker_snapshot: WorkerRecord | None = None
+        reconnect_notification: tuple[list[str], str] | None = None
         vps_ip = ""
         with self._worker_state_lock:
             if payload.shared_secret != self.get_worker_shared_secret():
@@ -5032,6 +5101,7 @@ class AppStore:
                 )
                 self.live_workers.append(worker)
             else:
+                reconnect_notification = self._worker_reconnect_notification(existing, now=now, live=True)
                 existing.name = worker_display_name
                 existing.manager_id = manager.id if manager else existing.manager_id
                 existing.manager_name = resolved_manager_name
@@ -5092,12 +5162,16 @@ class AppStore:
                     else ""
                 ),
             )
+        if reconnect_notification is not None:
+            self._notify_telegram_chat_ids(reconnect_notification[0], reconnect_notification[1])
         return LiveWorkerControlResponse(ok=True, worker=worker_snapshot)
 
     def heartbeat_live_worker(self, payload: LiveWorkerHeartbeatPayload) -> LiveWorkerControlResponse:
+        reconnect_notification: tuple[list[str], str] | None = None
         with self._worker_state_lock:
             worker = self._authenticate_live_worker(payload.worker_id, payload.shared_secret)
             now = self._now(trim=False)
+            reconnect_notification = self._worker_reconnect_notification(worker, now=now, live=True)
             worker.load_percent = payload.load_percent
             worker.ram_percent = payload.ram_percent
             worker.ram_used_gb = payload.ram_used_gb
@@ -5124,7 +5198,10 @@ class AppStore:
             else:
                 worker.status = payload.status
             self._save_state()
-            return LiveWorkerControlResponse(ok=True, worker=deepcopy(worker))
+            snapshot = deepcopy(worker)
+        if reconnect_notification is not None:
+            self._notify_telegram_chat_ids(reconnect_notification[0], reconnect_notification[1])
+        return LiveWorkerControlResponse(ok=True, worker=snapshot)
 
     @staticmethod
     def _live_stream_claim_sort_key(stream: LiveStreamRecord) -> tuple[int, datetime, datetime, str]:
