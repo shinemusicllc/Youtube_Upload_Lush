@@ -4597,7 +4597,7 @@ class AppStore:
             return "standby"
         if parent_status == "streaming":
             return "standby"
-        if parent_stream.streaming_started_at is None and parent_status in self._live_pre_stream_statuses():
+        if parent_status == "waiting":
             return "standby"
         return "stream"
 

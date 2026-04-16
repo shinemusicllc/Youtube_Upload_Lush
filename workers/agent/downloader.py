@@ -257,7 +257,17 @@ def download_remote_asset(
         poller.start()
         try:
             downloaded_path: str | None = None
-            if file_id:
+            gdown_error: Exception | None = None
+            try:
+                downloaded_path = gdown.download(url=url, output=str(target_path), quiet=True, fuzzy=True)
+            except Exception as exc:
+                gdown_error = exc
+
+            if not downloaded_path and file_id:
+                try:
+                    target_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
                 direct_path = _download_google_drive_direct(
                     file_id,
                     target_path,
@@ -265,8 +275,9 @@ def download_remote_asset(
                     label=f"{slot} tu Google Drive",
                 )
                 downloaded_path = str(direct_path)
-            if not downloaded_path:
-                downloaded_path = gdown.download(url=url, output=str(target_path), quiet=True, fuzzy=True)
+
+            if not downloaded_path and gdown_error is not None:
+                raise gdown_error
         finally:
             stop_poll.set()
             poller.join(timeout=1.0)
