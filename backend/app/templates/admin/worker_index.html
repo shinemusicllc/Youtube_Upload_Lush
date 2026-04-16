@@ -907,10 +907,10 @@
         createBotPasswordInput.value = '';
       }
       if (createBotKindSelect) {
-        createBotKindSelect.value = 'upload';
+        syncEnhancedSelectValue(createBotKindSelect, 'upload');
       }
       if (createBotManagerSelect) {
-        createBotManagerSelect.value = '';
+        syncEnhancedSelectValue(createBotManagerSelect, '');
       }
       if (createBotThreadInput) {
         createBotThreadInput.value = '1';
@@ -957,6 +957,14 @@
         return 1;
       }
       return Math.max(1, Math.min(MAX_LIVE_BOT_THREADS, parsed));
+    }
+
+    function syncEnhancedSelectValue(select, nextValue) {
+      if (!select) {
+        return;
+      }
+      select.value = nextValue;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
     function currentCreateBotKindValue() {
@@ -1840,8 +1848,7 @@
           editBotWorkspaceTransferCleanupInput.value = '0';
         }
         if (editManagerSelect && editManagerSelect.tagName === 'SELECT') {
-          editManagerSelect.value = initialEditBotManagerId || EMPTY_MANAGER_OPTION_VALUE;
-          editManagerSelect.dispatchEvent(new Event('change', { bubbles: true }));
+          syncEnhancedSelectValue(editManagerSelect, initialEditBotManagerId || EMPTY_MANAGER_OPTION_VALUE);
         }
         if (editBotUserPicker) {
           syncEditBotWorkspaceState();
@@ -2035,7 +2042,7 @@
             }
             editBotManagerTransferCleanupInput.value = '0';
             if (editBotLiveRoleSelect) {
-              editBotLiveRoleSelect.value = initialEditBotFunctionValue;
+              syncEnhancedSelectValue(editBotLiveRoleSelect, initialEditBotFunctionValue);
             }
             syncEditBotWorkspaceState();
             syncBotUserPickerOptions({ pruneInvalid: false, resetSearch: true });
