@@ -4463,6 +4463,13 @@ class AppStore:
             return normalized_status in self._live_worker_claimable_statuses() and self._live_runtime_retry_ready(stream, now=now)
         if normalized_status != "disconnected":
             return False
+        visible_stream = self._visible_live_stream_for_runtime(stream)
+        if (
+            visible_stream.is_forever
+            and visible_stream.backup_worker_id
+            and stream.streaming_started_at is not None
+        ):
+            return True
         return self._live_runtime_retry_ready(stream, now=now)
 
     def _desired_live_playback_mode(self, stream: LiveStreamRecord, *, now: datetime) -> str:
