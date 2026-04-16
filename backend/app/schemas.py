@@ -214,6 +214,7 @@ class LiveStreamRecord(BaseModel):
     prepared_at: datetime | None = None
     waiting_started_at: datetime | None = None
     streaming_started_at: datetime | None = None
+    first_streaming_started_at: datetime | None = None
     disconnected_at: datetime | None = None
     stop_requested_at: datetime | None = None
     ended_at: datetime | None = None

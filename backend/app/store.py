@@ -4575,10 +4575,17 @@ class AppStore:
         if (
             visible_stream.is_forever
             and visible_stream.backup_worker_id
-            and stream.streaming_started_at is not None
+            and self._has_live_stream_started(stream)
         ):
             return True
         return self._live_runtime_retry_ready(stream, now=now)
+
+    @staticmethod
+    def _reset_live_stream_attempt_timeline(stream: LiveStreamRecord) -> None:
+        stream.download_started_at = None
+        stream.prepared_at = None
+        stream.waiting_started_at = None
+        stream.streaming_started_at = None
 
     def _desired_live_playback_mode(self, stream: LiveStreamRecord, *, now: datetime) -> str:
         normalized_status = str(stream.status or "").strip().lower() or "scheduled"
@@ -4627,7 +4634,7 @@ class AppStore:
 
     @staticmethod
     def _has_live_stream_started(stream: LiveStreamRecord) -> bool:
-        return stream.streaming_started_at is not None
+        return stream.first_streaming_started_at is not None or stream.streaming_started_at is not None
 
     def _live_runtime_role(self, stream: LiveStreamRecord) -> str:
         if self._is_runtime_backup_clone(stream):
@@ -4733,10 +4740,8 @@ class AppStore:
         stream.claimed_by_role = None
         stream.claimed_at = None
         stream.lease_expires_at = None
-        stream.download_started_at = None
-        stream.prepared_at = None
-        stream.waiting_started_at = None
-        stream.streaming_started_at = None
+        self._reset_live_stream_attempt_timeline(stream)
+        stream.first_streaming_started_at = None
         stream.disconnected_at = None
         stream.stop_requested_at = None
         stream.ended_at = None
@@ -5160,9 +5165,11 @@ class AppStore:
                 return deepcopy(worker), None
 
             stream = sorted(candidates, key=self._live_stream_claim_sort_key)[0]
+            if self._has_live_stream_started(stream):
+                self._reset_live_stream_attempt_timeline(stream)
             stream.claimed_by_worker_id = worker.id
             stream.claimed_by_role = stream.runtime_role or "primary"
-            stream.claimed_at = stream.claimed_at or now
+            stream.claimed_at = now
             stream.lease_expires_at = now + timedelta(seconds=self._live_stream_lease_seconds(stream))
             stream.updated_at = now
             self._sync_live_worker_runtime_status(worker)
@@ -5245,13 +5252,18 @@ class AppStore:
                 stream.is_live_now = False
             elif normalized_status == "waiting":
                 stream.prepared_at = stream.prepared_at or now
-                stream.waiting_started_at = stream.waiting_started_at or now
+                if previous_status == "streaming":
+                    stream.waiting_started_at = now
+                    stream.streaming_started_at = None
+                else:
+                    stream.waiting_started_at = stream.waiting_started_at or now
                 stream.is_live_now = False
             elif normalized_status == "streaming":
                 stream.prepared_at = stream.prepared_at or now
-                first_streaming_transition = stream.streaming_started_at is None
+                first_streaming_transition = not self._has_live_stream_started(stream)
                 was_streaming = previous_status == "streaming"
-                stream.streaming_started_at = stream.streaming_started_at or now
+                stream.first_streaming_started_at = stream.first_streaming_started_at or now
+                stream.streaming_started_at = now if not was_streaming else (stream.streaming_started_at or now)
                 stream.is_live_now = True
                 stream.disconnected_at = None
                 if not was_streaming:
@@ -8308,10 +8320,8 @@ class AppStore:
         stream.claimed_by_role = None
         stream.claimed_at = None
         stream.lease_expires_at = None
-        stream.download_started_at = None
-        stream.prepared_at = None
-        stream.waiting_started_at = None
-        stream.streaming_started_at = None
+        self._reset_live_stream_attempt_timeline(stream)
+        stream.first_streaming_started_at = None
         stream.disconnected_at = None
         stream.stop_requested_at = now if restart_prestream_runtime else None
         stream.ended_at = None
