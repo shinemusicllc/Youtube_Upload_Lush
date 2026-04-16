@@ -517,7 +517,21 @@ def bootstrap_worker_via_ssh(
         for command, step_message, timeout_seconds in steps:
             if progress:
                 progress(step_message)
+            step_name = "bootstrap"
+            if command == chmod_command:
+                step_name = "chmod"
+            elif command == install_env_command:
+                step_name = "install-env"
+            step_started_at = time.monotonic()
             exit_code, stdout, stderr = _run_remote_command(client, command, timeout_seconds=timeout_seconds)
+            logger.info(
+                "worker_bootstrap_step_completed worker_id=%s vps_ip=%s step=%s duration_seconds=%.2f exit_code=%s",
+                str(request.worker_id or "").strip(),
+                str(request.vps_ip or "").strip(),
+                step_name,
+                time.monotonic() - step_started_at,
+                exit_code,
+            )
             if exit_code != 0:
                 raise WorkerBootstrapError(_remote_command_error_message(command, stdout, stderr))
 
@@ -641,7 +655,8 @@ def decommission_worker_via_ssh(
         client.close()
 
 
-def _run_worker_install_operation(store, operation_id: str, request: WorkerBootstrapRequest) -> None:
+def _run_worker_install_operation_legacy_unused(store, operation_id: str, request: WorkerBootstrapRequest) -> None:
+    raise RuntimeError("_run_worker_install_operation_legacy_unused should never be called")
     try:
         def report(message: str) -> None:
             store.update_worker_operation(operation_id, status="running", message=message)
@@ -656,6 +671,44 @@ def _run_worker_install_operation(store, operation_id: str, request: WorkerBoots
                 "kết nối lại với control-plane..."
             ),
         )
+    except Exception as exc:
+        logger.exception(
+            "worker_install_operation_failed operation_id=%s worker_id=%s vps_ip=%s",
+            str(operation_id or "").strip(),
+            str(request.worker_id or "").strip(),
+            str(request.vps_ip or "").strip(),
+        )
+        store.fail_worker_operation(operation_id, message=str(exc))
+
+
+def _run_worker_install_operation(store, operation_id: str, request: WorkerBootstrapRequest) -> None:
+    try:
+        def report(message: str) -> None:
+            store.update_worker_operation(operation_id, status="running", message=message)
+
+        report(f"Đang kết nối SSH tới {request.vps_ip} và chuẩn bị cài worker...")
+        result = bootstrap_worker_via_ssh(request, progress=report)
+        try:
+            store.update_worker_operation(
+                operation_id,
+                status="awaiting_registration",
+                message=(
+                    f"Đã cài worker service trên {result.vps_ip}. Đang chờ BOT "
+                    "kết nối lại với control-plane..."
+                ),
+            )
+        except KeyError:
+            try:
+                store._find_workspace_worker(request.worker_id, workspace_mode=request.runtime_mode)
+            except KeyError:
+                raise
+            logger.info(
+                "worker_install_operation_already_completed operation_id=%s worker_id=%s vps_ip=%s workspace_mode=%s",
+                str(operation_id or "").strip(),
+                str(request.worker_id or "").strip(),
+                str(result.vps_ip or request.vps_ip or "").strip(),
+                str(request.runtime_mode or "").strip() or "upload",
+            )
     except Exception as exc:
         logger.exception(
             "worker_install_operation_failed operation_id=%s worker_id=%s vps_ip=%s",
