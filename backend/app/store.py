@@ -2599,19 +2599,27 @@ class AppStore:
         ]
         return self._telegram_recipient_chat_ids_for_users(manager_users)
 
-    def _requesting_manager_telegram_recipient_chat_ids(self, task: dict[str, Any]) -> list[str]:
-        requested_by = str(task.get("requested_by") or "").strip()
-        requested_role = str(task.get("requested_role") or "").strip().lower()
-        if not requested_by or requested_role != "manager":
-            return []
-        return self._manager_telegram_recipient_chat_ids({requested_by})
+    def _bot_owner_manager_telegram_recipient_chat_ids(self, task: dict[str, Any]) -> list[str]:
+        manager_usernames: set[str] = set()
+        manager_name = str(task.get("manager_name") or "").strip()
+        if manager_name and manager_name != "system":
+            manager_usernames.add(manager_name)
+        manager_id = str(task.get("manager_id") or "").strip()
+        if manager_id:
+            manager_user = next(
+                (user for user in self.users if user.id == manager_id and user.role == "manager"),
+                None,
+            )
+            if manager_user and manager_user.username:
+                manager_usernames.add(manager_user.username)
+        return self._manager_telegram_recipient_chat_ids(manager_usernames)
 
     def _bot_operation_recipient_chat_ids(self, task: dict[str, Any]) -> list[str]:
         if not self._bot_operation_telegram_enabled():
             return []
         recipient_chat_ids = self._all_admin_telegram_recipient_chat_ids()
         seen_ids = set(recipient_chat_ids)
-        for chat_id in self._requesting_manager_telegram_recipient_chat_ids(task):
+        for chat_id in self._bot_owner_manager_telegram_recipient_chat_ids(task):
             if chat_id in seen_ids:
                 continue
             recipient_chat_ids.append(chat_id)

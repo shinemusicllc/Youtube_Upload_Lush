@@ -1075,3 +1075,4 @@
 - 2026-04-16: Fixed upload worker bootstrap slow path by skipping `apt-get remove` retries for Chrome/Chromium driver packages that are not installed; repeated retry loop on `62.72.46.42` was adding about two minutes to warm reinstall time.
 - 2026-04-16: Khóa semantics `Chạy / Tổng` của BOT live/backup theo tổng `allocated_threads` đã cấp cho các user trên VPS, không dùng nghĩa capacity/thread ceiling của chính VPS.
 - 2026-04-16: Sửa flow chuyển loại BOT giữa `upload` và `live/backup` để sinh `worker_id` mới đúng pool đích, decommission workspace cũ trên chính VPS trước khi bootstrap lại, và Telegram dùng message riêng `Cập nhật BOT thành công` thay vì báo nhầm như một lượt `Thêm BOT` thường.
+- 2026-04-16: Telegram BOT-operation notifications đổi recipient rule sang `admin = tất cả`, `manager = manager sở hữu BOT/task`; không còn bám theo người bấm thao tác nên khi admin sửa/xóa/cập nhật BOT của manager, manager owner vẫn nhận được notify.
