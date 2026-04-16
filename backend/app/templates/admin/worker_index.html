@@ -497,19 +497,19 @@
                     </select>
                 </div>
                 <div data-create-bot-thread-field hidden>
-                    <label class="field-label" for="create-bot-threads">Quota c&#7845;p / user</label>
+                    <label class="field-label" for="create-bot-threads">S&#7889; lu&#7891;ng / User</label>
                     <input
                         class="toolbar-input"
                         id="create-bot-threads"
                         name="threads"
                         type="number"
                         min="1"
-                        max="6"
+                        max="5"
                         step="1"
-                        value="6"
+                        value="5"
                         inputmode="numeric"
                     >
-                    <p class="mt-1 text-[11px] text-slate-500" data-create-bot-thread-help>Quota n&#224;y &#225;p cho m&#7895;i user &#273;&#432;&#7907;c g&#225;n tr&#234;n BOT live/backup; tr&#7847;n VPS v&#7851;n t&#7889;i &#273;a 6 lu&#7891;ng.</p>
+                    <p class="mt-1 text-[11px] text-slate-500" data-create-bot-thread-help>S&#7889; lu&#7891;ng &#225;p cho m&#7895;i user tr&#234;n BOT live/backup. T&#7889;i &#273;a 5 lu&#7891;ng tr&#234;n 1 VPS.</p>
                 </div>
                 <div>
                     <label class="field-label" for="create-bot-name">T&#234;n BOT</label>
@@ -671,19 +671,19 @@
                     </select>
                 </div>
                 <div data-edit-bot-thread-field hidden>
-                    <label class="field-label" for="edit-bot-threads">Quota c&#7845;p / user</label>
+                    <label class="field-label" for="edit-bot-threads">S&#7889; lu&#7891;ng / User</label>
                     <input
                         class="toolbar-input"
                         id="edit-bot-threads"
                         name="Threads"
                         type="number"
                         min="1"
-                        max="6"
+                        max="5"
                         step="1"
                         value="1"
                         inputmode="numeric"
                     >
-                    <p class="mt-1 text-[11px] text-slate-500" data-edit-bot-thread-help>Quota n&#224;y &#225;p cho m&#7895;i user &#273;ang &#273;&#432;&#7907;c g&#225;n; t&#7893;ng c&#7845;p ph&#225;t tr&#234;n VPS kh&#244;ng &#273;&#432;&#7907;c v&#432;&#7907;t 6 lu&#7891;ng.</p>
+                    <p class="mt-1 text-[11px] text-slate-500" data-edit-bot-thread-help>S&#7889; lu&#7891;ng &#225;p cho m&#7895;i user tr&#234;n BOT live/backup. T&#7889;i &#273;a 5 lu&#7891;ng tr&#234;n 1 VPS.</p>
                 </div>
                 <div>
                     <label class="field-label" for="edit-bot-user-picker-button">Users</label>
@@ -794,7 +794,7 @@
     const createBotRoleHelp = document.querySelector('[data-create-bot-role-help]');
     const createBotTitle = document.querySelector('[data-create-bot-title]');
     const createBotDescription = document.querySelector('[data-create-bot-description]');
-    const MAX_LIVE_BOT_THREADS = 6;
+    const MAX_LIVE_BOT_THREADS = 5;
     const pollMs = 3000;
     const recentNotices = new Map();
     const createBotDefaults = {
@@ -1072,7 +1072,7 @@
         createBotThreadInput.required = isLiveWorkspace;
       }
       if (createBotThreadHelp) {
-        createBotThreadHelp.textContent = 'Quota c\u1ea5p cho m\u1ed7i user tr\u00ean BOT live/backup. T\u1ed5ng quota c\u1ee7a c\u1ea3 VPS v\u1eabn b\u1ecb ch\u1eb7n t\u1ed1i \u0111a ' + String(MAX_LIVE_BOT_THREADS) + ' lu\u1ed3ng.';
+        createBotThreadHelp.textContent = 'S\u1ed1 lu\u1ed3ng \u00e1p cho m\u1ed7i user tr\u00ean BOT live/backup. T\u1ed1i \u0111a ' + String(MAX_LIVE_BOT_THREADS) + ' lu\u1ed3ng tr\u00ean 1 VPS.';
       }
     }
 
@@ -1608,7 +1608,7 @@
         editBotThreadInput.required = workspaceKind === 'live';
       }
       if (editBotThreadHelp) {
-        editBotThreadHelp.textContent = 'Quota c\u1ea5p cho m\u1ed7i user tr\u00ean BOT live/backup. T\u1ed5ng quota c\u1ee7a c\u1ea3 VPS v\u1eabn b\u1ecb ch\u1eb7n t\u1ed1i \u0111a ' + String(MAX_LIVE_BOT_THREADS) + ' lu\u1ed3ng.';
+        editBotThreadHelp.textContent = 'S\u1ed1 lu\u1ed3ng \u00e1p cho m\u1ed7i user tr\u00ean BOT live/backup. T\u1ed1i \u0111a ' + String(MAX_LIVE_BOT_THREADS) + ' lu\u1ed3ng tr\u00ean 1 VPS.';
       }
       if (editBotUserPickerHelp) {
         editBotUserPickerHelp.textContent = workspaceKind === 'live'

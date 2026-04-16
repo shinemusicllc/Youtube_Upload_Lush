@@ -7852,7 +7852,7 @@ class AppStore:
 
     @staticmethod
     def _fixed_live_worker_thread_limit() -> int:
-        return 6
+        return 5
 
     def _normalize_live_worker_threads(self, requested_threads: int | str | None) -> int:
         try:
