@@ -62,6 +62,20 @@ install_packages_if_missing() {
   apt_get_retry install -y "${missing_packages[@]}"
 }
 
+remove_packages_if_installed() {
+  local installed_packages=()
+  local package_name
+  for package_name in "$@"; do
+    if package_is_installed "$package_name"; then
+      installed_packages+=("$package_name")
+    fi
+  done
+  if [ "${#installed_packages[@]}" -eq 0 ]; then
+    return 0
+  fi
+  apt_get_retry remove -y "${installed_packages[@]}"
+}
+
 mkdir -p "$RUNTIME_DIR"
 install_packages_if_missing ffmpeg git python3 python3-venv python3-pip
 mkdir -p "$RUNTIME_DIR/.backup" "$RUNTIME_DIR/worker-data"
@@ -172,7 +186,7 @@ if [ "${BROWSER_SESSION_ENABLED:-0}" = "1" ]; then
       echo "[browser-setup] Removing snap chromium..."
       snap remove --purge chromium 2>/dev/null || true
     fi
-    apt_get_retry remove -y chromium-browser 2>/dev/null || true
+    remove_packages_if_installed chromium-browser 2>/dev/null || true
 
     # Add Google's official apt repo
     if [ ! -f /usr/share/keyrings/google-chrome.gpg ]; then
@@ -196,7 +210,7 @@ if [ "${BROWSER_SESSION_ENABLED:-0}" = "1" ]; then
   # at runtime so Google Chrome auto-updates do not leave an old
   # chromedriver binary behind.
   rm -f /usr/local/bin/chromedriver /usr/bin/chromedriver 2>/dev/null || true
-  apt_get_retry remove -y chromium-chromedriver chromium-driver google-chrome-driver 2>/dev/null || true
+  remove_packages_if_installed chromium-chromedriver chromium-driver google-chrome-driver 2>/dev/null || true
 
   # ---------- Update env file ----------
   # Point BROWSER_SESSION_CHROMIUM_BIN to google-chrome-stable
