@@ -4655,6 +4655,49 @@ class AppStore:
         stream.waiting_started_at = None
         stream.streaming_started_at = None
 
+    @staticmethod
+    def _live_stream_has_reached_schedule_end(stream: LiveStreamRecord, *, now: datetime) -> bool:
+        if stream.is_forever:
+            return False
+        if stream.end_time_live is None:
+            return False
+        return stream.end_time_live <= now
+
+    def _finalize_live_stream_ended_state(
+        self,
+        stream: LiveStreamRecord,
+        *,
+        now: datetime,
+        message: str | None = None,
+    ) -> None:
+        stream.status = "ended"
+        stream.log_label = "Kết thúc"
+        stream.status_message = (message or "").strip() or None
+        stream.progress = 100
+        stream.error_message = None
+        stream.is_live_now = False
+        stream.ended_at = now
+        stream.updated_at = now
+        stream.lease_expires_at = None
+        stream.claimed_by_worker_id = None
+        stream.claimed_by_role = None
+        stream.claimed_at = None
+        stream.disconnected_at = None
+
+    def _mark_visible_live_stream_ended(
+        self,
+        stream: LiveStreamRecord,
+        *,
+        now: datetime,
+        message: str | None = None,
+    ) -> tuple[list[str], str]:
+        self._finalize_live_stream_ended_state(stream, now=now, message=message)
+        clone = self._find_live_backup_clone_optional(stream)
+        if clone is not None:
+            self._retire_live_backup_clone(clone, now=now, reason="Luồng chính đã kết thúc.")
+        stream.backup_stream_id = None
+        return self._live_stream_recipient_chat_ids(stream), self._live_stream_ended_message(stream, now=now)
+
     def _desired_live_playback_mode(self, stream: LiveStreamRecord, *, now: datetime) -> str:
         normalized_status = str(stream.status or "").strip().lower() or "scheduled"
         if normalized_status in {"stopped", "ended", "error"}:
@@ -4928,6 +4971,17 @@ class AppStore:
         visible_streams = [stream for stream in self.live_streams if self._is_visible_live_stream(stream)]
         for stream in visible_streams:
             clone = self._find_live_backup_clone_optional(stream)
+            if self._live_stream_has_reached_schedule_end(stream, now=now):
+                self._finalize_live_stream_ended_state(
+                    stream,
+                    now=now,
+                    message=stream.status_message or "Luồng live đã kết thúc theo lịch.",
+                )
+                if clone is not None:
+                    self._retire_live_backup_clone(clone, now=now, reason="Luồng chính đã kết thúc.")
+                if stream.backup_stream_id is not None:
+                    stream.backup_stream_id = None
+                continue
             should_have_backup = bool(stream.backup_worker_id) and stream.status not in {"stopped", "ended", "error"}
             if not should_have_backup:
                 if clone is not None:
@@ -5403,25 +5457,22 @@ class AppStore:
             stream = self._find_claimed_live_stream(stream_id, worker_id)
             self._ensure_live_stream_can_continue(stream)
             now = self._now(trim=False)
-            stream.status = "ended"
-            stream.log_label = "Kết thúc"
-            stream.status_message = (message or "").strip() or None
-            stream.progress = 100
-            stream.error_message = None
-            stream.is_live_now = False
-            stream.ended_at = now
-            stream.updated_at = now
-            stream.lease_expires_at = None
-            stream.claimed_by_worker_id = None
-            stream.claimed_by_role = None
-            stream.claimed_at = None
             if self._is_visible_live_stream(stream):
-                notification_chat_ids = self._live_stream_recipient_chat_ids(stream)
-                notification_message = self._live_stream_ended_message(stream, now=now)
-                clone = self._find_live_backup_clone_optional(stream)
-                if clone is not None:
-                    self._retire_live_backup_clone(clone, now=now, reason="Luồng chính đã kết thúc.")
-                    stream.backup_stream_id = None
+                notification_chat_ids, notification_message = self._mark_visible_live_stream_ended(
+                    stream,
+                    now=now,
+                    message=message,
+                )
+            else:
+                self._finalize_live_stream_ended_state(stream, now=now, message=message)
+                parent_stream = self._parent_live_stream_optional(stream)
+                if parent_stream is not None and self._live_stream_has_reached_schedule_end(parent_stream, now=now):
+                    notification_chat_ids, notification_message = self._mark_visible_live_stream_ended(
+                        parent_stream,
+                        now=now,
+                        message=message,
+                    )
+                    self._retire_live_backup_clone(stream, now=now, reason="Luồng backup đã kết thúc theo lịch.")
             self._sync_live_worker_runtime_status(worker)
             self._save_state()
             snapshot = deepcopy(stream)
