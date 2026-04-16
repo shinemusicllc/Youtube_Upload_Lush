@@ -686,6 +686,26 @@ def _run_worker_install_operation(store, operation_id: str, request: WorkerBoots
         def report(message: str) -> None:
             store.update_worker_operation(operation_id, status="running", message=message)
 
+        task_snapshot = next(
+            (
+                item
+                for item in store.get_worker_operation_snapshots()
+                if str(item.get("id") or "").strip() == str(operation_id or "").strip()
+            ),
+            {},
+        )
+        if str(task_snapshot.get("operation_reason") or "").strip() == "workspace_conversion":
+            source_workspace_mode = str(task_snapshot.get("conversion_source_workspace_mode") or "").strip() or "upload"
+            decommission_request = build_worker_decommission_request(
+                vps_ip=request.vps_ip,
+                ssh_user=request.ssh_user,
+                password=request.password,
+                ssh_private_key=request.ssh_private_key,
+                runtime_mode=source_workspace_mode,
+            )
+            report(f"Đang gỡ workspace {source_workspace_mode} cũ trên {request.vps_ip} trước khi cài lại BOT...")
+            decommission_worker_via_ssh(decommission_request, progress=report)
+
         report(f"Đang kết nối SSH tới {request.vps_ip} và chuẩn bị cài worker...")
         result = bootstrap_worker_via_ssh(request, progress=report)
         try:
@@ -830,6 +850,7 @@ def start_worker_install_operation(
     requested_user_id: str | None = None,
     post_install_config: dict | None = None,
     replace_other_workspace_mode: str | None = None,
+    workspace_conversion: dict | None = None,
 ) -> dict:
     task = store.enqueue_worker_install_operation(
         worker_id=request.worker_id,
@@ -850,6 +871,7 @@ def start_worker_install_operation(
         requested_user_id=requested_user_id,
         post_install_config=post_install_config,
         replace_other_workspace_mode=replace_other_workspace_mode,
+        workspace_conversion=workspace_conversion,
     )
     ensure_worker_operation_threads(store)
     return task

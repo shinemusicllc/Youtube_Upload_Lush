@@ -380,6 +380,11 @@ def _start_bot_workspace_conversion(
     elif current_admin.role == "manager":
         manager_name = current_admin.username
 
+    source_live_role = (
+        store._live_worker_assigned_role(worker_id)
+        if resolved_current_workspace_mode == "live"
+        else "upload"
+    )
     desired_live_role = str(live_role or "").strip().lower() or None
     desired_threads = (
         store._normalize_live_worker_threads(threads)
@@ -400,6 +405,21 @@ def _start_bot_workspace_conversion(
     else:
         desired_live_role = "upload"
 
+    source_label = (
+        "Upload"
+        if resolved_current_workspace_mode != "live"
+        else "Backup" if source_live_role == "backup" else "Live chính"
+    )
+    target_label = (
+        "Upload"
+        if resolved_target_workspace_mode != "live"
+        else "Backup" if desired_live_role == "backup" else "Live chính"
+    )
+    target_worker_id = (
+        store.suggest_next_live_worker_bootstrap_id()
+        if resolved_target_workspace_mode == "live"
+        else store.suggest_next_worker_bootstrap_id()
+    )
     profile = store.get_worker_connection_profile(worker_id, workspace_mode=resolved_current_workspace_mode)
     bootstrap_request = build_worker_bootstrap_request(
         vps_ip=profile["vps_ip"],
@@ -408,7 +428,7 @@ def _start_bot_workspace_conversion(
         ssh_private_key=profile["ssh_private_key"],
         shared_secret=store.get_worker_shared_secret(),
         control_plane_url=_resolve_worker_bootstrap_control_plane_url(request),
-        worker_id=worker_id,
+        worker_id=target_worker_id,
         manager_name=manager_name,
         runtime_mode=resolved_target_workspace_mode,
     )
@@ -438,6 +458,12 @@ def _start_bot_workspace_conversion(
             "assigned_user_ids": assigned_user_ids,
         },
         replace_other_workspace_mode=resolved_current_workspace_mode,
+        workspace_conversion={
+            "source_worker_id": worker_id,
+            "source_workspace_mode": resolved_current_workspace_mode,
+            "source_label": source_label,
+            "target_label": target_label,
+        },
     )
 
 

@@ -1457,6 +1457,7 @@ class AppStore:
         requested_user_id: str | None = None,
         post_install_config: dict[str, Any] | None = None,
         replace_other_workspace_mode: str | None = None,
+        workspace_conversion: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         with self._worker_state_lock:
             normalized_worker_id = str(worker_id or "").strip()
@@ -1468,6 +1469,15 @@ class AppStore:
             normalized_replace_other_workspace_mode = (
                 self._normalize_workspace_mode(replace_other_workspace_mode)
                 if str(replace_other_workspace_mode or "").strip()
+                else None
+            )
+            normalized_workspace_conversion = workspace_conversion if isinstance(workspace_conversion, dict) else None
+            source_worker_id = (
+                str((normalized_workspace_conversion or {}).get("source_worker_id") or "").strip() or None
+            )
+            source_workspace_mode = (
+                self._normalize_workspace_mode((normalized_workspace_conversion or {}).get("source_workspace_mode"))
+                if str((normalized_workspace_conversion or {}).get("source_workspace_mode") or "").strip()
                 else None
             )
             if not normalized_worker_id or not normalized_ip:
@@ -1508,7 +1518,13 @@ class AppStore:
                     raise ValueError(
                         "VPS này đang được dùng ở workspace còn lại. Hãy gỡ BOT ở workspace kia trước khi cài lại."
                     )
-                if str(conflicting_other_workspace_worker.id or "").strip() != normalized_worker_id:
+                if source_worker_id:
+                    if (
+                        str(conflicting_other_workspace_worker.id or "").strip() != source_worker_id
+                        or source_workspace_mode != other_workspace_mode
+                    ):
+                        raise ValueError("Không thể chuyển workspace khi VPS đang thuộc BOT khác.")
+                elif str(conflicting_other_workspace_worker.id or "").strip() != normalized_worker_id:
                     raise ValueError("Không thể chuyển workspace khi VPS đang thuộc BOT khác.")
             removed_failed_worker_ids: set[str] = set()
             remaining_tasks: list[dict[str, Any]] = []
@@ -1579,6 +1595,16 @@ class AppStore:
                 "updated_at": now,
                 "completed_at": None,
             }
+            if normalized_workspace_conversion:
+                task["operation_reason"] = "workspace_conversion"
+                task["conversion_source_worker_id"] = source_worker_id
+                task["conversion_source_workspace_mode"] = source_workspace_mode
+                task["conversion_source_label"] = (
+                    str(normalized_workspace_conversion.get("source_label") or "").strip() or None
+                )
+                task["conversion_target_label"] = (
+                    str(normalized_workspace_conversion.get("target_label") or "").strip() or None
+                )
             if isinstance(post_install_config, dict):
                 normalized_post_install_config = {
                     "name": str(post_install_config.get("name") or "").strip() or None,
@@ -1608,6 +1634,20 @@ class AppStore:
                 password=password,
                 ssh_private_key=ssh_private_key,
             )
+            if conflicting_other_workspace_worker is not None:
+                previous_worker_id = str(conflicting_other_workspace_worker.id or "").strip()
+                previous_worker_name = self._resolve_workspace_worker_display_name(
+                    conflicting_other_workspace_worker.id,
+                    workspace_mode=other_workspace_mode,
+                )
+                self._remember_deleted_worker(
+                    previous_worker_id,
+                    worker_name=previous_worker_name,
+                    vps_ip=normalized_ip,
+                    deleted_by=requested_by,
+                    reason="workspace_conversion",
+                )
+                self.worker_connection_profiles.pop(previous_worker_id, None)
             self._save_state()
             return deepcopy(task)
 
@@ -1794,7 +1834,7 @@ class AppStore:
             vps_ip = str(completed_task.get("vps_ip") or "").strip() or worker_name
             self._notify_telegram_chat_ids(
                 self._bot_operation_recipient_chat_ids(completed_task),
-                self._bot_install_completed_message(
+                self._bot_install_result_message(
                     completed_task,
                     worker_name=worker_name,
                     worker_id=worker.id,
@@ -2455,6 +2495,45 @@ class AppStore:
             f"BOT ID: {worker_id}\n"
             f"VPS: {vps_ip}\n"
             f"Manager sở hữu: {manager_name}"
+        )
+
+    def _bot_workspace_conversion_completed_message(
+        self,
+        task: dict[str, Any],
+        *,
+        worker_name: str,
+        worker_id: str,
+        vps_ip: str,
+    ) -> str:
+        actor_label = self._bot_operation_actor_label(task.get("requested_role"), task.get("requested_by"))
+        manager_name = str(task.get("manager_name") or "").strip() or "system"
+        source_worker_id = str(task.get("conversion_source_worker_id") or "").strip() or "--"
+        source_label = str(task.get("conversion_source_label") or "").strip() or "BOT cũ"
+        target_label = str(task.get("conversion_target_label") or "").strip() or "BOT mới"
+        return (
+            "[BOT] Cập nhật BOT thành công\n"
+            f"Người thao tác: {actor_label}\n"
+            f"BOT: {worker_name}\n"
+            f"VPS: {vps_ip}\n"
+            f"Chuyển loại: {source_label} -> {target_label}\n"
+            f"BOT ID cũ: {source_worker_id}\n"
+            f"BOT ID mới: {worker_id}\n"
+            f"Manager sở hữu: {manager_name}"
+        )
+
+    def _bot_install_result_message(self, task: dict[str, Any], *, worker_name: str, worker_id: str, vps_ip: str) -> str:
+        if str(task.get("operation_reason") or "").strip() == "workspace_conversion":
+            return self._bot_workspace_conversion_completed_message(
+                task,
+                worker_name=worker_name,
+                worker_id=worker_id,
+                vps_ip=vps_ip,
+            )
+        return self._bot_install_completed_message(
+            task,
+            worker_name=worker_name,
+            worker_id=worker_id,
+            vps_ip=vps_ip,
         )
 
     def _bot_decommission_completed_message(self, task: dict[str, Any], *, worker_name: str, worker_id: str, vps_ip: str) -> str:
@@ -4091,7 +4170,7 @@ class AppStore:
                 )
             self._notify_telegram_chat_ids(
                 self._bot_operation_recipient_chat_ids(completed_task),
-                self._bot_install_completed_message(
+                self._bot_install_result_message(
                     completed_task,
                     worker_name=self._resolve_worker_display_name(worker_snapshot.id),
                     worker_id=worker_snapshot.id,
@@ -4982,7 +5061,7 @@ class AppStore:
                 )
             self._notify_telegram_chat_ids(
                 self._bot_operation_recipient_chat_ids(completed_task),
-                self._bot_install_completed_message(
+                self._bot_install_result_message(
                     completed_task,
                     worker_name=self._resolve_live_worker_display_name(worker_snapshot.id),
                     worker_id=worker_snapshot.id,
