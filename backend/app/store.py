@@ -7647,6 +7647,15 @@ class AppStore:
             total += self._live_link_allocated_threads(link)
         return total
 
+    def _live_worker_total_granted_threads(self, worker_id: str, *, role: str | None = None) -> int:
+        """
+        Canonical total for BOT table live/backup rows.
+
+        "Tổng" means the sum of stream slots granted to the users assigned to this VPS,
+        not the VPS capacity/thread ceiling itself.
+        """
+        return self._live_worker_allocated_threads(worker_id, role=role)
+
     def _live_user_allocated_threads(self, user_id: str, *, role: str | None = None) -> int:
         return sum(
             self._live_link_allocated_threads(link)
@@ -8451,14 +8460,15 @@ class AppStore:
         if normalized_role == "backup":
             running_threads = self._count_live_worker_streaming_streams(worker, role="backup")
             pending_threads = self._count_live_worker_pending_backups(worker.id)
-            allocated_threads = self._live_worker_allocated_threads(worker.id, role="backup")
-            is_overallocated = allocated_threads > max_threads
+            granted_threads_total = self._live_worker_total_granted_threads(worker.id, role="backup")
+            is_overallocated = granted_threads_total > max_threads
             return {
                 "running_threads": running_threads,
                 "pending_threads": pending_threads,
-                "allocated_threads": allocated_threads,
+                "allocated_threads": granted_threads_total,
+                "granted_threads_total": granted_threads_total,
                 "max_threads": max_threads,
-                "thread_text": f"{running_threads}/{pending_threads}/{allocated_threads}",
+                "thread_text": f"{running_threads}/{pending_threads}/{granted_threads_total}",
                 "note_text": "Chạy / Chờ / Tổng",
                 "is_overallocated": is_overallocated,
             }
@@ -8466,16 +8476,17 @@ class AppStore:
             worker,
             role="primary" if normalized_role == "primary" else None,
         )
-        allocated_threads = self._live_worker_allocated_threads(
+        granted_threads_total = self._live_worker_total_granted_threads(
             worker.id,
             role="primary" if normalized_role == "primary" else None,
         )
-        is_overallocated = allocated_threads > max_threads
+        is_overallocated = granted_threads_total > max_threads
         return {
             "running_threads": running_threads,
-            "allocated_threads": allocated_threads,
+            "allocated_threads": granted_threads_total,
+            "granted_threads_total": granted_threads_total,
             "max_threads": max_threads,
-            "thread_text": f"{running_threads}/{allocated_threads}",
+            "thread_text": f"{running_threads}/{granted_threads_total}",
             "note_text": "Chạy / Tổng",
             "is_overallocated": is_overallocated,
         }
@@ -9836,13 +9847,13 @@ class AppStore:
             for value in ((pending_config or {}).get("assigned_user_ids") or [])
             if str(value).strip()
         ]
-        allocated_threads = requested_threads * len(assigned_user_ids) if workspace_kind == "live" else 0
+        granted_threads_total = requested_threads * len(assigned_user_ids) if workspace_kind == "live" else 0
         max_threads = self._fixed_live_worker_thread_limit() if workspace_kind == "live" else requested_threads
         is_backup_live_bot = workspace_kind == "live" and bot_function_key == "backup"
         workload_text = (
-            f"0/0/{allocated_threads}"
+            f"0/0/{granted_threads_total}"
             if is_backup_live_bot
-            else f"0/{allocated_threads}"
+            else f"0/{granted_threads_total}"
             if workspace_kind == "live"
             else "--"
         )
@@ -9851,7 +9862,7 @@ class AppStore:
             if is_backup_live_bot
             else "Chạy / Tổng"
         )
-        is_overallocated = workspace_kind == "live" and allocated_threads > max_threads
+        is_overallocated = workspace_kind == "live" and granted_threads_total > max_threads
         bot_function_label = {
             "upload": "Upload",
             "backup": "Backup",
@@ -9896,7 +9907,8 @@ class AppStore:
                 else bot_type["badge_class"]
             ),
             "running_threads": 0,
-            "allocated_threads": allocated_threads,
+            "allocated_threads": granted_threads_total,
+            "granted_threads_total": granted_threads_total,
             "max_threads": max_threads,
             "pending_threads": 0,
             "threads": requested_threads,
@@ -10083,6 +10095,10 @@ class AppStore:
                     ),
                     "running_threads": thread_summary["running_threads"],
                     "allocated_threads": thread_summary.get("allocated_threads", 0),
+                    "granted_threads_total": thread_summary.get(
+                        "granted_threads_total",
+                        thread_summary.get("allocated_threads", 0),
+                    ),
                     "max_threads": thread_summary["max_threads"],
                     "threads": (
                         self._live_worker_default_assignment_threads(worker.id)
