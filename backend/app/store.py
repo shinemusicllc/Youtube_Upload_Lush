@@ -1606,12 +1606,19 @@ class AppStore:
                     str(normalized_workspace_conversion.get("target_label") or "").strip() or None
                 )
             if isinstance(post_install_config, dict):
+                normalized_post_install_threads = None
+                if post_install_config.get("threads") is not None:
+                    normalized_post_install_threads = (
+                        self._normalize_live_worker_threads(post_install_config.get("threads"))
+                        if resolved_workspace_mode == "live"
+                        else self._normalize_requested_worker_threads(post_install_config.get("threads"))
+                    )
                 normalized_post_install_config = {
                     "name": str(post_install_config.get("name") or "").strip() or None,
                     "group": str(post_install_config.get("group") or "").strip() or None,
                     "manager_id": str(post_install_config.get("manager_id") or "").strip() or None,
                     "live_role": str(post_install_config.get("live_role") or "").strip() or None,
-                    "threads": normalized_threads,
+                    "threads": normalized_post_install_threads,
                     "assigned_user_ids": [
                         str(value).strip()
                         for value in (post_install_config.get("assigned_user_ids") or [])
@@ -9927,8 +9934,14 @@ class AppStore:
         task_live_role = self._normalize_live_assignment_role(task.get("live_role")) if str(task.get("live_role") or "").strip() else ""
         bot_type = self._bot_type_badge_data(workspace_kind, task_live_role)
         bot_function_key = "upload" if workspace_kind != "live" else "backup" if task_live_role == "backup" else "primary"
-        requested_threads = self._normalize_live_worker_threads(task.get("threads") or 1) if workspace_kind == "live" else 0
         pending_config = self._pending_install_config(task)
+        requested_threads = (
+            self._normalize_live_worker_threads(
+                (pending_config or {}).get("threads") if (pending_config or {}).get("threads") is not None else task.get("threads") or 1
+            )
+            if workspace_kind == "live"
+            else 0
+        )
         assigned_user_ids = [
             str(value).strip()
             for value in ((pending_config or {}).get("assigned_user_ids") or [])
