@@ -4525,9 +4525,9 @@ class AppStore:
         owner_user_id: str,
         worker_id: str,
         role: str,
+        now: datetime,
         excluding_stream_id: str | None = None,
     ) -> int:
-        active_statuses = self._live_worker_active_statuses()
         normalized_role = self._normalize_live_assignment_role(role)
         total = 0
         for stream in self.live_streams:
@@ -4537,12 +4537,41 @@ class AppStore:
                 continue
             if str(stream.claimed_by_worker_id or "").strip() != str(worker_id or "").strip():
                 continue
-            if str(stream.status or "").strip().lower() not in active_statuses:
+            if not self._live_runtime_stream_counts_toward_quota(stream, now=now):
                 continue
             if self._live_runtime_role(stream) != normalized_role:
                 continue
             total += 1
         return total
+
+    def _live_runtime_stream_counts_toward_quota(self, stream: LiveStreamRecord, *, now: datetime) -> bool:
+        normalized_status = str(stream.status or "").strip().lower()
+        if normalized_status in self._live_worker_active_statuses():
+            return True
+        claimed_by_worker_id = str(stream.claimed_by_worker_id or "").strip()
+        if not claimed_by_worker_id:
+            return False
+        return stream.lease_expires_at is not None and stream.lease_expires_at > now
+
+    def _count_live_worker_reserved_streams(
+        self,
+        worker: WorkerRecord,
+        *,
+        now: datetime,
+        role: str | None = None,
+    ) -> int:
+        normalized_role = (
+            self._normalize_live_assignment_role(role)
+            if str(role or "").strip()
+            else None
+        )
+        return sum(
+            1
+            for stream in self.live_streams
+            if str(stream.claimed_by_worker_id or "").strip() == worker.id
+            and self._live_runtime_stream_counts_toward_quota(stream, now=now)
+            and (normalized_role is None or self._live_runtime_role(stream) == normalized_role)
+        )
 
     def _can_claim_live_stream(self, stream: LiveStreamRecord, *, worker_id: str, now: datetime) -> bool:
         normalized_status = str(stream.status or "").strip().lower() or "scheduled"
@@ -4565,6 +4594,7 @@ class AppStore:
             owner_user_id=visible_stream.owner_user_id,
             worker_id=worker_id,
             role=runtime_role,
+            now=now,
             excluding_stream_id=stream.id,
         )
         if current_user_active_streams >= allocated_threads:
@@ -4785,11 +4815,13 @@ class AppStore:
     ) -> None:
         active_stream_id_set = {str(stream_id).strip() for stream_id in active_stream_ids if str(stream_id).strip()}
         for stream in self.live_streams:
-            if stream.claimed_by_worker_id != worker.id or stream.status not in self._live_worker_active_statuses():
+            if stream.claimed_by_worker_id != worker.id:
                 continue
             if stream.id in active_stream_id_set:
                 lease_duration = timedelta(seconds=self._live_stream_lease_seconds(stream))
                 stream.lease_expires_at = now + lease_duration
+                continue
+            if str(stream.status or "").strip().lower() not in self._live_worker_active_statuses():
                 continue
             if stream.lease_expires_at is not None and stream.lease_expires_at > now:
                 continue
@@ -4996,7 +5028,7 @@ class AppStore:
             now = self._now(trim=False)
             self._sync_live_backup_policy(now=now)
             max_threads = self._effective_live_worker_thread_limit(worker)
-            if self._count_live_worker_running_streams(worker) >= max_threads:
+            if self._count_live_worker_reserved_streams(worker, now=now) >= max_threads:
                 self._sync_live_worker_runtime_status(worker)
                 self._save_state()
                 return deepcopy(worker), None
