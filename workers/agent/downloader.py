@@ -6,7 +6,7 @@ import threading
 import time
 from pathlib import Path
 from typing import Callable
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
 import gdown
 import httpx
@@ -88,93 +88,7 @@ def _download_via_stream(
 
 def _is_google_drive_url(url: str) -> bool:
     host = (urlparse(url).hostname or "").lower()
-    return (
-        "drive.google.com" in host
-        or "docs.google.com" in host
-        or "drive.usercontent.google.com" in host
-    )
-
-
-def _google_drive_file_id(url: str) -> str | None:
-    parsed = urlparse(url)
-    query = parse_qs(parsed.query)
-    query_id = next((value for value in query.get("id", []) if value), "")
-    if query_id:
-        return query_id
-
-    patterns = (
-        r"/file/d/([A-Za-z0-9_-]+)",
-        r"/d/([A-Za-z0-9_-]+)",
-    )
-    for pattern in patterns:
-        match = re.search(pattern, parsed.path)
-        if match:
-            return match.group(1)
-    return None
-
-
-def _looks_like_html_response(response: httpx.Response) -> bool:
-    content_type = (response.headers.get("content-type") or "").split(";", 1)[0].strip().lower()
-    return content_type == "text/html"
-
-
-def _download_google_drive_direct(
-    file_id: str,
-    destination: Path,
-    *,
-    progress_callback: DownloadProgressCallback | None = None,
-    label: str = "asset",
-) -> Path:
-    candidate_urls = [
-        f"https://drive.usercontent.google.com/download?id={file_id}&export=download&confirm=t",
-        f"https://drive.google.com/uc?export=download&id={file_id}",
-        f"https://drive.google.com/uc?id={file_id}",
-    ]
-    last_error: Exception | None = None
-    for candidate_url in candidate_urls:
-        try:
-            with httpx.Client(follow_redirects=True, timeout=None) as client:
-                with client.stream("GET", candidate_url) as response:
-                    response.raise_for_status()
-                    if _looks_like_html_response(response):
-                        raise RuntimeError("Google Drive tra ve trang HTML thay vi file media.")
-
-                    file_name = _filename_from_content_disposition(response.headers.get("content-disposition"))
-                    resolved_destination = destination
-                    if not resolved_destination.suffix:
-                        resolved_destination = resolved_destination.with_suffix(_extension_from_response(response))
-                    if file_name:
-                        resolved_destination = resolved_destination.with_name(file_name)
-
-                    total_bytes = int(response.headers.get("content-length") or "0") or 0
-                    received_bytes = 0
-                    _emit_download_progress(progress_callback, 0.0, f"Dang tai {label}")
-                    with resolved_destination.open("wb") as file_obj:
-                        for chunk in response.iter_bytes():
-                            if not chunk:
-                                continue
-                            file_obj.write(chunk)
-                            if total_bytes <= 0:
-                                continue
-                            received_bytes += len(chunk)
-                            ratio = min(received_bytes / total_bytes, 0.999)
-                            _emit_download_progress(
-                                progress_callback,
-                                ratio,
-                                f"Dang tai {label} {int(ratio * 100)}%",
-                            )
-                    _emit_download_progress(progress_callback, 1.0, f"Da tai xong {label}")
-                    return resolved_destination
-        except Exception as exc:
-            last_error = exc
-            try:
-                destination.unlink(missing_ok=True)
-            except OSError:
-                pass
-            continue
-    if last_error is not None:
-        raise last_error
-    raise RuntimeError("Khong the tai asset tu Google Drive.")
+    return "drive.google.com" in host or "docs.google.com" in host
 
 
 def download_local_asset(
@@ -232,7 +146,6 @@ def download_remote_asset(
 
     if _is_google_drive_url(url):
         stop_poll = threading.Event()
-        file_id = _google_drive_file_id(url)
 
         def _poll_partial_file() -> None:
             last_size = 0
@@ -256,16 +169,7 @@ def download_remote_asset(
         poller = threading.Thread(target=_poll_partial_file, daemon=True)
         poller.start()
         try:
-            if file_id:
-                direct_path = _download_google_drive_direct(
-                    file_id,
-                    target_path,
-                    progress_callback=progress_callback,
-                    label=f"{slot} tu Google Drive",
-                )
-                downloaded_path = str(direct_path)
-            else:
-                downloaded_path = gdown.download(url=url, output=str(target_path), quiet=True, fuzzy=True)
+            downloaded_path = gdown.download(url=url, output=str(target_path), quiet=True, fuzzy=True)
         finally:
             stop_poll.set()
             poller.join(timeout=1.0)
