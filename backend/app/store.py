@@ -4410,6 +4410,20 @@ class AppStore:
             and (normalized_role is None or self._live_runtime_role(stream) == normalized_role)
         )
 
+    def _count_live_worker_streaming_streams(self, worker: WorkerRecord, *, role: str | None = None) -> int:
+        normalized_role = (
+            self._normalize_live_assignment_role(role)
+            if str(role or "").strip()
+            else None
+        )
+        return sum(
+            1
+            for stream in self.live_streams
+            if stream.claimed_by_worker_id == worker.id
+            and str(stream.status or "").strip().lower() == "streaming"
+            and (normalized_role is None or self._live_runtime_role(stream) == normalized_role)
+        )
+
     def _sync_live_worker_runtime_status(self, worker: WorkerRecord) -> None:
         worker.status = "busy" if self._count_live_worker_running_streams(worker) > 0 else "online"
 
@@ -8435,7 +8449,7 @@ class AppStore:
         )
         max_threads = self._effective_live_worker_thread_limit(worker)
         if normalized_role == "backup":
-            running_threads = self._count_live_worker_running_streams(worker, role="backup")
+            running_threads = self._count_live_worker_streaming_streams(worker, role="backup")
             pending_threads = self._count_live_worker_pending_backups(worker.id)
             allocated_threads = self._live_worker_allocated_threads(worker.id, role="backup")
             is_overallocated = allocated_threads > max_threads
