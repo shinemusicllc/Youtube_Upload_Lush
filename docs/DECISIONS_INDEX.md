@@ -44,6 +44,7 @@
 | DEC-038 | Chuyen BOT giua `upload` va `live/backup` phai di qua SSH bootstrap lai tren cung VPS; source workspace bi cleanup truoc khi BOT quay lai pool moi | Active | admin BOT conversion + bootstrap | High |
 | DEC-039 | Live runtime retry sau loi media phai co cooldown, worker khong duoc reclaim lai chinh stream khi lease chua het, va Telegram disconnect phai throttle cho den khi stream hoi phuc that su | Active | live runtime resilience + alert dedupe | High |
 | DEC-040 | Google Drive live downloader uu tien `gdown`, fallback sang direct URL; backup `24/7` duoc phep vao live dung gio neu primary chua ready, nhung van phai lui ve standby khi primary da `waiting/streaming` | Active | live downloader + hot-standby start policy | High |
+| DEC-041 | Quan tri quota live phai theo safe policy: khong duoc ha quota hoac go assignment xuong thap hon so luong active hien tai cua user tren BOT; stream dang chay khong bi kill, quota moi chi co the ap khi runtime da co ve muc an toan | Active | live admin assignment + runtime safety | High |
 
 ## Notes
 - `docs/DECISIONS.md` van giu full history va ly do chi tiet.

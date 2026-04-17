@@ -2899,6 +2899,56 @@ class AppStore:
     def _live_assignment_note(self, role: str | None) -> str:
         return "BOT backup được cấp" if self._normalize_live_assignment_role(role) == "backup" else "BOT live chính được cấp"
 
+    def _assert_live_assignment_runtime_guard(
+        self,
+        *,
+        worker_id: str,
+        user_id: str,
+        current_role: str | None,
+        next_role: str | None,
+        proposed_threads: int | None,
+        removing_assignment: bool = False,
+    ) -> None:
+        normalized_worker_id = str(worker_id or "").strip()
+        normalized_user_id = str(user_id or "").strip()
+        normalized_current_role = self._normalize_live_assignment_role(current_role)
+        normalized_next_role = (
+            self._normalize_live_assignment_role(next_role)
+            if str(next_role or "").strip()
+            else normalized_current_role
+        )
+        now = self._now(trim=False)
+        active_current_role_count = self._live_runtime_user_active_stream_count(
+            owner_user_id=normalized_user_id,
+            worker_id=normalized_worker_id,
+            role=normalized_current_role,
+            now=now,
+        )
+        worker_name = self._resolve_live_worker_display_name(normalized_worker_id)
+        try:
+            user_name = self._find_user(normalized_user_id).username
+        except KeyError:
+            user_name = normalized_user_id
+
+        if removing_assignment and active_current_role_count > 0:
+            raise ValueError(
+                f"Không thể gỡ user {user_name} khỏi {self._live_assignment_role_label(normalized_current_role)} "
+                f"{worker_name} vì hiện còn {active_current_role_count} luồng active trên BOT này."
+            )
+
+        if normalized_current_role != normalized_next_role and active_current_role_count > 0:
+            raise ValueError(
+                f"Không thể đổi {self._live_assignment_role_label(normalized_current_role)} của user {user_name} "
+                f"sang {self._live_assignment_role_label(normalized_next_role)} trên BOT {worker_name} vì hiện còn "
+                f"{active_current_role_count} luồng active theo role cũ."
+            )
+
+        if proposed_threads is not None and proposed_threads < active_current_role_count:
+            raise ValueError(
+                f"Không thể hạ quota của user {user_name} trên BOT {worker_name} xuống {proposed_threads} "
+                f"vì hiện đang có {active_current_role_count} luồng active."
+            )
+
     def _normalize_live_user_worker_assignments(self) -> bool:
         changed = False
         normalized_links: list[dict[str, Any]] = []
@@ -11235,6 +11285,28 @@ class AppStore:
 
         if assigned_user_ids is not None or normalized_user_id:
             selected_user_id_set = {item.id for item in selected_users}
+            current_links_by_user_id = {
+                str(link.get("user_id") or "").strip(): link
+                for link in self.live_user_worker_links
+                if str(link.get("worker_id") or "").strip() == worker.id
+            }
+            deselected_user_ids = set(current_links_by_user_id.keys()) - selected_user_id_set
+            for deselected_user_id in deselected_user_ids:
+                deselected_link = current_links_by_user_id.get(deselected_user_id)
+                if deselected_link is None:
+                    continue
+                self._assert_live_assignment_runtime_guard(
+                    worker_id=worker.id,
+                    user_id=deselected_user_id,
+                    current_role=self._normalize_live_assignment_role(
+                        deselected_link.get("live_role"),
+                        fallback_note=deselected_link.get("note"),
+                    ),
+                    next_role=None,
+                    proposed_threads=None,
+                    removing_assignment=True,
+                )
+
             filtered_live_user_worker_links = [
                 link
                 for link in self.live_user_worker_links
@@ -11299,6 +11371,18 @@ class AppStore:
                     )
                     next_id += 1
                 else:
+                    current_role = self._normalize_live_assignment_role(
+                        existing_link.get("live_role"),
+                        fallback_note=existing_link.get("note"),
+                    )
+                    next_threads = normalized_threads if should_apply_threads_to_all_selected else None
+                    self._assert_live_assignment_runtime_guard(
+                        worker_id=worker.id,
+                        user_id=assigned_user.id,
+                        current_role=current_role,
+                        next_role=selected_role,
+                        proposed_threads=next_threads,
+                    )
                     if should_apply_threads_to_all_selected:
                         existing_link["allocated_threads"] = normalized_threads
                         existing_link["threads"] = normalized_threads
@@ -11385,6 +11469,17 @@ class AppStore:
         for link in self.live_user_worker_links:
             if str(link.get("worker_id") or "").strip() != worker.id:
                 continue
+            current_role = self._normalize_live_assignment_role(
+                link.get("live_role"),
+                fallback_note=link.get("note"),
+            )
+            self._assert_live_assignment_runtime_guard(
+                worker_id=worker.id,
+                user_id=str(link.get("user_id") or "").strip(),
+                current_role=current_role,
+                next_role=current_role,
+                proposed_threads=normalized_threads,
+            )
             link["allocated_threads"] = normalized_threads
             link["threads"] = normalized_threads
         self._save_state()
