@@ -4734,6 +4734,24 @@ class AppStore:
         stream.claimed_at = None
         stream.disconnected_at = None
 
+    @staticmethod
+    def _live_stream_has_runtime_claim(stream: LiveStreamRecord) -> bool:
+        return bool(str(stream.claimed_by_worker_id or "").strip())
+
+    @staticmethod
+    def _request_live_stream_stop(
+        stream: LiveStreamRecord,
+        *,
+        now: datetime,
+        message: str | None = None,
+    ) -> None:
+        if stream.stop_requested_at is None:
+            stream.stop_requested_at = now
+        stream.updated_at = now
+        normalized_message = str(message or "").strip()
+        if normalized_message and not str(stream.status_message or "").strip():
+            stream.status_message = normalized_message
+
     def _mark_visible_live_stream_ended(
         self,
         stream: LiveStreamRecord,
@@ -4744,7 +4762,10 @@ class AppStore:
         self._finalize_live_stream_ended_state(stream, now=now, message=message)
         clone = self._find_live_backup_clone_optional(stream)
         if clone is not None:
-            self._retire_live_backup_clone(clone, now=now, reason="Luồng chính đã kết thúc.")
+            if self._live_stream_has_runtime_claim(clone):
+                self._request_live_stream_stop(clone, now=now, message="Luồng chính đã kết thúc.")
+            else:
+                self._retire_live_backup_clone(clone, now=now, reason="Luồng chính đã kết thúc.")
         stream.backup_stream_id = None
         return self._live_stream_recipient_chat_ids(stream), self._live_stream_ended_message(stream, now=now)
 
@@ -4860,11 +4881,13 @@ class AppStore:
         normalized_status = str(stream.status or "").strip().lower() or "scheduled"
         if normalized_status not in self._live_worker_claimable_statuses():
             return False
+        visible_stream = self._visible_live_stream_for_runtime(stream)
+        if self._live_stream_has_reached_schedule_end(visible_stream, now=now):
+            return False
         if normalized_status == "disconnected" and not self._live_runtime_retry_ready(stream, now=now):
             return False
         if self._has_live_stream_started(stream) and not self._can_reclaim_started_live_stream(stream, now=now):
             return False
-        visible_stream = self._visible_live_stream_for_runtime(stream)
         runtime_role = self._live_runtime_role(stream)
         allocated_threads = self._live_user_worker_allocated_threads(
             visible_stream.owner_user_id,
@@ -5022,6 +5045,19 @@ class AppStore:
         for stream in visible_streams:
             clone = self._find_live_backup_clone_optional(stream)
             if self._live_stream_has_reached_schedule_end(stream, now=now):
+                stream_has_claim = self._live_stream_has_runtime_claim(stream)
+                clone_has_claim = clone is not None and self._live_stream_has_runtime_claim(clone)
+                if stream_has_claim or clone_has_claim:
+                    if stream_has_claim:
+                        self._request_live_stream_stop(stream, now=now, message="Luồng live đã kết thúc theo lịch.")
+                    if clone is not None:
+                        if clone_has_claim:
+                            self._request_live_stream_stop(clone, now=now, message="Luồng live đã kết thúc theo lịch.")
+                        else:
+                            self._retire_live_backup_clone(clone, now=now, reason="Luồng chính đã kết thúc.")
+                            if stream.backup_stream_id is not None:
+                                stream.backup_stream_id = None
+                    continue
                 self._finalize_live_stream_ended_state(
                     stream,
                     now=now,
@@ -5035,8 +5071,11 @@ class AppStore:
             should_have_backup = bool(stream.backup_worker_id) and stream.status not in {"stopped", "ended", "error"}
             if not should_have_backup:
                 if clone is not None:
-                    self._retire_live_backup_clone(clone, now=now, reason="Luồng chính không còn dùng BOT backup.")
-                if stream.backup_stream_id is not None:
+                    if self._live_stream_has_runtime_claim(clone):
+                        self._request_live_stream_stop(clone, now=now, message="Luồng chính không còn dùng BOT backup.")
+                    else:
+                        self._retire_live_backup_clone(clone, now=now, reason="Luồng chính không còn dùng BOT backup.")
+                if stream.backup_stream_id is not None and (clone is None or not self._live_stream_has_runtime_claim(clone)):
                     stream.backup_stream_id = None
                     stream.updated_at = now
                 continue
@@ -5481,7 +5520,15 @@ class AppStore:
             normalized_status = str(stream.status or "").strip().lower() or "scheduled"
             now = self._now(trim=False)
             playback_mode = self._desired_live_playback_mode(stream, now=now)
-            should_stop = normalized_status in {"stopped", "ended", "error"} or playback_mode == "stop"
+            explicit_stop_requested = stream.stop_requested_at is not None and normalized_status not in {"stopped", "ended", "error"}
+            visible_stream = self._visible_live_stream_for_runtime(stream)
+            schedule_end_reached = self._live_stream_has_reached_schedule_end(visible_stream, now=now)
+            should_stop = (
+                normalized_status in {"stopped", "ended", "error"}
+                or playback_mode == "stop"
+                or explicit_stop_requested
+                or schedule_end_reached
+            )
             return {
                 "stream_id": stream.id,
                 "status": normalized_status,
@@ -5516,13 +5563,19 @@ class AppStore:
             else:
                 self._finalize_live_stream_ended_state(stream, now=now, message=message)
                 parent_stream = self._parent_live_stream_optional(stream)
-                if parent_stream is not None and self._live_stream_has_reached_schedule_end(parent_stream, now=now):
-                    notification_chat_ids, notification_message = self._mark_visible_live_stream_ended(
-                        parent_stream,
-                        now=now,
-                        message=message,
-                    )
-                    self._retire_live_backup_clone(stream, now=now, reason="Luồng backup đã kết thúc theo lịch.")
+                if (
+                    parent_stream is not None
+                    and str(parent_stream.status or "").strip().lower() not in {"stopped", "ended", "error"}
+                    and self._live_stream_has_reached_schedule_end(parent_stream, now=now)
+                ):
+                    if self._live_stream_has_runtime_claim(parent_stream):
+                        self._request_live_stream_stop(parent_stream, now=now, message=message or "Luồng live đã kết thúc theo lịch.")
+                    else:
+                        notification_chat_ids, notification_message = self._mark_visible_live_stream_ended(
+                            parent_stream,
+                            now=now,
+                            message=message,
+                        )
             self._sync_live_worker_runtime_status(worker)
             self._save_state()
             snapshot = deepcopy(stream)
@@ -11172,26 +11225,41 @@ class AppStore:
         if not str(worker.group or "").strip():
             worker.group = self._default_bot_group_label()
 
-    def _purge_live_worker_assignment_scope(self, worker_id: str) -> None:
+    def _purge_live_worker_assignment_scope_from_state(
+        self,
+        worker_id: str,
+        *,
+        live_user_worker_links: list[dict[str, Any]],
+        live_streams: list[LiveStreamRecord],
+        now: datetime | None = None,
+    ) -> tuple[list[dict[str, Any]], list[LiveStreamRecord]]:
         cleaned_worker_id = str(worker_id or "").strip()
         if not cleaned_worker_id:
-            return
-        self.live_user_worker_links = [
+            return live_user_worker_links, live_streams
+        normalized_now = now or self._now(trim=False)
+        next_live_user_worker_links = [
             link
-            for link in self.live_user_worker_links
+            for link in live_user_worker_links
             if str(link.get("worker_id") or "").strip() != cleaned_worker_id
         ]
         remaining_streams: list[LiveStreamRecord] = []
-        for stream in self.live_streams:
+        for stream in live_streams:
             if stream.primary_worker_id == cleaned_worker_id:
                 continue
             if stream.backup_worker_id == cleaned_worker_id:
                 stream.backup_worker_id = None
                 stream.backup_worker_name = None
                 stream.backup_group = None
-                stream.updated_at = self._now(trim=False)
+                stream.updated_at = normalized_now
             remaining_streams.append(stream)
-        self.live_streams = remaining_streams
+        return next_live_user_worker_links, remaining_streams
+
+    def _purge_live_worker_assignment_scope(self, worker_id: str) -> None:
+        self.live_user_worker_links, self.live_streams = self._purge_live_worker_assignment_scope_from_state(
+            worker_id,
+            live_user_worker_links=self.live_user_worker_links,
+            live_streams=self.live_streams,
+        )
 
     def update_live_bot(
         self,
@@ -11212,7 +11280,6 @@ class AppStore:
         normalized_name = str(name or "").strip()
         if not normalized_name:
             raise ValueError("Tên BOT là bắt buộc.")
-        worker.name = normalized_name
         normalized_group = self._normalized_bot_group(group)
         normalized_user_id = str(assigned_user_id or "").strip()
         normalized_user_ids: list[str] = []
@@ -11250,25 +11317,21 @@ class AppStore:
             if str(link.get("worker_id") or "").strip() == worker.id and str(link.get("user_id") or "").strip()
         }
         manager_changed = str(worker.manager_id or "").strip() != str(manager.id if manager else "").strip()
-        if manager_changed and (current_user_ids or any(stream.primary_worker_id == worker.id for stream in self.live_streams)):
+        has_live_scope_to_purge = bool(current_user_ids or any(stream.primary_worker_id == worker.id for stream in self.live_streams))
+        should_purge_live_scope = manager_changed and has_live_scope_to_purge
+        if should_purge_live_scope:
             if not confirm_manager_transfer_cleanup:
                 raise ValueError(
                     "Đổi manager BOT live này sẽ làm sạch gán user và luồng live hiện tại. "
                     "Hãy xác nhận cảnh báo rồi thử lại."
                 )
-            self._purge_live_worker_assignment_scope(worker.id)
-            current_user_ids = set()
-
-        self._apply_live_worker_manager(worker, manager)
-        worker.group = normalized_group
-        worker.capacity = self._effective_live_worker_thread_limit(worker)
-        worker.threads = worker.capacity
+        current_user_ids_for_validation = set() if should_purge_live_scope else current_user_ids
 
         selected_users: list[UserSummary] = []
         target_user_ids = normalized_user_ids if assigned_user_ids is not None else ([normalized_user_id] if normalized_user_id else [])
         for selected_user_id in target_user_ids:
             assigned_user = self._find_user(selected_user_id)
-            already_assigned = assigned_user.id in current_user_ids
+            already_assigned = assigned_user.id in current_user_ids_for_validation
             if assigned_user.role == "user":
                 assigned_user_manager_id = self._resolved_user_manager_id(assigned_user)
                 if manager and assigned_user_manager_id != manager.id and not already_assigned:
@@ -11283,11 +11346,21 @@ class AppStore:
                 raise ValueError("User được chọn không hợp lệ.")
             selected_users.append(assigned_user)
 
+        next_live_user_worker_links = [dict(link) for link in self.live_user_worker_links]
+        next_live_streams = self.live_streams
+        if should_purge_live_scope:
+            next_live_streams = deepcopy(self.live_streams)
+            next_live_user_worker_links, next_live_streams = self._purge_live_worker_assignment_scope_from_state(
+                worker.id,
+                live_user_worker_links=next_live_user_worker_links,
+                live_streams=next_live_streams,
+            )
+
         if assigned_user_ids is not None or normalized_user_id:
             selected_user_id_set = {item.id for item in selected_users}
             current_links_by_user_id = {
                 str(link.get("user_id") or "").strip(): link
-                for link in self.live_user_worker_links
+                for link in next_live_user_worker_links
                 if str(link.get("worker_id") or "").strip() == worker.id
             }
             deselected_user_ids = set(current_links_by_user_id.keys()) - selected_user_id_set
@@ -11307,9 +11380,9 @@ class AppStore:
                     removing_assignment=True,
                 )
 
-            filtered_live_user_worker_links = [
+            next_live_user_worker_links = [
                 link
-                for link in self.live_user_worker_links
+                for link in next_live_user_worker_links
                 if not (
                     str(link.get("worker_id") or "").strip() == worker.id
                     and str(link.get("user_id") or "").strip() not in selected_user_id_set
@@ -11317,7 +11390,7 @@ class AppStore:
             ]
             current_links_by_user_id = {
                 str(link.get("user_id") or "").strip(): link
-                for link in filtered_live_user_worker_links
+                for link in next_live_user_worker_links
                 if str(link.get("worker_id") or "").strip() == worker.id
             }
             new_selected_user_ids = selected_user_id_set - set(current_links_by_user_id.keys())
@@ -11340,13 +11413,7 @@ class AppStore:
                     f"nhưng cấu hình hiện tại đang cấp phát tổng cộng {projected_total_allocated_threads} luồng "
                     f"cho {len(selected_user_id_set)} user."
                 )
-            self.live_user_worker_links = filtered_live_user_worker_links
-            current_links_by_user_id = {
-                str(link.get("user_id") or "").strip(): link
-                for link in self.live_user_worker_links
-                if str(link.get("worker_id") or "").strip() == worker.id
-            }
-            next_id = max([int(item.get("id") or 0) for item in self.live_user_worker_links], default=0) + 1
+            next_id = max([int(item.get("id") or 0) for item in next_live_user_worker_links], default=0) + 1
             for assigned_user in selected_users:
                 existing_link = current_links_by_user_id.get(assigned_user.id)
                 selected_role = (
@@ -11358,7 +11425,7 @@ class AppStore:
                     )
                 )
                 if existing_link is None:
-                    self.live_user_worker_links.append(
+                    next_live_user_worker_links.append(
                         {
                             "id": next_id,
                             "user_id": assigned_user.id,
@@ -11389,6 +11456,14 @@ class AppStore:
                     existing_link["live_role"] = selected_role
                     existing_link["note"] = self._live_assignment_note(selected_role)
 
+        worker.name = normalized_name
+        self._apply_live_worker_manager(worker, manager)
+        worker.group = normalized_group
+        worker.capacity = self._effective_live_worker_thread_limit(worker)
+        worker.threads = worker.capacity
+        self.live_user_worker_links = next_live_user_worker_links
+        if next_live_streams is not self.live_streams:
+            self.live_streams = next_live_streams
         self._save_state()
 
     def _delete_live_bot_state(self, worker_id: str) -> None:
@@ -11452,8 +11527,7 @@ class AppStore:
         if thread < 1:
             raise ValueError("Số luồng phải lớn hơn hoặc bằng 1.")
         normalized_threads = self._normalize_live_worker_threads(thread)
-        worker.threads = self._effective_live_worker_thread_limit(worker)
-        worker.capacity = self._effective_live_worker_thread_limit(worker)
+        worker_capacity = self._effective_live_worker_thread_limit(worker)
         worker_link_count = len(
             [
                 link
@@ -11461,12 +11535,13 @@ class AppStore:
                 if str(link.get("worker_id") or "").strip() == worker.id
             ]
         )
-        if normalized_threads * worker_link_count > self._effective_live_worker_thread_limit(worker):
+        if normalized_threads * worker_link_count > worker_capacity:
             raise ValueError(
                 f"BOT {self._resolve_live_worker_display_name(worker.id)} đang vượt trần "
-                f"{normalized_threads * worker_link_count}/{self._effective_live_worker_thread_limit(worker)} luồng."
+                f"{normalized_threads * worker_link_count}/{worker_capacity} luồng."
             )
-        for link in self.live_user_worker_links:
+        next_live_user_worker_links = [dict(link) for link in self.live_user_worker_links]
+        for link in next_live_user_worker_links:
             if str(link.get("worker_id") or "").strip() != worker.id:
                 continue
             current_role = self._normalize_live_assignment_role(
@@ -11482,6 +11557,9 @@ class AppStore:
             )
             link["allocated_threads"] = normalized_threads
             link["threads"] = normalized_threads
+        worker.threads = worker_capacity
+        worker.capacity = worker_capacity
+        self.live_user_worker_links = next_live_user_worker_links
         self._save_state()
 
     def update_bot(
