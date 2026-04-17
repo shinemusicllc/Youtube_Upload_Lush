@@ -11235,14 +11235,7 @@ class AppStore:
 
         if assigned_user_ids is not None or normalized_user_id:
             selected_user_id_set = {item.id for item in selected_users}
-            requested_total_allocated_threads = normalized_threads * len(selected_user_id_set)
-            worker_capacity = self._effective_live_worker_thread_limit(worker)
-            if requested_total_allocated_threads > worker_capacity:
-                raise ValueError(
-                    f"BOT {self._resolve_live_worker_display_name(worker.id)} chỉ có trần {worker_capacity} luồng, "
-                    f"nhưng cấu hình hiện tại đang cấp phát {requested_total_allocated_threads} luồng cho {len(selected_user_id_set)} user."
-                )
-            self.live_user_worker_links = [
+            filtered_live_user_worker_links = [
                 link
                 for link in self.live_user_worker_links
                 if not (
@@ -11250,6 +11243,32 @@ class AppStore:
                     and str(link.get("user_id") or "").strip() not in selected_user_id_set
                 )
             ]
+            current_links_by_user_id = {
+                str(link.get("user_id") or "").strip(): link
+                for link in filtered_live_user_worker_links
+                if str(link.get("worker_id") or "").strip() == worker.id
+            }
+            new_selected_user_ids = selected_user_id_set - set(current_links_by_user_id.keys())
+            should_apply_threads_to_all_selected = not new_selected_user_ids
+            if should_apply_threads_to_all_selected:
+                projected_total_allocated_threads = normalized_threads * len(selected_user_id_set)
+            else:
+                projected_total_allocated_threads = (
+                    sum(
+                        self._live_link_allocated_threads(link)
+                        for user_id, link in current_links_by_user_id.items()
+                        if user_id in selected_user_id_set
+                    )
+                    + (normalized_threads * len(new_selected_user_ids))
+                )
+            worker_capacity = self._effective_live_worker_thread_limit(worker)
+            if projected_total_allocated_threads > worker_capacity:
+                raise ValueError(
+                    f"BOT {self._resolve_live_worker_display_name(worker.id)} chỉ có trần {worker_capacity} luồng, "
+                    f"nhưng cấu hình hiện tại đang cấp phát tổng cộng {projected_total_allocated_threads} luồng "
+                    f"cho {len(selected_user_id_set)} user."
+                )
+            self.live_user_worker_links = filtered_live_user_worker_links
             current_links_by_user_id = {
                 str(link.get("user_id") or "").strip(): link
                 for link in self.live_user_worker_links
@@ -11280,8 +11299,9 @@ class AppStore:
                     )
                     next_id += 1
                 else:
-                    existing_link["allocated_threads"] = normalized_threads
-                    existing_link["threads"] = normalized_threads
+                    if should_apply_threads_to_all_selected:
+                        existing_link["allocated_threads"] = normalized_threads
+                        existing_link["threads"] = normalized_threads
                     existing_link["live_role"] = selected_role
                     existing_link["note"] = self._live_assignment_note(selected_role)
 
