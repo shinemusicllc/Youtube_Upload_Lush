@@ -336,7 +336,13 @@ def _connect_client(request: WorkerBootstrapRequest | WorkerDecommissionRequest)
         return client
     except paramiko.AuthenticationException as exc:
         client.close()
-        raise WorkerBootstrapError("Đăng nhập SSH thất bại.") from exc
+        if request.ssh_private_key:
+            raise WorkerBootstrapError(
+                f"Đăng nhập SSH vào VPS {request.vps_ip} thất bại. SSH key đang lưu trong hệ thống có thể không còn đúng với máy thật."
+            ) from exc
+        raise WorkerBootstrapError(
+            f"Đăng nhập SSH vào VPS {request.vps_ip} thất bại. Password VPS đang lưu trong hệ thống có thể không còn đúng với máy thật. Hãy cập nhật lại trường Password VPS rồi thử lại."
+        ) from exc
     except Exception as exc:  # pragma: no cover - network/runtime path
         client.close()
         raise WorkerBootstrapError(f"Không kết nối được VPS {request.vps_ip}: {exc}") from exc
