@@ -13,7 +13,6 @@ from ..worker_bootstrap import (
     WorkerBootstrapError,
     build_worker_bootstrap_request,
     build_worker_decommission_request,
-    rotate_worker_password_on_vps,
     start_worker_decommission_operation,
     start_worker_install_operation,
 )
@@ -219,25 +218,11 @@ def _start_bot_workspace_conversion(
     )
     normalized_password = str(password or "").strip()
     if normalized_password:
-        def apply_system_password_change(
-            target_worker_id: str,
-            current_password: str | None,
-            next_password: str,
-            target_workspace_mode: str,
-        ) -> None:
-            rotate_worker_password_on_vps(
-                store=store,
-                worker_id=target_worker_id,
-                new_password=next_password,
-                workspace_mode=target_workspace_mode,
-                current_password_override=current_password,
-            )
-
-        store.apply_worker_connection_password_change(
+        store.update_worker_connection_password(
             worker_id=worker_id,
             password=normalized_password,
             workspace_mode=resolved_current_workspace_mode,
-            apply_system_password_change=apply_system_password_change,
+            persist=True,
         )
     profile = store.get_worker_connection_profile(worker_id, workspace_mode=resolved_current_workspace_mode)
     bootstrap_request = build_worker_bootstrap_request(
@@ -705,20 +690,6 @@ async def update_admin_bot(request: Request, bot_id: str, payload: AdminBotUpdat
             continue
         _enforce_user_scope(request, selected_user_id)
     try:
-        def apply_system_password_change(
-            target_worker_id: str,
-            current_password: str | None,
-            next_password: str,
-            target_workspace_mode: str,
-        ) -> None:
-            rotate_worker_password_on_vps(
-                store=store,
-                worker_id=target_worker_id,
-                new_password=next_password,
-                workspace_mode=target_workspace_mode,
-                current_password_override=current_password,
-            )
-
         if current_workspace_mode != workspace_mode:
             if not payload.confirm_workspace_transfer_cleanup:
                 raise ValueError("Hãy xác nhận cảnh báo chuyển loại BOT rồi thử lại.")
@@ -744,7 +715,6 @@ async def update_admin_bot(request: Request, bot_id: str, payload: AdminBotUpdat
             manager_id,
             workspace_mode=workspace_mode,
             password=payload.password,
-            apply_system_password_change=apply_system_password_change,
             live_role=payload.live_role,
             threads=payload.threads,
             assigned_user_id=assigned_user_id,
