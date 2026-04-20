@@ -220,6 +220,10 @@
                         </td>
                         <td>
                             <div class="action-grid">
+                                <a href="{{ user.live_list_href }}" class="action-btn action-btn-primary">
+                                    <i data-lucide="radio" class="h-3.5 w-3.5"></i>
+                                    DS Live
+                                </a>
                                 <a href="/admin/channel/user?userId={{ user.id }}&username={{ user.username | urlencode }}" class="action-btn action-btn-sky">
                                     <i data-lucide="link-2" class="h-3.5 w-3.5"></i>
                                     Kênh

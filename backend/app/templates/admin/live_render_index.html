@@ -21,6 +21,9 @@
                 <div class="min-w-0 flex-1">
                     {% include "admin/_manager_picker.html" %}
                 </div>
+                {% if dashboard.selected_user_id %}
+                <input type="hidden" name="userId" value="{{ dashboard.selected_user_id }}">
+                {% endif %}
             </form>
         </div>
     </div>
@@ -30,8 +33,8 @@
     <div class="panel overflow-hidden">
         <div class="border-b border-slate-200/80 px-5 py-4">
             <div>
-                <h3 class="section-title">Danh s&aacute;ch live stream</h3>
-                <p class="section-note">Theo d&#245;i lu&#7891;ng live stream theo b&#7897; c&#7897;t qu&#7843;n tr&#7883; hi&#7879;n t&#7841;i, &#273;&atilde; g&#7897;p nh&#7919;ng th&ocirc;ng tin c&oacute; th&#7875; d&#7885;n l&#7841;i &#273;&#7875; b&#7843;ng g&#7885;n h&#417;n.</p>
+                <h3 class="section-title">{{ dashboard.render_heading }}</h3>
+                <p class="section-note">{{ dashboard.render_note }}</p>
             </div>
         </div>
 
@@ -105,17 +108,20 @@
                                     {% for manager_id in dashboard.selected_manager_ids | default([], true) %}
                                     <input type="hidden" name="manager_ids" value="{{ manager_id | e }}">
                                     {% endfor %}
+                                    {% if dashboard.selected_user_id %}
+                                    <input type="hidden" name="userId" value="{{ dashboard.selected_user_id | e }}">
+                                    {% endif %}
                                     <button type="submit" class="action-btn action-btn-amber">
                                         <i data-lucide="square" class="h-3.5 w-3.5"></i>
                                         Dừng
                                     </button>
                                 </form>
                                 {% endif %}
-                                <a href="{{ live_index_href }}?edit={{ render.id | e }}{% for manager_id in dashboard.selected_manager_ids | default([], true) %}&manager_ids={{ manager_id | e }}{% endfor %}" class="action-btn action-btn-emerald">
+                                <a href="{{ live_index_href }}?edit={{ render.id | e }}{% for manager_id in dashboard.selected_manager_ids | default([], true) %}&manager_ids={{ manager_id | e }}{% endfor %}{% if dashboard.selected_user_id %}&userId={{ dashboard.selected_user_id | e }}{% endif %}" class="action-btn action-btn-emerald">
                                     <i data-lucide="pencil" class="h-3.5 w-3.5"></i>
                                     Sửa
                                 </a>
-                                <a href="{{ live_index_href }}?detail={{ render.id | e }}{% for manager_id in dashboard.selected_manager_ids | default([], true) %}&manager_ids={{ manager_id | e }}{% endfor %}" class="action-btn action-btn-slate">
+                                <a href="{{ live_index_href }}?detail={{ render.id | e }}{% for manager_id in dashboard.selected_manager_ids | default([], true) %}&manager_ids={{ manager_id | e }}{% endfor %}{% if dashboard.selected_user_id %}&userId={{ dashboard.selected_user_id | e }}{% endif %}" class="action-btn action-btn-slate">
                                     <i data-lucide="eye" class="h-3.5 w-3.5"></i>
                                     Chi ti&#7871;t
                                 </a>
@@ -124,6 +130,9 @@
                                     {% for manager_id in dashboard.selected_manager_ids | default([], true) %}
                                     <input type="hidden" name="manager_ids" value="{{ manager_id | e }}">
                                     {% endfor %}
+                                    {% if dashboard.selected_user_id %}
+                                    <input type="hidden" name="userId" value="{{ dashboard.selected_user_id | e }}">
+                                    {% endif %}
                                     <button type="submit" class="action-btn action-btn-rose">
                                         <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
                                         Xóa

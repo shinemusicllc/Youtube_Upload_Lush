@@ -6624,6 +6624,25 @@ class AppStore:
             return {viewer_id}
         return selected_manager_ids
 
+    def _live_workspace_scope_query(
+        self,
+        *,
+        manager_ids: list[str] | set[str] | None = None,
+        user_id: str | None = None,
+    ) -> tuple[str, str]:
+        query: list[tuple[str, str]] = []
+        for manager_id in manager_ids or []:
+            normalized_manager_id = str(manager_id or "").strip()
+            if normalized_manager_id:
+                query.append(("manager_ids", normalized_manager_id))
+        normalized_user_id = str(user_id or "").strip()
+        if normalized_user_id:
+            query.append(("userId", normalized_user_id))
+        if not query:
+            return "", ""
+        encoded = urlencode(query, doseq=True)
+        return f"?{encoded}", f"&{encoded}"
+
     def _scoped_admin_summary(
         self,
         *,
@@ -6640,16 +6659,23 @@ class AppStore:
             return self.get_admin_dashboard().summary
 
         scoped_workers = [worker for worker in self.workers if worker.manager_id in selected_manager_ids]
+        scoped_worker_ids = {worker.id for worker in scoped_workers}
         scoped_channels = [
             channel
             for channel in self.channels
             if self._resolve_channel_manager_id(channel) in selected_manager_ids
         ]
         scoped_jobs = [job for job in self.jobs if self._resolve_job_manager_id(job) in selected_manager_ids]
+        scoped_user_ids = {
+            str(link.get("user_id") or "").strip()
+            for link in self.user_worker_links
+            if str(link.get("user_id") or "").strip()
+            and str(link.get("worker_id") or "").strip() in scoped_worker_ids
+        }
         scoped_users = [
             user
             for user in self.users
-            if user.role == "user" and (self._resolved_user_manager_id(user) in selected_manager_ids)
+            if user.id in scoped_user_ids and user.role in {"user", "manager", "admin"}
         ]
         return AdminSummary(
             total_managers=len(selected_manager_ids),
@@ -7697,6 +7723,7 @@ class AppStore:
     ) -> dict[str, Any]:
         bootstrap = self.get_user_bootstrap(user_id)
         user = bootstrap.user
+        live_context_query, live_context_suffix = self._live_workspace_scope_query()
         resolved_notice = notice
         resolved_notice_level = notice_level
         assigned_workers = self._workspace_live_workers_for_user(user)
@@ -7779,6 +7806,7 @@ class AppStore:
                 "description": "Thiết lập BOT chính, BOT backup, media nguồn và lịch live.",
             },
             "live_form_action": "/app/live/update" if editing_stream else "/app/live/create",
+            "live_form_user_id": "",
             "live_form_mode": "edit" if editing_stream else "create",
             "live_form_submit_label": "Cập nhật luồng live" if editing_stream else "Tạo luồng live",
             "live_form_reset_label": "Hủy chỉnh sửa" if editing_stream else "Đặt lại",
@@ -7786,6 +7814,9 @@ class AppStore:
             "live_index_href": "/app/live",
             "live_delete_action": "/app/live/delete",
             "live_stop_action": "/app/live/stop",
+            "live_context_query": live_context_query,
+            "live_context_suffix": live_context_suffix,
+            "live_dashboard_api_href": "/api/user/dashboard/live",
             "live_telegram": self._live_telegram_binding_snapshot(user.id),
             "live_form": live_form_state,
             "primary_live_workers": self._build_live_worker_picker_cards(primary_workers),
@@ -7803,6 +7834,15 @@ class AppStore:
                 if live_records
                 else "Chưa có luồng live nào trong danh sách"
             ),
+        }
+
+    @staticmethod
+    def _live_workspace_payload(dashboard: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "kpis": dashboard["kpis"],
+            "live_tabs": dashboard["live_tabs"],
+            "live_stream_rows": dashboard["live_stream_rows"],
+            "live_summary": dashboard["live_summary"],
         }
 
     def _live_streams_for_user(self, user: UserSummary) -> list[LiveStreamRecord]:
@@ -8713,31 +8753,31 @@ class AppStore:
         viewer_role: str = "admin",
         viewer_id: str | None = None,
         manager_ids: list[str] | None = None,
+        owner_user_id: str | None = None,
     ) -> list[LiveStreamRecord]:
         effective_manager_ids = self._effective_manager_scope_ids(
             viewer_role=viewer_role,
             viewer_id=viewer_id,
             manager_ids=manager_ids,
         )
+        normalized_owner_user_id = str(owner_user_id or "").strip()
         if viewer_role == "manager" and viewer_id:
             scoped = [
                 stream for stream in self.live_streams
                 if stream.manager_id == viewer_id
                 and self._is_visible_live_stream(stream)
             ]
-            return sorted(scoped, key=lambda item: (item.created_at or datetime.min, item.id), reverse=True)
-        if not effective_manager_ids:
-            return sorted(
-                [stream for stream in self.live_streams if self._is_visible_live_stream(stream)],
-                key=lambda item: (item.created_at or datetime.min, item.id),
-                reverse=True,
-            )
-        scoped = [
-            stream
-            for stream in self.live_streams
-            if stream.manager_id in effective_manager_ids
-            and self._is_visible_live_stream(stream)
-        ]
+        elif not effective_manager_ids:
+            scoped = [stream for stream in self.live_streams if self._is_visible_live_stream(stream)]
+        else:
+            scoped = [
+                stream
+                for stream in self.live_streams
+                if stream.manager_id in effective_manager_ids
+                and self._is_visible_live_stream(stream)
+            ]
+        if normalized_owner_user_id:
+            scoped = [stream for stream in scoped if str(stream.owner_user_id or "").strip() == normalized_owner_user_id]
         return sorted(scoped, key=lambda item: (item.created_at or datetime.min, item.id), reverse=True)
 
     def _live_status_presentation(self, status: str) -> tuple[str, str]:
@@ -8970,12 +9010,23 @@ class AppStore:
 
     def get_user_dashboard_live_payload(self, user_id: str) -> dict[str, Any]:
         dashboard = self.get_user_live_workspace_view(user_id=user_id)
-        return {
-            "kpis": dashboard["kpis"],
-            "live_tabs": dashboard["live_tabs"],
-            "live_stream_rows": dashboard["live_stream_rows"],
-            "live_summary": dashboard["live_summary"],
-        }
+        return self._live_workspace_payload(dashboard)
+
+    def get_admin_live_workspace_payload(
+        self,
+        *,
+        manager_ids: list[str] | None = None,
+        viewer_role: str = "admin",
+        viewer_id: str | None = None,
+        owner_user_id: str | None = None,
+    ) -> dict[str, Any]:
+        dashboard = self.get_admin_live_workspace_context(
+            manager_ids=manager_ids,
+            viewer_role=viewer_role,
+            viewer_id=viewer_id,
+            owner_user_id=owner_user_id,
+        )
+        return self._live_workspace_payload(dashboard)
 
     def _resolve_job_preview(self, job: RenderJobRecord) -> dict[str, str] | None:
         if job.thumbnail_path and self._path_has_content(self._absolute_preview_path(str(job.thumbnail_path).strip())):
@@ -9275,6 +9326,7 @@ class AppStore:
                 "updated_meta": f"{meta.get('updated_by') or '-'} • {self._format_compact_datetime(meta.get('updated_at'))}",
                 "total_channels": self._user_channel_count(user),
                 "total_workers": self._user_worker_count(user),
+                "live_list_href": f"/admin/livestream/index?userId={quote(user.id)}",
                 "can_delete": not (
                     (viewer_role == "manager" and viewer_id and user.role == "manager" and user.id == viewer_id)
                     or (user.role == "admin" and len([item for item in self.users if item.role == "admin"]) <= 1)
@@ -10726,31 +10778,61 @@ class AppStore:
         viewer_role: str = "admin",
         viewer_id: str | None = None,
         manager_ids: list[str] | None = None,
+        user_id: str | None = None,
     ) -> list[dict[str, str]]:
         selected_manager_ids = self._effective_manager_scope_ids(
             viewer_role=viewer_role,
             viewer_id=viewer_id,
             manager_ids=manager_ids,
         )
+        normalized_user_id = str(user_id or "").strip()
         scoped_workers = [
             worker for worker in self.live_workers if not selected_manager_ids or worker.manager_id in selected_manager_ids
         ]
+        scoped_worker_ids = {worker.id for worker in scoped_workers}
         scoped_user_ids = {
             str(link.get("user_id") or "").strip()
             for link in self.live_user_worker_links
             if str(link.get("user_id") or "").strip()
+            and (
+                not selected_manager_ids
+                or str(link.get("worker_id") or "").strip() in scoped_worker_ids
+            )
         }
         scoped_users = [
             user
             for user in self.users
             if user.id in scoped_user_ids
-            and user.role == "user"
-            and (not selected_manager_ids or self._resolved_user_manager_id(user) in selected_manager_ids)
+            and user.role in {"user", "manager", "admin"}
         ]
+        if normalized_user_id:
+            owner_scoped_worker_ids = {
+                str(link.get("worker_id") or "").strip()
+                for link in self.live_user_worker_links
+                if str(link.get("user_id") or "").strip() == normalized_user_id
+            }
+            scoped_workers = [worker for worker in scoped_workers if worker.id in owner_scoped_worker_ids]
+            scoped_users = [user for user in scoped_users if user.id == normalized_user_id]
+            if not scoped_users:
+                try:
+                    scoped_owner = self._find_user(normalized_user_id)
+                except KeyError:
+                    scoped_owner = None
+                if scoped_owner is not None and scoped_owner.role in {"user", "manager", "admin"}:
+                    owner_visible_in_scope = not selected_manager_ids or bool(
+                        owner_scoped_worker_ids & scoped_worker_ids
+                    )
+                    if not owner_visible_in_scope and scoped_owner.role == "manager":
+                        owner_visible_in_scope = scoped_owner.id in selected_manager_ids
+                    if not owner_visible_in_scope and scoped_owner.role == "user":
+                        owner_visible_in_scope = self._resolved_user_manager_id(scoped_owner) in selected_manager_ids
+                    if owner_visible_in_scope:
+                        scoped_users = [scoped_owner]
         scoped_streams = self._scoped_live_streams(
             viewer_role=viewer_role,
             viewer_id=viewer_id,
             manager_ids=manager_ids,
+            owner_user_id=normalized_user_id or None,
         )
         live_ready = len([worker for worker in scoped_workers if worker.status in {"online", "busy"}])
         active_live_count = len(
@@ -10828,12 +10910,56 @@ class AppStore:
         live_form_values: dict[str, Any] | None = None,
         editing_stream_id: str | None = None,
         detail_stream_id: str | None = None,
+        owner_user_id: str | None = None,
     ) -> dict[str, Any]:
-        effective_manager_ids = self._effective_manager_scope_ids(
-            viewer_role=viewer_role,
-            viewer_id=viewer_id,
-            manager_ids=manager_ids,
+        effective_manager_ids = list(
+            self._effective_manager_scope_ids(
+                viewer_role=viewer_role,
+                viewer_id=viewer_id,
+                manager_ids=manager_ids,
+            )
         )
+        normalized_owner_user_id = str(owner_user_id or "").strip()
+        if normalized_owner_user_id:
+            owner = self._require_workspace_user(normalized_owner_user_id)
+            self._assert_live_stream_owner_scope(owner, viewer_role=viewer_role, viewer_id=viewer_id)
+            context = self.get_user_live_workspace_view(
+                user_id=owner.id,
+                notice=notice,
+                notice_level=notice_level,
+                live_form_values=live_form_values,
+                editing_stream_id=editing_stream_id,
+                detail_stream_id=detail_stream_id,
+            )
+            live_context_query, live_context_suffix = self._live_workspace_scope_query(
+                manager_ids=effective_manager_ids,
+                user_id=owner.id,
+            )
+            context.update(
+                {
+                    "template": "user_live_dashboard.html",
+                    "admin_shell": True,
+                    "workspace_label": "Manager workspace" if viewer_role == "manager" else "Admin workspace",
+                    "active_page": "live_workspace",
+                    "nav_items": self._admin_nav_items("live"),
+                    "user_name": "Manager" if viewer_role == "manager" else "Admin",
+                    "user_role": "Manager scope" if viewer_role == "manager" else "Control plane",
+                    "logout_path": "/admin/logout",
+                    "live_form_action": "/admin/live/update" if context.get("editing_stream_id") else "/admin/live/create",
+                    "live_form_manager_ids": effective_manager_ids,
+                    "live_form_user_id": owner.id,
+                    "live_form_cancel_href": "/admin/live" if context.get("editing_stream_id") else "",
+                    "live_index_href": "/admin/live",
+                    "live_delete_action": "/admin/live/delete",
+                    "live_stop_action": "/admin/live/stop",
+                    "live_context_query": live_context_query,
+                    "live_context_suffix": live_context_suffix,
+                    "live_dashboard_api_href": f"/api/admin/live/dashboard{live_context_query}",
+                }
+            )
+            return context
+
+        effective_manager_ids = set(effective_manager_ids)
         scoped_workers = [
             worker for worker in self.live_workers if not effective_manager_ids or worker.manager_id in effective_manager_ids
         ]
@@ -10955,11 +11081,18 @@ class AppStore:
                 "description": "Thiết lập BOT chính, BOT backup, media nguồn và lịch live.",
             },
             "live_form_action": "/admin/live/update" if editing_stream else "/admin/live/create",
-            "live_form_manager_ids": effective_manager_ids,
+            "live_form_manager_ids": list(effective_manager_ids),
+            "live_form_user_id": "",
             "live_form_mode": "edit" if editing_stream else "create",
             "live_form_submit_label": "Cập nhật luồng live" if editing_stream else "Tạo luồng live",
             "live_form_reset_label": "Hủy chỉnh sửa" if editing_stream else "Đặt lại",
             "live_form_cancel_href": "/admin/live" if editing_stream else "",
+            "live_index_href": "/admin/live",
+            "live_delete_action": "/admin/live/delete",
+            "live_stop_action": "/admin/live/stop",
+            "live_context_query": "",
+            "live_context_suffix": "",
+            "live_dashboard_api_href": "/api/admin/live/dashboard",
             "live_form": live_form_state,
             "primary_live_workers": self._build_live_worker_picker_cards(primary_workers),
             "backup_live_workers": self._build_live_worker_picker_cards(backup_workers),
@@ -12675,6 +12808,7 @@ class AppStore:
         self,
         *,
         manager_ids: list[str] | None = None,
+        user_id: str | None = None,
         channel_id: str | None = None,
         workspace_mode: str = "upload",
         viewer_role: str = "admin",
@@ -12696,10 +12830,18 @@ class AppStore:
         context["hide_workspace_tabs"] = True
 
         if is_live_workspace:
+            normalized_user_id = str(user_id or "").strip() or None
+            selected_user_name = ""
+            if normalized_user_id:
+                try:
+                    selected_user_name = self._find_user(normalized_user_id).username
+                except KeyError:
+                    selected_user_name = ""
             scoped_streams = self._scoped_live_streams(
                 viewer_role=viewer_role,
                 viewer_id=viewer_id,
                 manager_ids=manager_ids,
+                owner_user_id=normalized_user_id,
             )
             render_rows = self._build_live_render_rows(scoped_streams)
 
@@ -12710,11 +12852,19 @@ class AppStore:
                         viewer_role=viewer_role,
                         viewer_id=viewer_id,
                         manager_ids=manager_ids,
+                        user_id=normalized_user_id,
                     ),
                     "renders": render_rows,
                     "render_list_href": "/admin/livestream/index",
-                    "render_heading": "Danh sách live stream",
-                    "render_note": "Theo dõi luồng live stream theo bộ cột quản trị hiện tại, gộp timeline và cấu hình để bảng gọn và dễ rà soát hơn.",
+                    "render_heading": f"DS Live của {selected_user_name}" if selected_user_name else "Danh sách live stream",
+                    "render_note": (
+                        f"Đang lọc theo user {selected_user_name}. "
+                        "Theo dõi luồng live stream theo bộ cột quản trị hiện tại, gộp timeline và cấu hình để bảng gọn và dễ rà soát hơn."
+                        if selected_user_name
+                        else "Theo dõi luồng live stream theo bộ cột quản trị hiện tại, gộp timeline và cấu hình để bảng gọn và dễ rà soát hơn."
+                    ),
+                    "selected_user_id": normalized_user_id or "",
+                    "selected_user_name": selected_user_name,
                     "render_summary": (
                         f"Hiển thị 1 đến {len(render_rows)} trong {len(render_rows)} kết quả"
                         if render_rows

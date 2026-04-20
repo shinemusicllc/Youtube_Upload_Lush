@@ -5,7 +5,6 @@ import logging
 import os
 import re
 import shlex
-import textwrap
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -141,17 +140,6 @@ class WorkerDecommissionResult:
     vps_ip: str
     service_enabled: str
     service_active: str
-
-
-@dataclass(slots=True)
-class WorkerPasswordRotationRequest:
-    vps_ip: str
-    ssh_user: str
-    password: str | None = None
-    ssh_private_key: str | None = None
-    new_password: str = ""
-    target_user: str | None = None
-    connect_timeout: int = 20
 
 
 def _worker_ssh_short_timeout_seconds() -> int:
@@ -295,41 +283,6 @@ def build_worker_decommission_request(
     )
 
 
-def build_worker_password_rotation_request(
-    *,
-    vps_ip: str,
-    ssh_user: str,
-    new_password: str,
-    password: str | None = None,
-    ssh_private_key: str | None = None,
-    target_user: str | None = None,
-) -> WorkerPasswordRotationRequest:
-    normalized_ip = str(vps_ip or "").strip()
-    if not normalized_ip:
-        raise WorkerBootstrapError("VPS IP là bắt buộc.")
-    normalized_user = str(ssh_user or "").strip() or "root"
-    normalized_target_user = str(target_user or normalized_user).strip() or normalized_user
-    normalized_key = str(ssh_private_key or "").strip()
-    normalized_password = str(password or "").strip()
-    normalized_new_password = str(new_password or "").strip()
-    if not normalized_new_password:
-        raise WorkerBootstrapError("Password mới là bắt buộc.")
-    if "\n" in normalized_new_password or "\r" in normalized_new_password:
-        raise WorkerBootstrapError("Password mới không được chứa ký tự xuống dòng.")
-    if not normalized_key and not normalized_password:
-        raise WorkerBootstrapError(
-            "BOT này chưa có credential SSH hiện tại để đổi password thật trên VPS."
-        )
-    return WorkerPasswordRotationRequest(
-        vps_ip=normalized_ip,
-        ssh_user=normalized_user,
-        password=normalized_password or None,
-        ssh_private_key=normalized_key or None,
-        new_password=normalized_new_password,
-        target_user=normalized_target_user,
-    )
-
-
 def _ensure_runtime_dependency() -> None:
     if paramiko is None:
         raise WorkerBootstrapError("Thiếu dependency `paramiko`. Hãy cài lại backend requirements trước.")
@@ -361,7 +314,7 @@ def _load_private_key(raw_key: str):
     raise WorkerBootstrapError(f"SSH key không hợp lệ: {last_error or 'unknown error'}")
 
 
-def _connect_client(request: WorkerBootstrapRequest | WorkerDecommissionRequest | WorkerPasswordRotationRequest):
+def _connect_client(request: WorkerBootstrapRequest | WorkerDecommissionRequest):
     _ensure_runtime_dependency()
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -700,82 +653,6 @@ def decommission_worker_via_ssh(
             except Exception:
                 logger.debug("decommission_tempdir_cleanup_failed vps_ip=%s temp_dir=%s", request.vps_ip, temp_dir, exc_info=True)
         client.close()
-
-
-def rotate_worker_password_via_ssh(
-    request: WorkerPasswordRotationRequest,
-    *,
-    progress: Callable[[str], None] | None = None,
-) -> None:
-    client = _connect_client(request)
-    try:
-        if progress:
-            progress(f"Đang kết nối SSH tới VPS {request.vps_ip} để đổi password hệ điều hành...")
-        target_user = str(request.target_user or request.ssh_user).strip() or str(request.ssh_user or "").strip() or "root"
-        sudo_prefix = "" if request.ssh_user == "root" else "sudo -n "
-        command = textwrap.dedent(
-            f"""\
-            {sudo_prefix}python3 - <<'PY'
-            import subprocess
-            import sys
-
-            user = {target_user!r}
-            password = {request.new_password!r}
-            process = subprocess.run(
-                ["chpasswd"],
-                input=f"{{user}}:{{password}}\\n",
-                text=True,
-                capture_output=True,
-            )
-            if process.returncode != 0:
-                sys.stdout.write(process.stdout or "")
-                sys.stderr.write(process.stderr or "")
-                raise SystemExit(process.returncode)
-            PY
-            """
-        )
-        if progress:
-            progress("Đang áp dụng password mới trên VPS...")
-        exit_code, stdout, stderr = _run_remote_command(
-            client,
-            command,
-            timeout_seconds=_worker_ssh_short_timeout_seconds(),
-        )
-        if exit_code != 0:
-            raise WorkerBootstrapError(_remote_command_error_message(command, stdout, stderr))
-    finally:
-        client.close()
-
-
-def rotate_worker_password_on_vps(
-    *,
-    store,
-    worker_id: str,
-    new_password: str | None,
-    workspace_mode: str = "upload",
-    current_password_override: str | None = None,
-    progress: Callable[[str], None] | None = None,
-) -> bool:
-    normalized_new_password = str(new_password or "").strip()
-    if not normalized_new_password:
-        return False
-    profile = store.get_worker_connection_profile(worker_id, workspace_mode=workspace_mode)
-    normalized_current_password = str(profile.get("password") or "").strip()
-    if normalized_current_password and normalized_current_password == normalized_new_password:
-        return False
-    auth_mode = str(profile.get("auth_mode") or "password").strip().lower() or "password"
-    request = build_worker_password_rotation_request(
-        vps_ip=str(profile.get("vps_ip") or "").strip(),
-        ssh_user=str(profile.get("ssh_user") or "").strip() or "root",
-        password=(
-            str(current_password_override if current_password_override is not None else profile.get("password") or "").strip() or None
-        ) if auth_mode != "ssh_key" else None,
-        ssh_private_key=(str(profile.get("ssh_private_key") or "").strip() or None) if auth_mode == "ssh_key" else None,
-        new_password=normalized_new_password,
-        target_user=str(profile.get("ssh_user") or "").strip() or "root",
-    )
-    rotate_worker_password_via_ssh(request, progress=progress)
-    return True
 
 
 def _run_worker_install_operation_legacy_unused(store, operation_id: str, request: WorkerBootstrapRequest) -> None:

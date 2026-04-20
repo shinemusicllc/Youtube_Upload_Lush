@@ -183,6 +183,7 @@ def _redirect_live_page_with_scope(
     level: str = "success",
     *,
     manager_ids: list[str] | None = None,
+    user_id: str | None = None,
 ):
     query: list[tuple[str, str]] = [
         ("notice", message),
@@ -191,6 +192,29 @@ def _redirect_live_page_with_scope(
     for manager_id in manager_ids or []:
         if manager_id:
             query.append(("manager_ids", manager_id))
+    if user_id:
+        query.append(("userId", user_id))
+        return RedirectResponse(url=f"/admin/livestream/index?{urlencode(query, doseq=True)}", status_code=303)
+    return RedirectResponse(url=f"/app/live?{urlencode(query, doseq=True)}", status_code=303)
+
+
+def _redirect_live_workspace_with_scope(
+    message: str,
+    level: str = "success",
+    *,
+    manager_ids: list[str] | None = None,
+    user_id: str | None = None,
+):
+    query: list[tuple[str, str]] = [
+        ("notice", message),
+        ("notice_level", level),
+    ]
+    for manager_id in manager_ids or []:
+        if manager_id:
+            query.append(("manager_ids", manager_id))
+    if user_id:
+        query.append(("userId", user_id))
+        return RedirectResponse(url=f"/admin/live?{urlencode(query, doseq=True)}", status_code=303)
     return RedirectResponse(url=f"/app/live?{urlencode(query, doseq=True)}", status_code=303)
 
 
@@ -1805,16 +1829,43 @@ async def admin_bot_update_thread(request: Request):
 async def admin_live_index(
     request: Request,
     manager_ids: list[str] = Query(default=[]),
+    userId: str | None = None,
     notice: str | None = None,
     notice_level: str = "success",
     edit: str | None = None,
     detail: str | None = None,
 ):
+    current_admin = require_admin_access(request)
+    selected_manager_ids = _resolve_manager_ids(request, manager_ids)
+    resolved_user_id = str(userId or "").strip()
+    stream_context_id = str(edit or detail or "").strip()
+    if not resolved_user_id and stream_context_id:
+        try:
+            resolved_user_id = store.get_live_stream(
+                stream_context_id,
+                viewer_role=current_admin.role,
+                viewer_id=current_admin.id,
+            ).owner_user_id
+        except (KeyError, ValueError):
+            resolved_user_id = ""
+    if resolved_user_id:
+        _enforce_user_scope(current_admin, resolved_user_id)
+        selected_manager_ids = _resolve_bot_scope_manager_ids(selected_manager_ids, resolved_user_id)
+        return _render(
+            request,
+            store.get_admin_live_workspace_context(
+                manager_ids=selected_manager_ids,
+                viewer_role=current_admin.role,
+                viewer_id=current_admin.id,
+                notice=notice,
+                notice_level=notice_level,
+                editing_stream_id=edit,
+                detail_stream_id=detail,
+                owner_user_id=resolved_user_id,
+            ),
+        )
     query = request.url.query
-    return RedirectResponse(
-        url=f"/app/live?{query}" if query else "/app/live",
-        status_code=302,
-    )
+    return RedirectResponse(url=f"/app/live?{query}" if query else "/app/live", status_code=302)
 
 
 @router.post("/admin/live/create")
@@ -1824,14 +1875,21 @@ async def admin_live_create(request: Request):
     manager_ids = [str(value).strip() for value in form.getlist("manager_ids") if str(value).strip()]
     if current_admin.role == "manager" and not manager_ids:
         manager_ids = [current_admin.id]
+    user_id = str(form.get("userId") or form.get("user_id") or "").strip()
+    if user_id:
+        _enforce_user_scope(current_admin, user_id)
     live_form_values = _extract_live_form_values(form)
     try:
         start_time_live = _parse_live_form_datetime(live_form_values["start_at"])
         end_time_live = _parse_live_form_datetime(live_form_values["end_at"])
-        owner = store.resolve_live_owner_from_primary_worker(
-            live_form_values["primary_worker_id"],
-            viewer_role=current_admin.role,
-            viewer_id=current_admin.id,
+        owner = (
+            store._require_workspace_user(user_id)
+            if user_id
+            else store.resolve_live_owner_from_primary_worker(
+                live_form_values["primary_worker_id"],
+                viewer_role=current_admin.role,
+                viewer_id=current_admin.id,
+            )
         )
         store.create_live_stream(
             owner_user_id=owner.id,
@@ -1849,7 +1907,12 @@ async def admin_live_create(request: Request):
             viewer_role=current_admin.role,
             viewer_id=current_admin.id,
         )
-        return _redirect_live_page_with_scope("Đã tạo luồng live stream.", "success", manager_ids=manager_ids)
+        return _redirect_live_workspace_with_scope(
+            "Đã tạo luồng live stream.",
+            "success",
+            manager_ids=manager_ids,
+            user_id=owner.id if user_id else None,
+        )
     except (KeyError, ValueError) as exc:
         dashboard = store.get_admin_live_workspace_context(
             manager_ids=manager_ids,
@@ -1858,6 +1921,7 @@ async def admin_live_create(request: Request):
             notice=str(exc),
             notice_level="error",
             live_form_values=live_form_values,
+            owner_user_id=user_id or None,
         )
         return _render(request, dashboard, status_code=422)
 
@@ -1870,6 +1934,9 @@ async def admin_live_update(request: Request):
     if current_admin.role == "manager" and not manager_ids:
         manager_ids = [current_admin.id]
     stream_id = str(form.get("stream_id") or "").strip()
+    user_id = str(form.get("userId") or form.get("user_id") or "").strip()
+    if user_id:
+        _enforce_user_scope(current_admin, user_id)
     live_form_values = _extract_live_form_values(form)
     try:
         start_time_live = _parse_live_form_datetime(live_form_values["start_at"])
@@ -1890,7 +1957,12 @@ async def admin_live_update(request: Request):
             viewer_role=current_admin.role,
             viewer_id=current_admin.id,
         )
-        return _redirect_live_page_with_scope("Đã cập nhật luồng live stream.", "success", manager_ids=manager_ids)
+        return _redirect_live_workspace_with_scope(
+            "Đã cập nhật luồng live stream.",
+            "success",
+            manager_ids=manager_ids,
+            user_id=user_id or None,
+        )
     except (KeyError, ValueError) as exc:
         dashboard = store.get_admin_live_workspace_context(
             manager_ids=manager_ids,
@@ -1900,6 +1972,7 @@ async def admin_live_update(request: Request):
             notice_level="error",
             live_form_values=live_form_values,
             editing_stream_id=stream_id,
+            owner_user_id=user_id or None,
         )
         return _render(request, dashboard, status_code=422)
 
@@ -1912,15 +1985,16 @@ async def admin_live_delete(request: Request):
     if current_admin.role == "manager" and not manager_ids:
         manager_ids = [current_admin.id]
     stream_id = str(form.get("stream_id") or "").strip()
+    user_id = str(form.get("userId") or form.get("user_id") or "").strip()
     try:
         store.delete_live_stream(
             stream_id,
             viewer_role=current_admin.role,
             viewer_id=current_admin.id,
         )
-        return _redirect_live_page_with_scope("Đã xóa luồng live stream.", "success", manager_ids=manager_ids)
+        return _redirect_live_page_with_scope("Đã xóa luồng live stream.", "success", manager_ids=manager_ids, user_id=user_id)
     except (KeyError, ValueError) as exc:
-        return _redirect_live_page_with_scope(str(exc), "error", manager_ids=manager_ids)
+        return _redirect_live_page_with_scope(str(exc), "error", manager_ids=manager_ids, user_id=user_id)
 
 
 @router.post("/admin/live/stop")
@@ -1931,23 +2005,36 @@ async def admin_live_stop(request: Request):
     if current_admin.role == "manager" and not manager_ids:
         manager_ids = [current_admin.id]
     stream_id = str(form.get("stream_id") or "").strip()
+    user_id = str(form.get("userId") or form.get("user_id") or "").strip()
     try:
         store.stop_live_stream(
             stream_id,
             viewer_role=current_admin.role,
             viewer_id=current_admin.id,
         )
-        return _redirect_live_page_with_scope("Đã dừng luồng live stream.", "success", manager_ids=manager_ids)
+        return _redirect_live_page_with_scope("Đã dừng luồng live stream.", "success", manager_ids=manager_ids, user_id=user_id)
     except (KeyError, ValueError) as exc:
-        return _redirect_live_page_with_scope(str(exc), "error", manager_ids=manager_ids)
+        return _redirect_live_page_with_scope(str(exc), "error", manager_ids=manager_ids, user_id=user_id)
 
 
-@router.get("/admin/live/index")
-async def admin_live_index_legacy(request: Request):
-    query = request.url.query
-    return RedirectResponse(
-        url=f"/app/live?{query}" if query else "/app/live",
-        status_code=302,
+@router.get("/admin/live/index", response_class=HTMLResponse)
+async def admin_live_index_legacy(
+    request: Request,
+    manager_ids: list[str] = Query(default=[]),
+    userId: str | None = None,
+    notice: str | None = None,
+    notice_level: str = "success",
+    edit: str | None = None,
+    detail: str | None = None,
+):
+    return await admin_live_index(
+        request,
+        manager_ids=manager_ids,
+        userId=userId,
+        notice=notice,
+        notice_level=notice_level,
+        edit=edit,
+        detail=detail,
     )
 
 
@@ -2348,15 +2435,20 @@ async def admin_upload_info(
 async def admin_livestream_index(
     request: Request,
     manager_ids: list[str] = Query(default=[]),
+    userId: str | None = None,
     notice: str | None = None,
     notice_level: str = "success",
 ):
     current_admin = require_admin_access(request)
+    if userId:
+        _enforce_user_scope(current_admin, userId)
     selected_manager_ids = _resolve_manager_ids(request, manager_ids)
+    selected_manager_ids = _resolve_bot_scope_manager_ids(selected_manager_ids, userId)
     return _render(
         request,
         store.get_admin_render_index_context(
             manager_ids=selected_manager_ids,
+            user_id=userId,
             viewer_role=current_admin.role,
             viewer_id=current_admin.id,
             notice=notice,

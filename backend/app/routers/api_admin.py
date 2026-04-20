@@ -145,6 +145,31 @@ def _enforce_worker_scope(request: Request, worker_id: str, *, workspace_mode: s
         raise HTTPException(status_code=403, detail="Không đủ quyền thao tác BOT ngoài scope manager.")
 
 
+@router.get("/admin/live/dashboard")
+async def get_admin_live_dashboard(
+    request: Request,
+    manager_ids: list[str] = Query(default=[]),
+    userId: str | None = None,
+):
+    current_user = require_admin_access(request)
+    resolved_user_id = str(userId or "").strip() or current_user.id
+    _enforce_user_scope(request, resolved_user_id)
+    resolved_manager_ids = _manager_ids_from_request(request, manager_ids)
+    if not resolved_manager_ids:
+        focus_user = store._find_user(resolved_user_id)
+        if focus_user.role == "manager":
+            resolved_manager_ids = [focus_user.id]
+        else:
+            resolved_manager_id = store._resolved_user_manager_id(focus_user)
+            resolved_manager_ids = [resolved_manager_id] if resolved_manager_id else []
+    return store.get_admin_live_workspace_payload(
+        manager_ids=resolved_manager_ids,
+        viewer_role=current_user.role,
+        viewer_id=current_user.id,
+        owner_user_id=resolved_user_id,
+    )
+
+
 def _start_bot_workspace_conversion(
     request: Request,
     current_user,

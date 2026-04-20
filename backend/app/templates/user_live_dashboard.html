@@ -548,6 +548,8 @@
       <div class="min-w-0 w-full px-8 py-6 space-y-6">
         {% set live_index_href = dashboard.live_index_href | default('/app/live') %}
         {% set live_delete_action = dashboard.live_delete_action | default('/app/live/delete') %}
+        {% set live_context_query = dashboard.live_context_query | default('', true) %}
+        {% set live_context_suffix = dashboard.live_context_suffix | default('', true) %}
         {% if dashboard.notice %}
         <div
           hidden
@@ -578,7 +580,7 @@
               <h3 class="mt-1 font-display text-[18px] font-bold text-slate-900">{{ dashboard.detail_stream.title | e }}</h3>
               <p class="mt-1 text-[12px] text-slate-500">BOT chính {{ dashboard.detail_stream.primary_worker_name | e }}{% if dashboard.detail_stream.manager_name and dashboard.detail_stream.manager_name != '-' %} • Manager {{ dashboard.detail_stream.manager_name | e }}{% endif %}</p>
             </div>
-            <a href="{{ live_index_href }}{% for manager_id in dashboard.live_form_manager_ids | default([], true) %}{% if loop.first %}?{% else %}&{% endif %}manager_ids={{ manager_id | e }}{% endfor %}" class="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-[13px] font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900">
+            <a href="{{ live_index_href }}{{ live_context_query }}" class="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-[13px] font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900">
               Đóng chi tiết
             </a>
           </div>
@@ -633,6 +635,9 @@
           {% for manager_id in dashboard.live_form_manager_ids | default([], true) %}
           <input type="hidden" name="manager_ids" value="{{ manager_id | e }}">
           {% endfor %}
+          {% if dashboard.live_form_user_id %}
+          <input type="hidden" name="userId" value="{{ dashboard.live_form_user_id | e }}">
+          {% endif %}
           {% if dashboard.editing_stream_id %}
           <input type="hidden" name="stream_id" value="{{ dashboard.editing_stream_id | e }}">
           {% endif %}
@@ -821,7 +826,7 @@
             <div class="mt-auto border-t border-slate-100/80 pt-4">
               <div class="flex items-center justify-end gap-2">
                 {% if dashboard.live_form_mode == 'edit' %}
-                <a href="{{ dashboard.live_form_cancel_href | e }}{% for manager_id in dashboard.live_form_manager_ids | default([], true) %}{% if loop.first and '?' not in dashboard.live_form_cancel_href %}?{% else %}&{% endif %}manager_ids={{ manager_id | e }}{% endfor %}" class="panel-action-button inline-flex min-w-[128px] px-4 bg-white hover:bg-slate-50 text-slate-600 font-semibold transition-all border border-slate-200 rounded-lg text-[13px] hover:shadow-sm">{{ dashboard.live_form_reset_label | e }}</a>
+                <a href="{{ dashboard.live_form_cancel_href | e }}{{ live_context_query }}" class="panel-action-button inline-flex min-w-[128px] px-4 bg-white hover:bg-slate-50 text-slate-600 font-semibold transition-all border border-slate-200 rounded-lg text-[13px] hover:shadow-sm">{{ dashboard.live_form_reset_label | e }}</a>
                 {% else %}
                 <button type="reset" class="panel-action-button inline-flex min-w-[108px] px-4 bg-white hover:bg-slate-50 text-slate-600 font-semibold transition-all border border-slate-200 rounded-lg text-[13px] hover:shadow-sm">{{ dashboard.live_form_reset_label | e }}</button>
                 {% endif %}
@@ -874,13 +879,16 @@
                         {% for manager_id in dashboard.live_form_manager_ids | default([], true) %}
                         <input type="hidden" name="manager_ids" value="{{ manager_id | e }}">
                         {% endfor %}
+                        {% if dashboard.live_form_user_id %}
+                        <input type="hidden" name="userId" value="{{ dashboard.live_form_user_id | e }}">
+                        {% endif %}
                         <button type="submit" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 hover:text-rose-800 hover:shadow-sm transition-all"><i data-lucide="square" class="w-3 h-3"></i> Dừng</button>
                       </form>
                       {% else %}
                       <button type="button" disabled class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-slate-400 bg-white border border-slate-200 rounded-lg cursor-not-allowed"><i data-lucide="square" class="w-3 h-3"></i> Dừng</button>
                       {% endif %}
                       {% if stream.can_edit %}
-                      <a href="{{ live_index_href }}?edit={{ stream.id | e }}{% for manager_id in dashboard.live_form_manager_ids | default([], true) %}&manager_ids={{ manager_id | e }}{% endfor %}" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 hover:text-emerald-700 hover:shadow-sm transition-all"><i data-lucide="pencil" class="w-3.5 h-3.5"></i> Sửa</a>
+                      <a href="{{ live_index_href }}?edit={{ stream.id | e }}{{ live_context_suffix }}" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 hover:text-emerald-700 hover:shadow-sm transition-all"><i data-lucide="pencil" class="w-3.5 h-3.5"></i> Sửa</a>
                       {% else %}
                       <button type="button" disabled title="Luồng đang được worker xử lý hoặc đang live." class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-slate-400 bg-white border border-slate-200 rounded-lg cursor-not-allowed"><i data-lucide="pencil" class="w-3.5 h-3.5"></i> Sửa</button>
                       {% endif %}
@@ -890,12 +898,15 @@
                         {% for manager_id in dashboard.live_form_manager_ids | default([], true) %}
                         <input type="hidden" name="manager_ids" value="{{ manager_id | e }}">
                         {% endfor %}
+                        {% if dashboard.live_form_user_id %}
+                        <input type="hidden" name="userId" value="{{ dashboard.live_form_user_id | e }}">
+                        {% endif %}
                         <button type="submit" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 hover:text-rose-800 hover:shadow-sm transition-all"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Xóa</button>
                       </form>
                       {% else %}
                       <button type="button" disabled title="Luồng đang live, hãy dùng Dừng trước." class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-slate-400 bg-white border border-slate-200 rounded-lg cursor-not-allowed"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Xóa</button>
                       {% endif %}
-                      <a href="{{ live_index_href }}?detail={{ stream.id | e }}{% for manager_id in dashboard.live_form_manager_ids | default([], true) %}&manager_ids={{ manager_id | e }}{% endfor %}" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-sky-700 bg-sky-50 border border-sky-200 rounded-lg hover:bg-sky-100 hover:text-sky-800 hover:shadow-sm transition-all"><i data-lucide="eye" class="w-3 h-3"></i> Chi tiết</a>
+                      <a href="{{ live_index_href }}?detail={{ stream.id | e }}{{ live_context_suffix }}" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-sky-700 bg-sky-50 border border-sky-200 rounded-lg hover:bg-sky-100 hover:text-sky-800 hover:shadow-sm transition-all"><i data-lucide="eye" class="w-3 h-3"></i> Chi tiết</a>
                     </div>
                   </td>
                   <td class="px-6 py-5 align-top">
@@ -1284,7 +1295,9 @@
     const liveDeleteApiBase = '/api/user/live';
     const liveBulkDeleteAction = '/api/user/live/actions/bulk-delete';
     const liveStopAction = {{ (dashboard.live_stop_action | default('/app/live/stop')) | tojson }};
+    const liveDashboardApiHref = {{ (dashboard.live_dashboard_api_href | default('/api/user/dashboard/live')) | tojson }};
     const liveManagerIds = {{ dashboard.live_form_manager_ids | default([], true) | tojson }};
+    const liveUserId = {{ dashboard.live_form_user_id | default('', true) | tojson }};
     let liveTelegramBindingState = {{ dashboard.live_telegram | default({}, true) | tojson }};
     let liveTelegramBindingMeta = {
       bot_username: '',
@@ -1320,6 +1333,16 @@
     const buildLiveManagerHiddenInputs = () => Array.isArray(liveManagerIds)
       ? liveManagerIds.map((id) => `<input type="hidden" name="manager_ids" value="${escapeHtml(String(id))}">`).join('')
       : '';
+
+    const buildLiveUserQuery = () => {
+      const cleaned = String(liveUserId || '').trim();
+      return cleaned ? `&userId=${encodeURIComponent(cleaned)}` : '';
+    };
+
+    const buildLiveUserHiddenInputs = () => {
+      const cleaned = String(liveUserId || '').trim();
+      return cleaned ? `<input type="hidden" name="userId" value="${escapeHtml(cleaned)}">` : '';
+    };
 
     const normalizeLiveHistoryValue = (key, value) => {
       const raw = String(value || '').trim();
@@ -1390,6 +1413,10 @@
           const cleaned = String(id || '').trim();
           if (cleaned) params.append('manager_ids', cleaned);
         });
+      }
+      const cleanedUserId = String(liveUserId || '').trim();
+      if (cleanedUserId) {
+        params.set('userId', cleanedUserId);
       }
       const query = params.toString();
       return `${liveIndexHref}${query ? `?${query}` : ''}`;
@@ -1983,13 +2010,16 @@
     const renderLiveActionMarkup = (stream) => {
       const managerHiddenInputs = buildLiveManagerHiddenInputs();
       const managerQuery = buildLiveManagerQuery();
-      const editHref = `${liveIndexHref}?edit=${encodeURIComponent(String(stream.id || ''))}${managerQuery}`;
-      const detailHref = `${liveIndexHref}?detail=${encodeURIComponent(String(stream.id || ''))}${managerQuery}`;
+      const userHiddenInputs = buildLiveUserHiddenInputs();
+      const userQuery = buildLiveUserQuery();
+      const editHref = `${liveIndexHref}?edit=${encodeURIComponent(String(stream.id || ''))}${managerQuery}${userQuery}`;
+      const detailHref = `${liveIndexHref}?detail=${encodeURIComponent(String(stream.id || ''))}${managerQuery}${userQuery}`;
       const stopForm = stream.can_stop
         ? `
           <form method="post" action="${escapeHtml(liveStopAction)}" class="live-table-action-form" data-live-stop-form data-live-stop-stream-title="${escapeHtml(stream.title || stream.stream_name || '')}">
             <input type="hidden" name="stream_id" value="${escapeHtml(stream.id || '')}">
             ${managerHiddenInputs}
+            ${userHiddenInputs}
             <button type="submit" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 hover:text-rose-800 hover:shadow-sm transition-all"><i data-lucide="square" class="w-3 h-3"></i> Dừng</button>
           </form>
         `
@@ -2001,6 +2031,7 @@
           <form method="post" action="${escapeHtml(liveDeleteAction)}" class="live-table-action-form" data-live-delete-form>
             <input type="hidden" name="stream_id" value="${escapeHtml(stream.id || '')}">
             ${managerHiddenInputs}
+            ${userHiddenInputs}
             <button type="submit" class="live-table-action-btn inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 hover:text-rose-800 hover:shadow-sm transition-all"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Xóa</button>
           </form>
         `
@@ -2114,7 +2145,9 @@
     const forceRefreshLiveDashboard = async () => {
       if (!liveStreamTableBody) return false;
       try {
-        const response = await fetch(`/api/user/dashboard/live?ts=${Date.now()}`, {
+        const refreshUrl = new URL(liveDashboardApiHref, window.location.origin);
+        refreshUrl.searchParams.set('ts', String(Date.now()));
+        const response = await fetch(refreshUrl.toString(), {
           headers: { Accept: 'application/json', 'Cache-Control': 'no-cache, no-store, max-age=0', Pragma: 'no-cache' },
           cache: 'no-store',
         });
@@ -2156,7 +2189,9 @@
       }
       liveRefreshInFlight = true;
       try {
-        const response = await fetch(`/api/user/dashboard/live?ts=${Date.now()}`, {
+        const refreshUrl = new URL(liveDashboardApiHref, window.location.origin);
+        refreshUrl.searchParams.set('ts', String(Date.now()));
+        const response = await fetch(refreshUrl.toString(), {
           headers: { Accept: 'application/json', 'Cache-Control': 'no-cache, no-store, max-age=0', Pragma: 'no-cache' },
           cache: 'no-store',
         });
