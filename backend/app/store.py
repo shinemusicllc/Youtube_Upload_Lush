@@ -1409,15 +1409,44 @@ class AppStore:
         *,
         manager_ids: list[str] | None = None,
         after_id: str | None = None,
+        after_created_at: str | None = None,
         scope: str = "bot-ops",
     ) -> dict[str, Any]:
         selected_ids = set(self._selected_manager_ids(manager_ids))
         normalized_after_id = str(after_id or "").strip()
+        normalized_after_created_at = str(after_created_at or "").strip()
+        after_created_at_value = self._parse_datetime(normalized_after_created_at) if normalized_after_created_at else None
         latest_id = self._latest_admin_notification_id(manager_ids=manager_ids, scope=scope)
-        if not normalized_after_id:
+        if not normalized_after_id and after_created_at_value is None:
             return {"items": [], "cursor": latest_id}
         if normalized_after_id == latest_id:
             return {"items": [], "cursor": latest_id}
+
+        def serialize_item(item: dict[str, Any]) -> dict[str, Any]:
+            created_at_value = self._parse_datetime(item.get("created_at"))
+            return {
+                "id": str(item.get("id") or "").strip(),
+                "message": str(item.get("message") or "").strip(),
+                "level": str(item.get("level") or "info").strip() or "info",
+                "created_at": self._format_full_datetime(created_at_value),
+                "created_at_iso": created_at_value.isoformat() if created_at_value else "",
+            }
+
+        def collect_since_created_at() -> list[dict[str, Any]]:
+            if after_created_at_value is None:
+                return []
+            items: list[dict[str, Any]] = []
+            for item in self.admin_notifications:
+                if str(item.get("scope") or "").strip() != scope:
+                    continue
+                manager_id = str(item.get("manager_id") or "").strip()
+                if selected_ids and manager_id not in selected_ids:
+                    continue
+                created_at_value = self._parse_datetime(item.get("created_at"))
+                if created_at_value is None or created_at_value <= after_created_at_value:
+                    continue
+                items.append(serialize_item(item))
+            return items
 
         seen_after = False
         items: list[dict[str, Any]] = []
@@ -1432,14 +1461,11 @@ class AppStore:
             manager_id = str(item.get("manager_id") or "").strip()
             if selected_ids and manager_id not in selected_ids:
                 continue
-            items.append(
-                {
-                    "id": item_id,
-                    "message": str(item.get("message") or "").strip(),
-                    "level": str(item.get("level") or "info").strip() or "info",
-                    "created_at": self._format_full_datetime(self._parse_datetime(item.get("created_at"))),
-                }
-            )
+            items.append(serialize_item(item))
+        if normalized_after_id and not seen_after and after_created_at_value is not None:
+            return {"items": collect_since_created_at(), "cursor": latest_id}
+        if not normalized_after_id:
+            return {"items": collect_since_created_at(), "cursor": latest_id}
         return {"items": items, "cursor": latest_id}
 
     def fail_worker_operation(
@@ -10621,6 +10647,7 @@ class AppStore:
                     manager_ids=manager_ids,
                 ),
                 "worker_event_cursor": self._latest_admin_notification_id(manager_ids=manager_ids),
+                "worker_event_started_at": self._now(trim=False).isoformat(),
                 "focus_user": focus_user,
                 "manager_binding_locked": viewer_role == "manager",
                 "bot_manager_options": self._bot_manager_options(viewer_role=viewer_role, viewer_id=viewer_id),

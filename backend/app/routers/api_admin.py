@@ -556,6 +556,7 @@ async def get_admin_bots(
     manager_ids: list[str] | None = Query(default=None),
     userId: str | None = None,
     after_event_id: str | None = None,
+    after_event_created_at: str | None = None,
     workspace: str = "upload",
 ):
     if userId:
@@ -582,6 +583,7 @@ async def get_admin_bots(
     notifications = store.get_admin_notifications(
         manager_ids=selected_manager_ids,
         after_id=after_event_id,
+        after_created_at=after_event_created_at,
     )
     return JSONResponse(
         {

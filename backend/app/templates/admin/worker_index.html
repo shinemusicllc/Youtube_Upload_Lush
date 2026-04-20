@@ -290,7 +290,7 @@
                         <th class="w-[206px] text-right" data-admin-sort-label="T&#225;c v&#7909;">T&#225;c v&#7909;</th>
                     </tr>
                 </thead>
-                <tbody data-worker-live-body data-live-endpoint="/api/admin/bots" data-initial-event-cursor="{{ dashboard.worker_event_cursor or '' }}">
+                <tbody data-worker-live-body data-live-endpoint="/api/admin/bots" data-initial-event-cursor="{{ dashboard.worker_event_cursor or '' }}" data-initial-event-started-at="{{ dashboard.worker_event_started_at or '' }}">
                     {% for worker in dashboard.workers %}
                     {% set created_parts = (worker.created_at or '').split(' ') %}
                     {% set compact_operation_row = worker.row_dimmed and worker.actions_disabled %}
@@ -846,6 +846,7 @@
     let liveFetchInFlight = false;
     let lastPayloadSignature = '';
     let lastEventCursor = tbody ? String(tbody.dataset.initialEventCursor || '').trim() : '';
+    let lastEventCreatedAt = tbody ? String(tbody.dataset.initialEventStartedAt || '').trim() : '';
     const shownEventIds = new Set();
 
     function showSystemNotice(message, type) {
@@ -2324,6 +2325,9 @@
         if (lastEventCursor) {
           requestUrl.searchParams.set('after_event_id', lastEventCursor);
         }
+        if (lastEventCreatedAt) {
+          requestUrl.searchParams.set('after_event_created_at', lastEventCreatedAt);
+        }
 
         const response = await fetch(requestUrl.toString(), {
           method: 'GET',
@@ -2348,6 +2352,10 @@
         const events = Array.isArray(payload.events) ? payload.events : [];
         events.forEach(function (item) {
           const eventId = String(item && item.id ? item.id : '').trim();
+          const eventCreatedAt = String(item && item.created_at_iso ? item.created_at_iso : '').trim();
+          if (eventCreatedAt && (!lastEventCreatedAt || eventCreatedAt > lastEventCreatedAt)) {
+            lastEventCreatedAt = eventCreatedAt;
+          }
           if (eventId) {
             if (shownEventIds.has(eventId)) {
               return;
