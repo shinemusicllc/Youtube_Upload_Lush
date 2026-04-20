@@ -11419,6 +11419,24 @@ class AppStore:
             }
             new_selected_user_ids = selected_user_id_set - set(current_links_by_user_id.keys())
             should_apply_threads_to_all_selected = not new_selected_user_ids
+            assignment_changed = set(current_links_by_user_id.keys()) != selected_user_id_set
+            if should_apply_threads_to_all_selected and not assignment_changed:
+                for selected_user in selected_users:
+                    existing_link = current_links_by_user_id.get(selected_user.id)
+                    if existing_link is None:
+                        assignment_changed = True
+                        break
+                    current_role = self._normalize_live_assignment_role(
+                        existing_link.get("live_role"),
+                        fallback_note=existing_link.get("note"),
+                    )
+                    selected_role = normalized_live_role or current_role
+                    if current_role != selected_role:
+                        assignment_changed = True
+                        break
+                    if self._live_link_allocated_threads(existing_link) != normalized_threads:
+                        assignment_changed = True
+                        break
             if should_apply_threads_to_all_selected:
                 projected_total_allocated_threads = normalized_threads * len(selected_user_id_set)
             else:
@@ -11431,7 +11449,7 @@ class AppStore:
                     + (normalized_threads * len(new_selected_user_ids))
                 )
             worker_capacity = self._effective_live_worker_thread_limit(worker)
-            if projected_total_allocated_threads > worker_capacity:
+            if assignment_changed and projected_total_allocated_threads > worker_capacity:
                 raise ValueError(
                     f"BOT {self._resolve_live_worker_display_name(worker.id)} chỉ có trần {worker_capacity} luồng, "
                     f"nhưng cấu hình hiện tại đang cấp phát tổng cộng {projected_total_allocated_threads} luồng "
