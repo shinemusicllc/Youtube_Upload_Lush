@@ -620,7 +620,10 @@
             {% endif %}
 
                 <div class="border-b border-slate-200 px-5 py-4">
-                    <h3 class="section-title">C&#7853;p nh&#7853;t BOT</h3>
+                    <h3 class="section-title">
+                        C&#7853;p nh&#7853;t BOT
+                        <span class="ml-2 font-mono text-[13px] font-semibold text-slate-500" data-edit-bot-id-label hidden></span>
+                    </h3>
                     <p class="section-note">S&#7917;a t&#234;n BOT, ch&#7885;n manager, g&#225;n user v&#224; c&#7845;u h&#236;nh BOT theo 3 ch&#7913;c n&#259;ng `Upload`, `Live ch&#237;nh` ho&#7863;c `Backup` trong c&#249;ng m&#7897;t modal.</p>
                 </div>
             <div class="space-y-4 px-5 py-5">
@@ -771,6 +774,7 @@
     const editBotPasswordInput = document.getElementById('edit-bot-password');
     const editBotWorkspaceInput = document.getElementById('edit-bot-workspace');
     const editBotCurrentWorkspaceInput = document.getElementById('edit-bot-current-workspace');
+    const editBotIdLabel = document.querySelector('[data-edit-bot-id-label]');
     const editBotManagerTransferCleanupInput = document.getElementById('edit-bot-manager-transfer-cleanup');
     const editBotWorkspaceTransferCleanupInput = document.getElementById('edit-bot-workspace-transfer-cleanup');
     const editBotThreadField = document.querySelector('[data-edit-bot-thread-field]');
@@ -890,11 +894,31 @@
       }
     }
 
+    function formatBotDisplayId(value) {
+      const normalized = String(value || '').trim();
+      if (!normalized) {
+        return '';
+      }
+      return normalized
+        .split('-')
+        .map(function (segment) {
+          if (!segment) {
+            return '';
+          }
+          return segment.charAt(0).toUpperCase() + segment.slice(1);
+        })
+        .join('-');
+    }
+
     function resetEditBotDialogState() {
       initialEditBotManagerId = '';
       initialEditBotUserIds = [];
       initialEditBotWorkspaceKind = 'upload';
       initialEditBotFunctionValue = 'upload';
+      if (editBotIdLabel) {
+        editBotIdLabel.textContent = '';
+        editBotIdLabel.hidden = true;
+      }
       if (editBotCurrentWorkspaceInput) {
         editBotCurrentWorkspaceInput.value = 'upload';
       }
@@ -1847,7 +1871,13 @@
       }
 
       if (button.matches('[data-dialog-open="edit-bot-dialog"]')) {
-        document.getElementById('edit-bot-id').value = button.dataset.workerId || '';
+        const workerId = String(button.dataset.workerId || '').trim();
+        document.getElementById('edit-bot-id').value = workerId;
+        if (editBotIdLabel) {
+          const formattedWorkerId = formatBotDisplayId(workerId);
+          editBotIdLabel.textContent = formattedWorkerId ? '• ' + formattedWorkerId : '';
+          editBotIdLabel.hidden = !formattedWorkerId;
+        }
         document.getElementById('edit-bot-name').value = button.dataset.workerName || '';
         if (editBotPasswordInput) {
           editBotPasswordInput.value = button.dataset.workerPassword || '';
