@@ -15,7 +15,7 @@ from pathlib import Path
 import shutil
 import sqlite3
 from threading import Event, RLock, Thread
-from typing import Any
+from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, urlencode, urlparse
 from urllib.request import Request, urlopen
@@ -11291,6 +11291,7 @@ class AppStore:
         manager_id: str | None,
         *,
         password: str | None = None,
+        apply_system_password_change: Callable[[str, str, str], None] | None = None,
         live_role: str | None = None,
         threads: int | None = None,
         assigned_user_id: str | None = None,
@@ -11305,6 +11306,10 @@ class AppStore:
             raise ValueError("Tên BOT là bắt buộc.")
         normalized_group = self._normalized_bot_group(group)
         normalized_password = str(password or "").strip()
+        existing_connection_password = str(
+            (self.worker_connection_profiles.get(worker.id) or {}).get("password") or ""
+        ).strip()
+        password_changed = bool(normalized_password) and normalized_password != existing_connection_password
         normalized_user_id = str(assigned_user_id or "").strip()
         normalized_user_ids: list[str] = []
         seen_user_ids: set[str] = set()
@@ -11499,6 +11504,8 @@ class AppStore:
                     existing_link["note"] = self._live_assignment_note(selected_role)
 
         worker.name = normalized_name
+        if password_changed and apply_system_password_change is not None:
+            apply_system_password_change(worker.id, normalized_password, "live")
         self._apply_live_worker_manager(worker, manager)
         worker.group = normalized_group
         worker.capacity = self._effective_live_worker_thread_limit(worker)
@@ -11506,7 +11513,7 @@ class AppStore:
         self.live_user_worker_links = next_live_user_worker_links
         if next_live_streams is not self.live_streams:
             self.live_streams = next_live_streams
-        if normalized_password:
+        if password_changed:
             self.update_worker_connection_password(worker.id, normalized_password, workspace_mode="live")
         self._save_state()
 
@@ -11615,6 +11622,7 @@ class AppStore:
         *,
         workspace_mode: str = "upload",
         password: str | None = None,
+        apply_system_password_change: Callable[[str, str, str], None] | None = None,
         live_role: str | None = None,
         threads: int | None = None,
         assigned_user_id: str | None = None,
@@ -11631,6 +11639,7 @@ class AppStore:
                 group,
                 manager_id,
                 password=password,
+                apply_system_password_change=apply_system_password_change,
                 live_role=live_role,
                 threads=threads,
                 assigned_user_id=assigned_user_id,
@@ -11641,11 +11650,15 @@ class AppStore:
             )
             return
         worker = self._find_worker(worker_id)
-        if not name.strip():
+        normalized_name = str(name or "").strip()
+        if not normalized_name:
             raise ValueError("Tên BOT là bắt buộc.")
-        worker.name = name.strip()
         normalized_group = str(group or "").strip()
         normalized_password = str(password or "").strip()
+        existing_connection_password = str(
+            (self.worker_connection_profiles.get(worker.id) or {}).get("password") or ""
+        ).strip()
+        password_changed = bool(normalized_password) and normalized_password != existing_connection_password
         normalized_user_id = str(assigned_user_id or "").strip()
         normalized_user_ids: list[str] = []
         seen_user_ids: set[str] = set()
@@ -11670,10 +11683,6 @@ class AppStore:
                 raise ValueError("Manager không được đổi phạm vi BOT sang manager khác.")
             if worker.manager_id and worker.manager_id != manager.id:
                 raise ValueError("BOT này không nằm trong phạm vi manager hiện tại.")
-
-            self._apply_worker_manager(worker, manager)
-            if normalized_group:
-                worker.group = normalized_group
 
             current_worker_links = [
                 link for link in self.user_worker_links if str(link.get("worker_id") or "").strip() == worker.id
@@ -11780,7 +11789,13 @@ class AppStore:
                     existing_link["threads"] = self._fixed_assignment_threads()
                     existing_link["note"] = str(existing_link.get("note") or "").strip() or "VPS được cấp"
 
-            if normalized_password:
+            if password_changed and apply_system_password_change is not None:
+                apply_system_password_change(worker.id, normalized_password, "upload")
+            worker.name = normalized_name
+            self._apply_worker_manager(worker, manager)
+            if normalized_group:
+                worker.group = normalized_group
+            if password_changed:
                 self.update_worker_connection_password(worker.id, normalized_password, workspace_mode="upload")
             self._save_state()
             return
@@ -11822,11 +11837,14 @@ class AppStore:
                     worker.id,
                     session_reason="Session đã đóng do BOT đã được chuyển sang manager khác.",
                 )
+        if password_changed and apply_system_password_change is not None:
+            apply_system_password_change(worker.id, normalized_password, "upload")
+        worker.name = normalized_name
         self._apply_worker_manager(worker, manager)
         if normalized_group:
             worker.group = normalized_group
         if manager is None:
-            if normalized_password:
+            if password_changed:
                 self.update_worker_connection_password(worker.id, normalized_password, workspace_mode="upload")
             self._save_state()
             return
@@ -11934,7 +11952,7 @@ class AppStore:
             else:
                 existing_link["threads"] = self._fixed_assignment_threads()
                 existing_link["note"] = str(existing_link.get("note") or "").strip() or "VPS được cấp"
-        if normalized_password:
+        if password_changed:
             self.update_worker_connection_password(worker.id, normalized_password, workspace_mode="upload")
         self._save_state()
 

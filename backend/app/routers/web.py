@@ -32,6 +32,7 @@ from ..worker_bootstrap import (
     WorkerBootstrapError,
     build_worker_decommission_request,
     build_worker_bootstrap_request,
+    rotate_worker_password_on_vps,
     start_worker_decommission_operation,
     start_worker_install_operation,
 )
@@ -421,12 +422,20 @@ def _start_bot_workspace_conversion(
         if resolved_target_workspace_mode == "live"
         else store.suggest_next_worker_bootstrap_id()
     )
-    if password and str(password).strip():
-        store.update_worker_connection_password(
-            worker_id,
-            password,
+    normalized_password = str(password or "").strip()
+    if normalized_password:
+        password_changed = rotate_worker_password_on_vps(
+            store=store,
+            worker_id=worker_id,
+            new_password=normalized_password,
             workspace_mode=resolved_current_workspace_mode,
         )
+        if password_changed:
+            store.update_worker_connection_password(
+                worker_id,
+                normalized_password,
+                workspace_mode=resolved_current_workspace_mode,
+            )
     profile = store.get_worker_connection_profile(worker_id, workspace_mode=resolved_current_workspace_mode)
     bootstrap_request = build_worker_bootstrap_request(
         vps_ip=profile["vps_ip"],
@@ -1512,6 +1521,14 @@ async def admin_bot_update(request: Request):
         _enforce_user_scope(current_admin, selected_user_id)
 
     try:
+        def apply_system_password_change(target_worker_id: str, next_password: str, target_workspace_mode: str) -> None:
+            rotate_worker_password_on_vps(
+                store=store,
+                worker_id=target_worker_id,
+                new_password=next_password,
+                workspace_mode=target_workspace_mode,
+            )
+
         if current_workspace_mode != workspace_mode:
             if not confirm_workspace_transfer_cleanup:
                 raise ValueError("Hãy xác nhận cảnh báo chuyển loại BOT rồi thử lại.")
@@ -1547,6 +1564,7 @@ async def admin_bot_update(request: Request):
             manager_id,
             workspace_mode=workspace_mode,
             password=password,
+            apply_system_password_change=apply_system_password_change,
             live_role=live_role,
             threads=requested_threads,
             assigned_user_id=assigned_user_id,
@@ -1563,7 +1581,7 @@ async def admin_bot_update(request: Request):
             user_id=return_user_id,
             workspace=workspace_mode,
         )
-    except (KeyError, ValueError) as exc:
+    except (KeyError, ValueError, WorkerBootstrapError) as exc:
         return _redirect_bot_page_with_scope(
             str(exc),
             "error",
