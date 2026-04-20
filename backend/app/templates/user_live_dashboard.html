@@ -1298,6 +1298,10 @@
     const liveDashboardApiHref = {{ (dashboard.live_dashboard_api_href | default('/api/user/dashboard/live')) | tojson }};
     const liveManagerIds = {{ dashboard.live_form_manager_ids | default([], true) | tojson }};
     const liveUserId = {{ dashboard.live_form_user_id | default('', true) | tojson }};
+    const liveOwnerUserId = {{ dashboard.live_owner_user_id | default('', true) | tojson }};
+    const liveOwnerDisplayName = {{ dashboard.user_name | default('', true) | tojson }};
+    const liveAdminShell = {{ dashboard.admin_shell | default(false, true) | tojson }};
+    const useAdminLiveOwnerContext = Boolean(liveAdminShell) && Boolean(String(liveUserId || '').trim());
     let liveTelegramBindingState = {{ dashboard.live_telegram | default({}, true) | tojson }};
     let liveTelegramBindingMeta = {
       bot_username: '',
@@ -1316,7 +1320,7 @@
     let liveTelegramPollTimer = null;
     let liveTelegramLinkRequest = null;
     let liveTelegramPreviousBodyOverflow = '';
-    const LIVE_INPUT_HISTORY_STORAGE_PREFIX = 'youtube-lush-live-input-history:';
+    const LIVE_INPUT_HISTORY_STORAGE_PREFIX = 'youtube-lush-live-input-history';
     const LIVE_INPUT_HISTORY_LIMIT = 8;
 
     const escapeHtml = (value) => String(value ?? '')
@@ -1353,7 +1357,27 @@
       return raw;
     };
 
-    const liveHistoryStorageKey = (key) => `${LIVE_INPUT_HISTORY_STORAGE_PREFIX}${key}`;
+    const resolveLiveHistoryScopeKey = () => {
+      const cleanedOwnerId = String(liveOwnerUserId || '').trim();
+      if (cleanedOwnerId) return cleanedOwnerId;
+      const cleanedScopedUserId = String(liveUserId || '').trim();
+      if (cleanedScopedUserId) return cleanedScopedUserId;
+      return 'self';
+    };
+
+    const liveHistoryStorageKey = (key) => `${LIVE_INPUT_HISTORY_STORAGE_PREFIX}:${resolveLiveHistoryScopeKey()}:${key}`;
+
+    const buildScopedLiveTelegramApiHref = (basePath, extraParams) => {
+      const params = extraParams instanceof URLSearchParams ? new URLSearchParams(extraParams) : new URLSearchParams();
+      const apiPrefix = useAdminLiveOwnerContext ? '/api/admin' : '/api/user';
+      if (useAdminLiveOwnerContext) {
+        params.set('userId', String(liveUserId || '').trim());
+      }
+      const query = params.toString();
+      return `${apiPrefix}${basePath}${query ? `?${query}` : ''}`;
+    };
+
+    const liveTelegramTargetLabel = () => String(liveOwnerDisplayName || '').trim() || 'tài khoản này';
 
     const readLiveHistory = (key) => {
       try {
@@ -1471,8 +1495,8 @@
 
       if (liveTelegramConnectButton instanceof HTMLButtonElement) {
         liveTelegramConnectButton.title = linked
-          ? 'Tài khoản này đã kết nối Telegram live.'
-          : 'Kết nối Telegram live để nhận thông báo cho luồng của chính bạn.';
+          ? `${liveTelegramTargetLabel()} đã kết nối Telegram live.`
+          : `Kết nối Telegram live để nhận thông báo cho luồng của ${liveTelegramTargetLabel()}.`;
       }
     };
 
@@ -1486,7 +1510,7 @@
 
     const refreshLiveTelegramBinding = async () => {
       const payload = await readLiveTelegramJson(
-        await fetch('/api/user/live/telegram', {
+        await fetch(buildScopedLiveTelegramApiHref('/live/telegram'), {
           headers: { Accept: 'application/json', 'Cache-Control': 'no-cache, no-store, max-age=0', Pragma: 'no-cache' },
           cache: 'no-store',
         }),
@@ -1524,10 +1548,16 @@
       }
       try {
         const payload = await readLiveTelegramJson(
-          await fetch(`/api/user/live/telegram-link/status?code=${encodeURIComponent(String(liveTelegramLinkRequest.code || ''))}`, {
-            headers: { Accept: 'application/json', 'Cache-Control': 'no-cache, no-store, max-age=0', Pragma: 'no-cache' },
-            cache: 'no-store',
-          }),
+          await fetch(
+            buildScopedLiveTelegramApiHref(
+              '/live/telegram-link/status',
+              new URLSearchParams({ code: String(liveTelegramLinkRequest.code || '') }),
+            ),
+            {
+              headers: { Accept: 'application/json', 'Cache-Control': 'no-cache, no-store, max-age=0', Pragma: 'no-cache' },
+              cache: 'no-store',
+            },
+          ),
           'Không thể đọc trạng thái kết nối Telegram live.'
         );
         if (String(payload.status || '') === 'linked') {
@@ -1537,8 +1567,8 @@
           if (payload.telegram_name) identityParts.push(String(payload.telegram_name));
           if (payload.telegram_username) identityParts.push(`@${payload.telegram_username}`);
           const identityLabel = identityParts.length ? ` (${identityParts.join(' • ')})` : '';
-          setLiveTelegramStatus('success', `Đã kết nối Telegram live ${payload.chat_id || ''}${identityLabel}. Từ bây giờ các luồng live tạo bằng tài khoản này sẽ tự gửi thông báo riêng.`);
-          showToast('Đã kết nối Telegram live cho tài khoản hiện tại.', 'success');
+          setLiveTelegramStatus('success', `Đã kết nối Telegram live ${payload.chat_id || ''}${identityLabel}. Từ bây giờ các luồng live tạo bằng ${liveTelegramTargetLabel()} sẽ tự gửi thông báo riêng.`);
+          showToast(`Đã kết nối Telegram live cho ${liveTelegramTargetLabel()}.`, 'success');
           liveTelegramLinkRequest = null;
           return;
         }
@@ -1554,7 +1584,7 @@
 
     const requestLiveTelegramLink = async () => {
       const payload = await readLiveTelegramJson(
-        await fetch('/api/user/live/telegram-link/request', {
+        await fetch(buildScopedLiveTelegramApiHref('/live/telegram-link/request'), {
           method: 'POST',
           headers: {
             Accept: 'application/json',
@@ -1590,7 +1620,7 @@
       document.body.style.overflow = 'hidden';
       liveTelegramModal.classList.remove('hidden');
       liveTelegramModal.setAttribute('aria-hidden', 'false');
-      setLiveTelegramStatus('loading', 'Đang kiểm tra trạng thái Telegram live của tài khoản hiện tại...');
+      setLiveTelegramStatus('loading', `Đang kiểm tra trạng thái Telegram live của ${liveTelegramTargetLabel()}...`);
       try {
         const payload = await refreshLiveTelegramBinding();
         if (String(payload.bot_error || '').trim()) {
@@ -1598,7 +1628,7 @@
           return;
         }
         if (payload.linked) {
-          setLiveTelegramStatus('pending', 'Tài khoản này đã kết nối Telegram live. Nếu muốn đổi sang Telegram khác, hãy bấm Mở bot Telegram rồi nhấn Start bằng tài khoản mới.');
+          setLiveTelegramStatus('pending', `${liveTelegramTargetLabel()} đã kết nối Telegram live. Nếu muốn đổi sang Telegram khác, hãy bấm Mở bot Telegram rồi nhấn Start bằng tài khoản mới.`);
         } else {
           setLiveTelegramStatus('pending', 'Bấm Mở bot Telegram rồi nhấn Start bằng đúng tài khoản muốn nhận thông báo live.');
         }
@@ -1833,7 +1863,7 @@
         stopLiveTelegramPolling();
         liveTelegramLinkRequest = null;
         await readLiveTelegramJson(
-          await fetch('/api/user/live/telegram', {
+          await fetch(buildScopedLiveTelegramApiHref('/live/telegram'), {
             method: 'DELETE',
             headers: {
               Accept: 'application/json',
@@ -1843,7 +1873,7 @@
           'Không thể ngắt kết nối Telegram live.'
         );
         await refreshLiveTelegramBinding();
-        setLiveTelegramStatus('success', 'Đã ngắt kết nối Telegram live của tài khoản hiện tại.');
+        setLiveTelegramStatus('success', `Đã ngắt kết nối Telegram live của ${liveTelegramTargetLabel()}.`);
         showToast('Đã ngắt kết nối Telegram live.', 'success');
       } catch (error) {
         setLiveTelegramStatus('error', error instanceof Error ? error.message : 'Không thể ngắt kết nối Telegram live.');

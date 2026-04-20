@@ -446,18 +446,13 @@ def _start_bot_workspace_conversion(
         else store.suggest_next_worker_bootstrap_id()
     )
     normalized_password = str(password or "").strip()
-    if normalized_password:
-        store.update_worker_connection_password(
-            worker_id=worker_id,
-            password=normalized_password,
-            workspace_mode=resolved_current_workspace_mode,
-            persist=True,
-        )
     profile = store.get_worker_connection_profile(worker_id, workspace_mode=resolved_current_workspace_mode)
+    effective_auth_mode = "password" if normalized_password else str(profile.get("auth_mode") or "password").strip().lower() or "password"
+    effective_password = normalized_password or profile["password"]
     bootstrap_request = build_worker_bootstrap_request(
         vps_ip=profile["vps_ip"],
         ssh_user=profile["ssh_user"],
-        password=profile["password"],
+        password=effective_password if effective_auth_mode != "ssh_key" else None,
         ssh_private_key=profile["ssh_private_key"],
         shared_secret=store.get_worker_shared_secret(),
         control_plane_url=_resolve_worker_bootstrap_control_plane_url(request),
@@ -473,8 +468,8 @@ def _start_bot_workspace_conversion(
         store=store,
         request=bootstrap_request,
         ssh_user=profile["ssh_user"],
-        auth_mode=profile["auth_mode"],
-        password=profile["password"],
+        auth_mode=effective_auth_mode,
+        password=effective_password if effective_auth_mode != "ssh_key" else None,
         ssh_private_key=profile["ssh_private_key"],
         manager_id=manager_id,
         manager_name=manager_name,
