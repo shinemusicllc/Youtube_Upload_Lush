@@ -54,7 +54,7 @@ from .schemas import (
     WorkerRecord,
     WorkerYouTubeUploadTarget,
 )
-from .worker_bootstrap import ensure_worker_operation_threads, suggest_next_worker_id
+from .worker_bootstrap import WorkerBootstrapError, ensure_worker_operation_threads, suggest_next_worker_id
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
@@ -1247,6 +1247,7 @@ class AppStore:
         password: str | None,
         *,
         workspace_mode: str = "upload",
+        persist: bool = False,
     ) -> None:
         normalized_password = str(password or "").strip()
         if not normalized_password:
@@ -1260,6 +1261,57 @@ class AppStore:
             password=normalized_password,
             ssh_private_key=str(profile.get("ssh_private_key") or "").strip() or None,
         )
+        if persist:
+            self._save_state()
+
+    def apply_worker_connection_password_change(
+        self,
+        worker_id: str,
+        password: str | None,
+        *,
+        workspace_mode: str = "upload",
+        apply_system_password_change: Callable[[str, str | None, str, str], None],
+    ) -> None:
+        normalized_password = str(password or "").strip()
+        if not normalized_password:
+            return
+        profile = self.get_worker_connection_profile(worker_id, workspace_mode=workspace_mode)
+        current_password = str(profile.get("password") or "").strip() or None
+        current_ssh_private_key = str(profile.get("ssh_private_key") or "").strip() or None
+        current_auth_mode = str(profile.get("auth_mode") or "").strip().lower() or (
+            "ssh_key" if current_ssh_private_key else "password"
+        )
+        apply_system_password_change(worker_id, current_password, normalized_password, workspace_mode)
+        try:
+            self.update_worker_connection_password(
+                worker_id,
+                normalized_password,
+                workspace_mode=workspace_mode,
+                persist=True,
+            )
+        except Exception as exc:
+            self._remember_worker_connection_profile(
+                worker_id,
+                vps_ip=str(profile.get("vps_ip") or "").strip(),
+                ssh_user=str(profile.get("ssh_user") or "").strip() or "root",
+                auth_mode=current_auth_mode,
+                password=current_password,
+                ssh_private_key=current_ssh_private_key,
+            )
+            if current_auth_mode != "ssh_key" and current_password:
+                try:
+                    apply_system_password_change(
+                        worker_id,
+                        normalized_password,
+                        current_password,
+                        workspace_mode,
+                    )
+                except Exception as rollback_exc:
+                    raise WorkerBootstrapError(
+                        "Password trên VPS đã đổi nhưng control-plane không lưu được credential mới, "
+                        "và rollback password cũ cũng thất bại."
+                    ) from rollback_exc
+            raise
 
     @staticmethod
     def _worker_operation_is_finished(task: dict[str, Any]) -> bool:
@@ -11291,7 +11343,7 @@ class AppStore:
         manager_id: str | None,
         *,
         password: str | None = None,
-        apply_system_password_change: Callable[[str, str, str], None] | None = None,
+        apply_system_password_change: Callable[[str, str | None, str, str], None] | None = None,
         live_role: str | None = None,
         threads: int | None = None,
         assigned_user_id: str | None = None,
@@ -11503,9 +11555,14 @@ class AppStore:
                     existing_link["live_role"] = selected_role
                     existing_link["note"] = self._live_assignment_note(selected_role)
 
-        worker.name = normalized_name
         if password_changed and apply_system_password_change is not None:
-            apply_system_password_change(worker.id, normalized_password, "live")
+            self.apply_worker_connection_password_change(
+                worker.id,
+                normalized_password,
+                workspace_mode="live",
+                apply_system_password_change=apply_system_password_change,
+            )
+        worker.name = normalized_name
         self._apply_live_worker_manager(worker, manager)
         worker.group = normalized_group
         worker.capacity = self._effective_live_worker_thread_limit(worker)
@@ -11513,8 +11570,6 @@ class AppStore:
         self.live_user_worker_links = next_live_user_worker_links
         if next_live_streams is not self.live_streams:
             self.live_streams = next_live_streams
-        if password_changed:
-            self.update_worker_connection_password(worker.id, normalized_password, workspace_mode="live")
         self._save_state()
 
     def _delete_live_bot_state(self, worker_id: str) -> None:
@@ -11622,7 +11677,7 @@ class AppStore:
         *,
         workspace_mode: str = "upload",
         password: str | None = None,
-        apply_system_password_change: Callable[[str, str, str], None] | None = None,
+        apply_system_password_change: Callable[[str, str | None, str, str], None] | None = None,
         live_role: str | None = None,
         threads: int | None = None,
         assigned_user_id: str | None = None,
@@ -11790,13 +11845,16 @@ class AppStore:
                     existing_link["note"] = str(existing_link.get("note") or "").strip() or "VPS được cấp"
 
             if password_changed and apply_system_password_change is not None:
-                apply_system_password_change(worker.id, normalized_password, "upload")
+                self.apply_worker_connection_password_change(
+                    worker.id,
+                    normalized_password,
+                    workspace_mode="upload",
+                    apply_system_password_change=apply_system_password_change,
+                )
             worker.name = normalized_name
             self._apply_worker_manager(worker, manager)
             if normalized_group:
                 worker.group = normalized_group
-            if password_changed:
-                self.update_worker_connection_password(worker.id, normalized_password, workspace_mode="upload")
             self._save_state()
             return
 
@@ -11838,14 +11896,17 @@ class AppStore:
                     session_reason="Session đã đóng do BOT đã được chuyển sang manager khác.",
                 )
         if password_changed and apply_system_password_change is not None:
-            apply_system_password_change(worker.id, normalized_password, "upload")
+            self.apply_worker_connection_password_change(
+                worker.id,
+                normalized_password,
+                workspace_mode="upload",
+                apply_system_password_change=apply_system_password_change,
+            )
         worker.name = normalized_name
         self._apply_worker_manager(worker, manager)
         if normalized_group:
             worker.group = normalized_group
         if manager is None:
-            if password_changed:
-                self.update_worker_connection_password(worker.id, normalized_password, workspace_mode="upload")
             self._save_state()
             return
         current_worker_links = [
@@ -11952,8 +12013,6 @@ class AppStore:
             else:
                 existing_link["threads"] = self._fixed_assignment_threads()
                 existing_link["note"] = str(existing_link.get("note") or "").strip() or "VPS được cấp"
-        if password_changed:
-            self.update_worker_connection_password(worker.id, normalized_password, workspace_mode="upload")
         self._save_state()
 
     def reconcile_assignment_target_bots(

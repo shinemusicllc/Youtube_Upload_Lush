@@ -753,6 +753,7 @@ def rotate_worker_password_on_vps(
     worker_id: str,
     new_password: str | None,
     workspace_mode: str = "upload",
+    current_password_override: str | None = None,
     progress: Callable[[str], None] | None = None,
 ) -> bool:
     normalized_new_password = str(new_password or "").strip()
@@ -766,7 +767,9 @@ def rotate_worker_password_on_vps(
     request = build_worker_password_rotation_request(
         vps_ip=str(profile.get("vps_ip") or "").strip(),
         ssh_user=str(profile.get("ssh_user") or "").strip() or "root",
-        password=(str(profile.get("password") or "").strip() or None) if auth_mode != "ssh_key" else None,
+        password=(
+            str(current_password_override if current_password_override is not None else profile.get("password") or "").strip() or None
+        ) if auth_mode != "ssh_key" else None,
         ssh_private_key=(str(profile.get("ssh_private_key") or "").strip() or None) if auth_mode == "ssh_key" else None,
         new_password=normalized_new_password,
         target_user=str(profile.get("ssh_user") or "").strip() or "root",
