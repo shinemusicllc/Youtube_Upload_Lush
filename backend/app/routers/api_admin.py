@@ -51,6 +51,7 @@ class AdminUserBotUpdatePayload(BaseModel):
 class AdminBotUpdatePayload(BaseModel):
     name: str
     group: str | None = None
+    password: str | None = None
     manager_id: str | None = None
     live_role: str | None = None
     threads: int | None = None
@@ -156,6 +157,7 @@ def _start_bot_workspace_conversion(
     manager_id: str | None,
     live_role: str | None,
     threads: int | None,
+    password: str | None,
     assigned_user_ids: list[str],
 ) -> dict[str, Any]:
     resolved_current_workspace_mode = _resolve_workspace_mode(current_workspace_mode)
@@ -214,6 +216,12 @@ def _start_bot_workspace_conversion(
         if resolved_target_workspace_mode == "live"
         else store.suggest_next_worker_bootstrap_id()
     )
+    if password and str(password).strip():
+        store.update_worker_connection_password(
+            worker_id,
+            password,
+            workspace_mode=resolved_current_workspace_mode,
+        )
     profile = store.get_worker_connection_profile(worker_id, workspace_mode=resolved_current_workspace_mode)
     bootstrap_request = build_worker_bootstrap_request(
         vps_ip=profile["vps_ip"],
@@ -693,6 +701,7 @@ async def update_admin_bot(request: Request, bot_id: str, payload: AdminBotUpdat
             manager_id=manager_id,
             live_role=payload.live_role,
             threads=payload.threads,
+            password=payload.password,
             assigned_user_ids=assigned_user_ids if payload.assigned_user_ids is not None else [],
         )
         return {"ok": True, "conversion_started": True}
@@ -702,6 +711,7 @@ async def update_admin_bot(request: Request, bot_id: str, payload: AdminBotUpdat
         payload.group,
         manager_id,
         workspace_mode=workspace_mode,
+        password=payload.password,
         live_role=payload.live_role,
         threads=payload.threads,
         assigned_user_id=assigned_user_id,

@@ -1241,6 +1241,26 @@ class AppStore:
             "updated_at": self._parse_datetime(profile.get("updated_at")),
         }
 
+    def update_worker_connection_password(
+        self,
+        worker_id: str,
+        password: str | None,
+        *,
+        workspace_mode: str = "upload",
+    ) -> None:
+        normalized_password = str(password or "").strip()
+        if not normalized_password:
+            return
+        profile = self.get_worker_connection_profile(worker_id, workspace_mode=workspace_mode)
+        self._remember_worker_connection_profile(
+            worker_id,
+            vps_ip=str(profile.get("vps_ip") or "").strip(),
+            ssh_user=str(profile.get("ssh_user") or "").strip() or "root",
+            auth_mode="password",
+            password=normalized_password,
+            ssh_private_key=str(profile.get("ssh_private_key") or "").strip() or None,
+        )
+
     @staticmethod
     def _worker_operation_is_finished(task: dict[str, Any]) -> bool:
         return str(task.get("status") or "").strip() == "completed"
@@ -10379,6 +10399,7 @@ class AppStore:
                     if is_live_workspace
                     else self._resolve_worker_display_name(worker.id)
                 )
+                connection_profile = dict(self.worker_connection_profiles.get(worker.id) or {})
                 assigned_user_ids = [user.id for user in assigned_users]
                 assigned_user_names = [user.username for user in assigned_users]
                 if len(assigned_users) == 1:
@@ -10407,6 +10428,7 @@ class AppStore:
                     "bot_function_label": bot_function_label,
                     "assigned_user_id": assigned_user_id,
                     "assigned_user_ids": assigned_user_ids,
+                    "connection_password": str(connection_profile.get("password") or "").strip(),
                     "assigned_user_name": assigned_user_name,
                     "assigned_user_names_text": ", ".join(assigned_user_names),
                     "assigned_live_role": assigned_live_role,
@@ -11268,6 +11290,7 @@ class AppStore:
         group: str | None,
         manager_id: str | None,
         *,
+        password: str | None = None,
         live_role: str | None = None,
         threads: int | None = None,
         assigned_user_id: str | None = None,
@@ -11281,6 +11304,7 @@ class AppStore:
         if not normalized_name:
             raise ValueError("Tên BOT là bắt buộc.")
         normalized_group = self._normalized_bot_group(group)
+        normalized_password = str(password or "").strip()
         normalized_user_id = str(assigned_user_id or "").strip()
         normalized_user_ids: list[str] = []
         seen_user_ids: set[str] = set()
@@ -11464,6 +11488,8 @@ class AppStore:
         self.live_user_worker_links = next_live_user_worker_links
         if next_live_streams is not self.live_streams:
             self.live_streams = next_live_streams
+        if normalized_password:
+            self.update_worker_connection_password(worker.id, normalized_password, workspace_mode="live")
         self._save_state()
 
     def _delete_live_bot_state(self, worker_id: str) -> None:
@@ -11570,6 +11596,7 @@ class AppStore:
         manager_id: str | None,
         *,
         workspace_mode: str = "upload",
+        password: str | None = None,
         live_role: str | None = None,
         threads: int | None = None,
         assigned_user_id: str | None = None,
@@ -11585,6 +11612,7 @@ class AppStore:
                 name,
                 group,
                 manager_id,
+                password=password,
                 live_role=live_role,
                 threads=threads,
                 assigned_user_id=assigned_user_id,
@@ -11599,6 +11627,7 @@ class AppStore:
             raise ValueError("Tên BOT là bắt buộc.")
         worker.name = name.strip()
         normalized_group = str(group or "").strip()
+        normalized_password = str(password or "").strip()
         normalized_user_id = str(assigned_user_id or "").strip()
         normalized_user_ids: list[str] = []
         seen_user_ids: set[str] = set()
@@ -11733,6 +11762,8 @@ class AppStore:
                     existing_link["threads"] = self._fixed_assignment_threads()
                     existing_link["note"] = str(existing_link.get("note") or "").strip() or "VPS được cấp"
 
+            if normalized_password:
+                self.update_worker_connection_password(worker.id, normalized_password, workspace_mode="upload")
             self._save_state()
             return
 
@@ -11777,6 +11808,8 @@ class AppStore:
         if normalized_group:
             worker.group = normalized_group
         if manager is None:
+            if normalized_password:
+                self.update_worker_connection_password(worker.id, normalized_password, workspace_mode="upload")
             self._save_state()
             return
         current_worker_links = [
@@ -11883,6 +11916,8 @@ class AppStore:
             else:
                 existing_link["threads"] = self._fixed_assignment_threads()
                 existing_link["note"] = str(existing_link.get("note") or "").strip() or "VPS được cấp"
+        if normalized_password:
+            self.update_worker_connection_password(worker.id, normalized_password, workspace_mode="upload")
         self._save_state()
 
     def reconcile_assignment_target_bots(

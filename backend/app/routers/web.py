@@ -362,6 +362,7 @@ def _start_bot_workspace_conversion(
     manager_id: str | None,
     live_role: str | None,
     threads: int | None,
+    password: str | None,
     assigned_user_ids: list[str],
 ) -> dict[str, Any]:
     resolved_current_workspace_mode = _resolve_admin_workspace(current_workspace_mode)
@@ -420,6 +421,12 @@ def _start_bot_workspace_conversion(
         if resolved_target_workspace_mode == "live"
         else store.suggest_next_worker_bootstrap_id()
     )
+    if password and str(password).strip():
+        store.update_worker_connection_password(
+            worker_id,
+            password,
+            workspace_mode=resolved_current_workspace_mode,
+        )
     profile = store.get_worker_connection_profile(worker_id, workspace_mode=resolved_current_workspace_mode)
     bootstrap_request = build_worker_bootstrap_request(
         vps_ip=profile["vps_ip"],
@@ -1455,6 +1462,7 @@ async def admin_bot_update(request: Request):
     _enforce_worker_scope(current_admin, worker_id, workspace_mode=current_workspace_mode)
     name = str(form.get("Name") or form.get("name") or "").strip()
     group = str(form.get("Group") or form.get("group") or "").strip() or None
+    password = str(form.get("Password") or form.get("password") or "").strip() or None
     raw_manager_id = str(form.get("UserIdManager") or form.get("manager_id") or "").strip()
     if raw_manager_id == "__bot_empty__":
         raw_manager_id = ""
@@ -1518,6 +1526,7 @@ async def admin_bot_update(request: Request):
                 manager_id=manager_id,
                 live_role=live_role,
                 threads=requested_threads,
+                password=password,
                 assigned_user_ids=assigned_user_ids if manage_user_assignments else [],
             )
             if workspace_mode == "live":
@@ -1537,6 +1546,7 @@ async def admin_bot_update(request: Request):
             group,
             manager_id,
             workspace_mode=workspace_mode,
+            password=password,
             live_role=live_role,
             threads=requested_threads,
             assigned_user_id=assigned_user_id,
