@@ -1285,17 +1285,39 @@ class AppStore:
             return True
         return False
 
-    def _remove_workspace_worker_row(self, worker_id: str, *, workspace_mode: str) -> None:
-        cleaned_worker_id = str(worker_id or "").strip()
-        resolved_workspace_mode = self._normalize_workspace_mode(workspace_mode)
-        if not cleaned_worker_id:
+    def _finalize_workspace_conversion_source(self, task: dict[str, Any]) -> None:
+        if str(task.get("operation_reason") or "").strip() != "workspace_conversion":
             return
-        if resolved_workspace_mode == "live":
-            self.live_workers = [
-                worker for worker in self.live_workers if str(worker.id or "").strip() != cleaned_worker_id
-            ]
+        # Chỉ retire source BOT sau khi target worker đã register thành công để tránh conversion nửa vời.
+        source_worker_id = str(task.get("conversion_source_worker_id") or "").strip()
+        source_workspace_mode = self._normalize_workspace_mode(task.get("conversion_source_workspace_mode"))
+        if not source_worker_id:
             return
-        self.workers = [worker for worker in self.workers if str(worker.id or "").strip() != cleaned_worker_id]
+        try:
+            source_worker = self._find_workspace_worker(source_worker_id, workspace_mode=source_workspace_mode)
+        except KeyError:
+            self.worker_connection_profiles.pop(source_worker_id, None)
+            return
+        source_worker_name = self._resolve_workspace_worker_display_name(
+            source_worker.id,
+            workspace_mode=source_workspace_mode,
+        )
+        source_profile = dict(self.worker_connection_profiles.get(source_worker.id) or {})
+        source_vps_ip = str(source_profile.get("vps_ip") or "").strip()
+        if not source_vps_ip and self._looks_like_ipv4(source_worker_name):
+            source_vps_ip = source_worker_name
+        self._remember_deleted_worker(
+            source_worker.id,
+            worker_name=source_worker_name,
+            vps_ip=source_vps_ip or None,
+            deleted_by=str(task.get("requested_by") or "").strip() or "system",
+            reason="workspace_conversion",
+        )
+        if source_workspace_mode == "live":
+            self._delete_live_bot_state(source_worker.id)
+        else:
+            self._delete_bot_state(source_worker.id)
+        self.worker_connection_profiles.pop(source_worker.id, None)
 
     def _find_worker_operation(self, operation_id: str) -> dict[str, Any]:
         normalized_id = str(operation_id or "").strip()
@@ -1579,18 +1601,6 @@ class AppStore:
                     or str(task.get("vps_ip") or "").strip() == normalized_ip
                 ):
                     raise ValueError("BOT này đang có một tiến trình cài đặt hoặc gỡ BOT khác chưa xong.")
-            if conflicting_other_workspace_worker is not None:
-                if other_workspace_mode == "live":
-                    self._purge_live_worker_assignment_scope(conflicting_other_workspace_worker.id)
-                else:
-                    self._purge_worker_assignment_scope(
-                        conflicting_other_workspace_worker.id,
-                        session_reason="BOT đang được chuyển sang workspace khác.",
-                    )
-                self._remove_workspace_worker_row(
-                    conflicting_other_workspace_worker.id,
-                    workspace_mode=other_workspace_mode,
-                )
             now = self._now(trim=False)
             normalized_threads = (
                 self._normalize_live_worker_threads(threads)
@@ -1664,20 +1674,6 @@ class AppStore:
                 password=password,
                 ssh_private_key=ssh_private_key,
             )
-            if conflicting_other_workspace_worker is not None:
-                previous_worker_id = str(conflicting_other_workspace_worker.id or "").strip()
-                previous_worker_name = self._resolve_workspace_worker_display_name(
-                    conflicting_other_workspace_worker.id,
-                    workspace_mode=other_workspace_mode,
-                )
-                self._remember_deleted_worker(
-                    previous_worker_id,
-                    worker_name=previous_worker_name,
-                    vps_ip=normalized_ip,
-                    deleted_by=requested_by,
-                    reason="workspace_conversion",
-                )
-                self.worker_connection_profiles.pop(previous_worker_id, None)
             self._save_state()
             return deepcopy(task)
 
@@ -4290,6 +4286,8 @@ class AppStore:
                     ssh_user=str(existing_profile.get("ssh_user") or "root"),
                 )
             completed_task = deepcopy(install_task) if install_task is not None else None
+            if install_task is not None:
+                self._finalize_workspace_conversion_source(install_task)
             vps_ip = str(payload.name or "").strip() or worker_display_name
             self.worker_operation_tasks = [
                 task
@@ -5289,6 +5287,8 @@ class AppStore:
                     ssh_user=str(existing_profile.get("ssh_user") or "root"),
                 )
             completed_task = deepcopy(install_task) if install_task is not None else None
+            if install_task is not None:
+                self._finalize_workspace_conversion_source(install_task)
             vps_ip = str(payload.name or "").strip() or worker_display_name
             self.worker_operation_tasks = [
                 task
