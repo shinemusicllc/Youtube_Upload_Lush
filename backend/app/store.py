@@ -3,6 +3,7 @@
 import hashlib
 import hmac
 import html
+import logging
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone, tzinfo
 import json
@@ -57,6 +58,8 @@ from .schemas import (
 from .worker_bootstrap import ensure_worker_operation_threads, suggest_next_worker_id
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+
+logger = logging.getLogger(__name__)
 
 
 class AppStore:
@@ -348,6 +351,7 @@ class AppStore:
         self.browser_profile_cleanup_tasks: list[dict[str, Any]] = []
         self.worker_round_robin_cursor: dict[str, str] = {}
         self.worker_connection_profiles: dict[str, dict[str, Any]] = {}
+        self.worker_registration_meta: dict[str, dict[str, Any]] = {}
         self.worker_operation_tasks: list[dict[str, Any]] = []
         self.deleted_workers: dict[str, dict[str, Any]] = {}
         self.telegram_link_requests: dict[str, dict[str, Any]] = {}
@@ -925,6 +929,25 @@ class AppStore:
             }
         return restored
 
+    def _restore_worker_registration_meta(self, payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        restored: dict[str, dict[str, Any]] = {}
+        for worker_id, raw_meta in payload.items():
+            normalized_worker_id = str(worker_id or "").strip()
+            if not normalized_worker_id or not isinstance(raw_meta, dict):
+                continue
+            workspace_mode = self._normalize_workspace_mode(raw_meta.get("workspace_mode"))
+            restored[normalized_worker_id] = {
+                "worker_id": normalized_worker_id,
+                "workspace_mode": workspace_mode,
+                "source": str(raw_meta.get("source") or "").strip() or "register",
+                "registered_at": self._parse_datetime(raw_meta.get("registered_at")) or self._now(trim=False),
+                "task_id": str(raw_meta.get("task_id") or "").strip() or None,
+                "operation_reason": str(raw_meta.get("operation_reason") or "").strip() or None,
+                "manager_id": str(raw_meta.get("manager_id") or "").strip() or None,
+                "manager_name": str(raw_meta.get("manager_name") or "").strip() or None,
+            }
+        return restored
+
     def _restore_worker_operation_tasks(self, payload: list[dict[str, Any]]) -> list[dict[str, Any]]:
         tasks: list[dict[str, Any]] = []
         for raw_task in payload:
@@ -1034,6 +1057,7 @@ class AppStore:
             "browser_profile_cleanup_tasks": deepcopy(self.browser_profile_cleanup_tasks),
             "worker_round_robin_cursor": deepcopy(self.worker_round_robin_cursor),
             "worker_connection_profiles": self._serialize_value(self.worker_connection_profiles),
+            "worker_registration_meta": self._serialize_value(self.worker_registration_meta),
             "worker_operation_tasks": self._serialize_value(self.worker_operation_tasks),
             "deleted_workers": self._serialize_value(self.deleted_workers),
             "render_delete_meta": self._serialize_value(self.render_delete_meta),
@@ -1066,6 +1090,9 @@ class AppStore:
         }
         self.worker_connection_profiles = self._restore_worker_connection_profiles(
             payload.get("worker_connection_profiles") or {}
+        )
+        self.worker_registration_meta = self._restore_worker_registration_meta(
+            payload.get("worker_registration_meta") or {}
         )
         self.worker_operation_tasks = self._restore_worker_operation_tasks(
             payload.get("worker_operation_tasks") or []
@@ -1172,6 +1199,64 @@ class AppStore:
             "ssh_private_key": str(normalized_ssh_private_key or "").strip() or None,
             "updated_at": self._now(trim=False),
         }
+
+    def _worker_registration_source_for_task(self, task: dict[str, Any] | None) -> str:
+        if not isinstance(task, dict):
+            return ""
+        if str(task.get("operation_reason") or "").strip() == "workspace_conversion":
+            return "workspace_conversion"
+        if str(task.get("kind") or "").strip() == "install":
+            return "create"
+        return ""
+
+    def _remember_worker_registration_meta(
+        self,
+        worker_id: str,
+        *,
+        workspace_mode: str,
+        source: str,
+        task: dict[str, Any] | None = None,
+        manager_id: str | None = None,
+        manager_name: str | None = None,
+    ) -> None:
+        normalized_worker_id = str(worker_id or "").strip()
+        if not normalized_worker_id:
+            return
+        normalized_source = str(source or "").strip() or "register"
+        task_id = str((task or {}).get("id") or "").strip() or None
+        operation_reason = str((task or {}).get("operation_reason") or "").strip() or None
+        resolved_manager_id = str(manager_id or (task or {}).get("manager_id") or "").strip() or None
+        resolved_manager_name = str(manager_name or (task or {}).get("manager_name") or "").strip() or None
+        self.worker_registration_meta[normalized_worker_id] = {
+            "worker_id": normalized_worker_id,
+            "workspace_mode": self._normalize_workspace_mode(workspace_mode),
+            "source": normalized_source,
+            "registered_at": self._now(trim=False),
+            "task_id": task_id,
+            "operation_reason": operation_reason,
+            "manager_id": resolved_manager_id,
+            "manager_name": resolved_manager_name,
+        }
+
+    def _clear_worker_registration_meta(self, worker_id: str) -> None:
+        normalized_worker_id = str(worker_id or "").strip()
+        if not normalized_worker_id:
+            return
+        self.worker_registration_meta.pop(normalized_worker_id, None)
+
+    def _worker_registration_source_label(self, worker: WorkerRecord, *, live: bool) -> str:
+        meta = dict(self.worker_registration_meta.get(str(worker.id or "").strip()) or {})
+        source = str(meta.get("source") or "").strip()
+        if not source:
+            normalized_id = str(worker.id or "").strip().lower()
+            expected_prefix = "live-worker-" if live else "worker-"
+            source = "register" if normalized_id.startswith(expected_prefix) else "manual_register"
+        return {
+            "create": "create",
+            "register": "register",
+            "manual_register": "manual register",
+            "workspace_conversion": "workspace conversion",
+        }.get(source, source.replace("_", " ") or "register")
 
     def _remember_deleted_worker(
         self,
@@ -2720,6 +2805,8 @@ class AppStore:
             f"BOT: {worker_name}\n"
             f"BOT ID: {worker.id}\n"
             f"Manager: {manager_name}\n"
+            "Workspace: upload\n"
+            f"Source: {self._worker_registration_source_label(worker, live=False)}\n"
             "Trạng thái: BOT chưa tự kết nối lại với control-plane"
         )
 
@@ -2731,6 +2818,8 @@ class AppStore:
             f"BOT: {worker_name}\n"
             f"BOT ID: {worker.id}\n"
             f"Manager: {manager_name}\n"
+            "Workspace: live\n"
+            f"Source: {self._worker_registration_source_label(worker, live=True)}\n"
             "Trạng thái: BOT live chưa tự kết nối lại với control-plane"
         )
 
@@ -2748,6 +2837,8 @@ class AppStore:
             f"BOT: {worker_name}",
             f"BOT ID: {worker.id}",
             f"Manager: {manager_name}",
+            "Workspace: upload",
+            f"Source: {self._worker_registration_source_label(worker, live=False)}",
         ]
         if offline_since_at is not None:
             lines.append(f"Mất kết nối từ: {self._format_full_datetime(offline_since_at)}")
@@ -2769,6 +2860,8 @@ class AppStore:
             f"BOT: {worker_name}",
             f"BOT ID: {worker.id}",
             f"Manager: {manager_name}",
+            "Workspace: live",
+            f"Source: {self._worker_registration_source_label(worker, live=True)}",
         ]
         if offline_since_at is not None:
             lines.append(f"Mất kết nối từ: {self._format_full_datetime(offline_since_at)}")
@@ -4311,6 +4404,27 @@ class AppStore:
                     vps_ip=worker_display_name,
                     ssh_user=str(existing_profile.get("ssh_user") or "root"),
                 )
+            existing_registration_meta = dict(self.worker_registration_meta.get(str(payload.worker_id or "").strip()) or {})
+            registration_source = self._worker_registration_source_for_task(install_task)
+            if not registration_source:
+                registration_source = str(existing_registration_meta.get("source") or "").strip()
+            if not registration_source:
+                registration_source = "manual_register" if existing is None else "register"
+            self._remember_worker_registration_meta(
+                payload.worker_id,
+                workspace_mode="upload",
+                source=registration_source,
+                task=install_task,
+                manager_id=manager.id if manager else None,
+                manager_name=resolved_manager_name,
+            )
+            if install_task is None and existing is None:
+                logger.warning(
+                    "worker_registered_without_install_task workspace=upload worker_id=%s worker_name=%s manager_name=%s",
+                    str(payload.worker_id or "").strip(),
+                    worker_display_name,
+                    resolved_manager_name,
+                )
             completed_task = deepcopy(install_task) if install_task is not None else None
             if install_task is not None:
                 self._finalize_workspace_conversion_source(install_task)
@@ -5311,6 +5425,27 @@ class AppStore:
                     payload.worker_id,
                     vps_ip=worker_display_name,
                     ssh_user=str(existing_profile.get("ssh_user") or "root"),
+                )
+            existing_registration_meta = dict(self.worker_registration_meta.get(str(payload.worker_id or "").strip()) or {})
+            registration_source = self._worker_registration_source_for_task(install_task)
+            if not registration_source:
+                registration_source = str(existing_registration_meta.get("source") or "").strip()
+            if not registration_source:
+                registration_source = "manual_register" if existing is None else "register"
+            self._remember_worker_registration_meta(
+                payload.worker_id,
+                workspace_mode="live",
+                source=registration_source,
+                task=install_task,
+                manager_id=manager.id if manager else None,
+                manager_name=resolved_manager_name,
+            )
+            if install_task is None and existing is None:
+                logger.warning(
+                    "worker_registered_without_install_task workspace=live worker_id=%s worker_name=%s manager_name=%s",
+                    str(payload.worker_id or "").strip(),
+                    worker_display_name,
+                    resolved_manager_name,
                 )
             completed_task = deepcopy(install_task) if install_task is not None else None
             if install_task is not None:
@@ -11683,6 +11818,7 @@ class AppStore:
         self._find_live_worker(worker_id)
         self._purge_live_worker_assignment_scope(worker_id)
         self.live_workers = [worker for worker in self.live_workers if worker.id != worker_id]
+        self._clear_worker_registration_meta(worker_id)
 
     def delete_live_bot(self, worker_id: str) -> None:
         self._delete_live_bot_state(worker_id)
@@ -12227,6 +12363,7 @@ class AppStore:
         self.workers = [worker for worker in self.workers if worker.id != worker_id]
         self.user_worker_links = [link for link in self.user_worker_links if link["worker_id"] != worker_id]
         self.jobs = [job for job in self.jobs if job.worker_name != worker_id]
+        self._clear_worker_registration_meta(worker_id)
 
     def delete_bot(self, worker_id: str) -> None:
         self._delete_bot_state(worker_id)
