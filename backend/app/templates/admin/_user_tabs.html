@@ -1,5 +1,5 @@
 <div class="panel overflow-hidden px-5 pt-4">
-    <div class="flex items-center gap-6 overflow-x-auto">
+    <div class="flex items-center gap-4 overflow-x-auto pb-1">
         {% for item in dashboard.user_tabs %}
         <a href="{{ item.href }}" class="module-tab {% if item.active %}active{% endif %}">{{ item.label }}</a>
         {% endfor %}

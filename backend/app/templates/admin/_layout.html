@@ -1067,6 +1067,7 @@
         }
       }
     </style>
+    {% include "_app_shell_mobile_styles.html" %}
 </head>
 <body class="min-h-screen overflow-hidden bg-[#f3f5f9] font-sans antialiased text-slate-800">
     <div class="flex min-h-screen">
@@ -1130,21 +1131,41 @@
         </aside>
 
         <main class="flex h-screen min-w-0 flex-1 flex-col">
-            <header class="frosted-header flex h-16 shrink-0 items-center justify-between px-8">
-                <div class="flex items-center gap-2 text-[13px]">
+            <header class="app-shell-header frosted-header flex h-16 shrink-0 items-center justify-between px-8">
+                <div class="app-shell-title flex min-w-0 items-center gap-2 text-[13px]">
+                    <button type="button" class="mobile-shell-button h-10 w-10 px-0 md:hidden" data-shell-open aria-label="Mở điều hướng">
+                        <i data-lucide="menu" class="h-4 w-4"></i>
+                    </button>
                     <i data-lucide="panel-top-open" class="h-4 w-4 text-brand-600"></i>
-                    <span class="font-medium text-slate-900">{{ dashboard.page_title }}</span>
+                    <span class="truncate font-medium text-slate-900">{{ dashboard.page_title }}</span>
                 </div>
-                <form method="post" action="/admin/logout">
+                <div class="flex items-center gap-2">
+                    <button
+                        type="button"
+                        class="mobile-shell-button md:hidden"
+                        data-shell-desktop-toggle
+                        data-active="false"
+                        aria-pressed="false"
+                    >
+                        <i data-lucide="monitor-smartphone" class="h-4 w-4"></i>
+                        <span
+                            class="mobile-shell-button-label"
+                            data-shell-desktop-label
+                            data-label-default="Xem rộng"
+                            data-label-active="Thu gọn"
+                        >Xem rộng</span>
+                    </button>
+                <form method="post" action="/admin/logout" class="hidden md:block">
                 <button type="submit" class="action-btn action-btn-slate px-4 py-2 text-[13px]">
                     <i data-lucide="log-out" class="h-4 w-4"></i>
                     Đăng xuất
                 </button>
                 </form>
+                </div>
             </header>
 
-            <div class="flex-1 min-w-0 overflow-y-auto pb-16">
-                <div class="space-y-6 px-8 py-6 min-w-0">
+            <div class="app-shell-scroll flex-1 min-w-0 overflow-y-auto pb-16">
+                <div class="app-shell-content space-y-6 px-8 py-6 min-w-0">
                     {% if dashboard.active_page == 'users' and dashboard.user_tabs %}
                     {% include "admin/_user_tabs.html" %}
                     {% elif not dashboard.hide_workspace_tabs %}
@@ -1155,6 +1176,7 @@
             </div>
         </main>
     </div>
+    {% include "_app_shell_mobile_drawer.html" %}
     <script>
       document.addEventListener('DOMContentLoaded', function () {
         if (window.lucide) {
@@ -1686,6 +1708,7 @@
         location.reload();
       }
     </script>
+    <script defer src="{{ request.app.url_path_for('static', path='js/mobile_shell.js') }}"></script>
     <script defer src="{{ request.app.url_path_for('static', path='js/admin_tables.js') }}?v=20260412-live-table-fix"></script>
     {% block page_scripts %}{% endblock %}
 </body>

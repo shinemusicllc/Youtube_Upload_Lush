@@ -910,6 +910,15 @@ class AppStore:
             return AppStore._normalize_datetime(datetime.fromisoformat(value))
         raise ValueError(f"Unsupported datetime payload: {value!r}")
 
+    def _mapping_numeric_id(self, value: Any) -> int:
+        try:
+            return int(value or 0)
+        except (TypeError, ValueError):
+            match = re.search(r"(\d+)$", str(value or "").strip())
+            if match:
+                return int(match.group(1))
+            return 0
+
     def _restore_worker_connection_profiles(self, payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
         restored: dict[str, dict[str, Any]] = {}
         for worker_id, raw_profile in payload.items():
@@ -5913,7 +5922,7 @@ class AppStore:
 
     def _assigned_worker_links_for_user(self, user_id: str) -> list[dict[str, Any]]:
         links = [link for link in self.user_worker_links if str(link.get("user_id") or "").strip() == str(user_id or "").strip()]
-        links.sort(key=lambda item: int(item.get("id") or 0))
+        links.sort(key=lambda item: self._mapping_numeric_id(item.get("id")))
         return links
 
     def _assigned_live_worker_links_for_user(
@@ -5932,7 +5941,7 @@ class AppStore:
                 or self._normalize_live_assignment_role(link.get("live_role"), fallback_note=link.get("note")) == normalized_role
             )
         ]
-        links.sort(key=lambda item: int(item.get("id") or 0))
+        links.sort(key=lambda item: self._mapping_numeric_id(item.get("id")))
         return links
 
     def _live_user_worker_allocated_threads(self, user_id: str, worker_id: str, *, role: str | None = None) -> int:
@@ -9642,7 +9651,7 @@ class AppStore:
     def _assigned_users_for_worker(self, worker_id: str) -> list[UserSummary]:
         users: list[UserSummary] = []
         seen_user_ids: set[str] = set()
-        for mapping in sorted(self.user_worker_links, key=lambda item: int(item.get("id") or 0)):
+        for mapping in sorted(self.user_worker_links, key=lambda item: self._mapping_numeric_id(item.get("id"))):
             if str(mapping.get("worker_id") or "").strip() != str(worker_id or "").strip():
                 continue
             user_id = str(mapping.get("user_id") or "").strip()
@@ -9665,7 +9674,7 @@ class AppStore:
         normalized_role = self._normalize_live_assignment_role(role) if role is not None else None
         users: list[UserSummary] = []
         seen_user_ids: set[str] = set()
-        for mapping in sorted(self.live_user_worker_links, key=lambda item: int(item.get("id") or 0)):
+        for mapping in sorted(self.live_user_worker_links, key=lambda item: self._mapping_numeric_id(item.get("id"))):
             if str(mapping.get("worker_id") or "").strip() != str(worker_id or "").strip():
                 continue
             if normalized_role is not None and self._normalize_live_assignment_role(mapping.get("live_role"), fallback_note=mapping.get("note")) != normalized_role:
@@ -11759,7 +11768,7 @@ class AppStore:
                     f"nhưng cấu hình hiện tại đang cấp phát tổng cộng {projected_total_allocated_threads} luồng "
                     f"cho {len(selected_user_id_set)} user."
                 )
-            next_id = max([int(item.get("id") or 0) for item in next_live_user_worker_links], default=0) + 1
+            next_id = max([self._mapping_numeric_id(item.get("id")) for item in next_live_user_worker_links], default=0) + 1
             for assigned_user in selected_users:
                 existing_link = current_links_by_user_id.get(assigned_user.id)
                 selected_role = (
@@ -12028,7 +12037,7 @@ class AppStore:
                     )
                 ]
 
-                next_id = max([int(item.get("id") or 0) for item in self.user_worker_links], default=0) + 1
+                next_id = max([self._mapping_numeric_id(item.get("id")) for item in self.user_worker_links], default=0) + 1
                 for assigned_user in selected_users:
                     existing_link = current_links_by_user_id.get(assigned_user.id)
                     if existing_link is None:
@@ -12070,7 +12079,7 @@ class AppStore:
                     None,
                 )
                 if existing_link is None:
-                    next_id = max([int(item.get("id") or 0) for item in self.user_worker_links], default=0) + 1
+                    next_id = max([self._mapping_numeric_id(item.get("id")) for item in self.user_worker_links], default=0) + 1
                     self.user_worker_links.append(
                         {
                             "id": next_id,
@@ -12188,7 +12197,7 @@ class AppStore:
                 )
             ]
 
-            next_id = max([int(item.get("id") or 0) for item in self.user_worker_links], default=0) + 1
+            next_id = max([self._mapping_numeric_id(item.get("id")) for item in self.user_worker_links], default=0) + 1
             for assigned_user in selected_users:
                 existing_link = current_links_by_user_id.get(assigned_user.id)
                 if existing_link is None:
@@ -12230,7 +12239,7 @@ class AppStore:
                 None,
             )
             if existing_link is None:
-                next_id = max([int(item.get("id") or 0) for item in self.user_worker_links], default=0) + 1
+                next_id = max([self._mapping_numeric_id(item.get("id")) for item in self.user_worker_links], default=0) + 1
                 self.user_worker_links.append(
                     {
                         "id": next_id,
@@ -12319,7 +12328,7 @@ class AppStore:
                 link for link in self.user_worker_links if str(link.get("user_id") or "") != assigned_user.id
             ]
 
-            next_id = max([int(item.get("id") or 0) for item in self.user_worker_links], default=0) + 1
+            next_id = max([self._mapping_numeric_id(item.get("id")) for item in self.user_worker_links], default=0) + 1
             for worker in selected_workers:
                 previous_link = previous_links_by_worker_id.get(worker.id)
                 self.user_worker_links.append(
@@ -12451,7 +12460,7 @@ class AppStore:
             existing["bot_type"] = bot_type.lower()
             existing["note"] = normalized_note
         else:
-            next_id = max([int(item.get("id") or 0) for item in self.user_worker_links], default=0) + 1
+            next_id = max([self._mapping_numeric_id(item.get("id")) for item in self.user_worker_links], default=0) + 1
             self.user_worker_links.append(
                 {
                     "id": next_id,

@@ -1,0 +1,131 @@
+{% set is_admin_shell = (dashboard.admin_shell if dashboard.admin_shell is defined else (dashboard.current_user is defined and dashboard.current_user)) %}
+{% set shell_app_name = dashboard.app_name | default('Youtube Lush', true) %}
+{% set shell_workspace_label = dashboard.workspace_heading | default(dashboard.workspace_label | default('Workspace', true), true) %}
+{% set shell_logout_path = dashboard.logout_path | default('/admin/logout', true) %}
+{% if dashboard.current_user is defined and dashboard.current_user %}
+    {% set shell_user_name = dashboard.current_user.name | default(dashboard.user_name | default('Control plane', true), true) %}
+    {% set shell_user_role = dashboard.current_user.role_text | default(dashboard.user_role | default('Control plane', true), true) %}
+{% else %}
+    {% set shell_user_name = dashboard.user_name | default('Control plane', true) %}
+    {% if is_admin_shell %}
+        {% set shell_user_role = dashboard.user_role | default('admin', true) | capitalize %}
+    {% else %}
+        {% set shell_user_role = dashboard.user_role | default('user', true) %}
+    {% endif %}
+{% endif %}
+{% set mobile_nav_state = namespace(has_channels=false) %}
+{% for item in dashboard.nav_items | default([], true) %}
+    {% if item.key == "channels" %}
+        {% set mobile_nav_state.has_channels = true %}
+    {% endif %}
+{% endfor %}
+<div class="mobile-shell-overlay md:hidden" data-shell-overlay></div>
+<aside class="mobile-shell-drawer md:hidden" data-shell-drawer aria-hidden="true">
+    <div class="mobile-shell-drawer-panel">
+        <div class="mobile-shell-drawer-header">
+            <div class="min-w-0 flex items-center gap-3">
+                <div class="flex h-10 w-10 shrink-0 items-center justify-center text-[#ff5528]">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" class="h-10 w-10" aria-hidden="true">
+                        <g fill="currentColor">
+                            <path d="M58 22c-7 0-12 5-12 12v116c0 56 45 102 101 102h54c7 0 12-5 12-12s-5-12-12-12h-54c-43 0-77-35-77-78V34c0-7-5-12-12-12z"/>
+                            <path d="M106 66c0-5 3-9 8-11 5-2 10-1 14 3l34 35 34-35c3-4 9-5 14-3 5 2 8 6 8 11v109c0 7-5 12-12 12s-12-5-12-12V95l-24 24c-5 5-12 5-17 0l-24-24v80c0 7-5 12-12 12s-12-5-12-12V66z"/>
+                            <rect x="181" y="119" width="14" height="78" rx="7"/>
+                            <circle cx="188" cy="205" r="28"/>
+                        </g>
+                    </svg>
+                </div>
+                <div class="min-w-0">
+                    <p class="truncate font-display text-[16px] font-bold leading-none tracking-tight text-slate-900">{{ shell_app_name | e }}</p>
+                    <p class="mt-1 truncate text-[11px] text-slate-500">{{ shell_workspace_label | e }}</p>
+                </div>
+            </div>
+            <button type="button" class="mobile-shell-button h-10 w-10 px-0" data-shell-close aria-label="Đóng menu">
+                <i data-lucide="x" class="h-4 w-4"></i>
+            </button>
+        </div>
+
+        <div class="mobile-shell-drawer-body">
+            <section class="mobile-shell-section">
+                <p class="mobile-shell-caption">Điều hướng</p>
+                <div class="mobile-shell-nav">
+                    {% if is_admin_shell and dashboard.active_page in ["live_stream_jobs", "live_workspace"] and not mobile_nav_state.has_channels %}
+                    <a href="/admin/channel/index" class="nav-item">
+                        <i data-lucide="link" class="h-4 w-4"></i>
+                        <span class="text-[13px] font-medium">Danh sách Kênh</span>
+                    </a>
+                    {% endif %}
+                    {% for item in dashboard.nav_items | default([], true) %}
+                    <a href="{{ item.href | e }}" class="nav-item {% if dashboard.active_page == item.key %}active{% endif %}">
+                        <i data-lucide="{{ item.icon | e }}" class="h-4 w-4"></i>
+                        <span class="text-[13px] {% if dashboard.active_page == item.key %}font-semibold{% else %}font-medium{% endif %}">{{ item.label | e }}</span>
+                    </a>
+                    {% endfor %}
+                </div>
+            </section>
+
+            {% if dashboard.active_page == 'users' and dashboard.user_tabs %}
+            <section class="mobile-shell-section">
+                <p class="mobile-shell-caption">Nhóm người dùng</p>
+                <div class="mobile-shell-chip-row">
+                    {% for item in dashboard.user_tabs %}
+                    <a href="{{ item.href | e }}" class="mobile-shell-chip {% if item.active %}active{% endif %}">{{ item.label | e }}</a>
+                    {% endfor %}
+                </div>
+            </section>
+            {% elif not dashboard.hide_workspace_tabs and dashboard.workspace_tabs %}
+            <section class="mobile-shell-section">
+                <p class="mobile-shell-caption">Workspace</p>
+                <div class="mobile-shell-chip-row">
+                    {% for item in dashboard.workspace_tabs %}
+                    <a href="{{ item.href | e }}" class="mobile-shell-chip {% if item.active %}active{% endif %}">{{ item.label | e }}</a>
+                    {% endfor %}
+                    {% if dashboard.user_tabs %}
+                        {% for item in dashboard.user_tabs %}
+                            {% if item.key != 'users' %}
+                    <a href="{{ item.href | e }}" class="mobile-shell-chip {% if item.active %}active{% endif %}">{{ item.label | e }}</a>
+                            {% endif %}
+                        {% endfor %}
+                    {% endif %}
+                </div>
+            </section>
+            {% endif %}
+
+            <section class="mobile-shell-section">
+                <p class="mobile-shell-caption">Tài khoản</p>
+                <div class="mobile-shell-account">
+                    <div class="mobile-shell-account-icon">
+                        <i data-lucide="{% if is_admin_shell %}shield{% else %}user{% endif %}" class="h-4 w-4"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <p class="truncate text-[13px] font-semibold text-slate-900">{{ shell_user_name | e }}</p>
+                        <p class="truncate text-[11px] text-slate-500">{{ shell_user_role | e }}</p>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <div class="mobile-shell-drawer-footer">
+            <button
+                type="button"
+                class="mobile-shell-button w-full justify-center"
+                data-shell-desktop-toggle
+                data-active="false"
+                aria-pressed="false"
+            >
+                <i data-lucide="monitor-smartphone" class="h-4 w-4"></i>
+                <span
+                    class="mobile-shell-button-label"
+                    data-shell-desktop-label
+                    data-label-default="Chế độ xem máy tính"
+                    data-label-active="Quay lại chế độ mobile"
+                >Chế độ xem máy tính</span>
+            </button>
+            <form method="post" action="{{ shell_logout_path | e }}">
+                <button type="submit" class="mobile-shell-button w-full justify-center">
+                    <i data-lucide="log-out" class="h-4 w-4"></i>
+                    <span class="mobile-shell-button-label">Đăng xuất</span>
+                </button>
+            </form>
+        </div>
+    </div>
+</aside>

@@ -467,6 +467,7 @@
       display: contents;
     }
   </style>
+  {% include "_app_shell_mobile_styles.html" %}
 </head>
 <body class="font-sans antialiased text-slate-800 bg-[#f3f5f9] min-h-screen flex overflow-hidden{% if dashboard.admin_shell %} admin-shell{% endif %}">
   <aside class="w-64 {% if dashboard.admin_shell %}bg-white border-r border-slate-200{% else %}bg-gradient-to-b from-white to-slate-50/80 border-r border-slate-200/70{% endif %} flex flex-col shrink-0 z-10 hidden md:flex">
@@ -531,21 +532,41 @@
   </aside>
 
   <main class="min-w-0 flex-1 flex flex-col h-screen relative overflow-x-hidden">
-    <header class="frosted-header h-16 flex items-center justify-between px-8 shrink-0 relative z-10">
-      <div class="flex items-center gap-2 text-[13px]">
+    <header class="app-shell-header frosted-header h-16 flex items-center justify-between px-8 shrink-0 relative z-10">
+      <div class="app-shell-title flex min-w-0 items-center gap-2 text-[13px]">
+        <button type="button" class="mobile-shell-button h-10 w-10 px-0 md:hidden" data-shell-open aria-label="Mở điều hướng">
+          <i data-lucide="menu" class="w-4 h-4"></i>
+        </button>
         <i data-lucide="panel-top-open" class="w-4 h-4 text-brand-600"></i>
         <span class="font-medium text-slate-900">Điều phối live</span>
       </div>
-      <form method="post" action="{{ dashboard.logout_path | default('/logout') }}">
+      <div class="flex items-center gap-2">
+      <button
+        type="button"
+        class="mobile-shell-button md:hidden"
+        data-shell-desktop-toggle
+        data-active="false"
+        aria-pressed="false"
+      >
+        <i data-lucide="monitor-smartphone" class="h-4 w-4"></i>
+        <span
+          class="mobile-shell-button-label"
+          data-shell-desktop-label
+          data-label-default="Xem rộng"
+          data-label-active="Thu gọn"
+        >Xem rộng</span>
+      </button>
+      <form method="post" action="{{ dashboard.logout_path | default('/logout') }}" class="hidden md:block">
         <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 text-[13px] font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-slate-300 hover:shadow-sm transition-all">
           <i data-lucide="log-out" class="w-4 h-4 text-slate-500"></i>
           Đăng xuất
         </button>
       </form>
+      </div>
     </header>
 
-    <div class="min-w-0 flex-1 overflow-y-auto w-full pb-16">
-      <div class="min-w-0 w-full px-8 py-6 space-y-6">
+    <div class="app-shell-scroll min-w-0 flex-1 overflow-y-auto w-full pb-16">
+      <div class="app-shell-content min-w-0 w-full px-8 py-6 space-y-6">
         {% set live_index_href = dashboard.live_index_href | default('/app/live') %}
         {% set live_delete_action = dashboard.live_delete_action | default('/app/live/delete') %}
         {% set live_context_query = dashboard.live_context_query | default('', true) %}
@@ -559,15 +580,15 @@
         ></div>
         {% endif %}
 
-        <div class="elevated-card grid grid-cols-5 divide-x divide-slate-200/70 overflow-hidden">
+        <div class="elevated-card grid grid-cols-2 divide-y divide-slate-200/70 overflow-hidden sm:grid-cols-5 sm:divide-y-0 sm:divide-x">
           {% for kpi in dashboard.kpis %}
-          <div class="kpi-card relative px-6 py-5 text-center" data-live-kpi-index="{{ loop.index0 }}">
+          <div class="kpi-card relative px-3 py-4 text-center sm:px-6 sm:py-5" data-live-kpi-index="{{ loop.index0 }}">
             <div class="flex items-center justify-center gap-2 mb-3">
-              <p class="text-slate-500 text-[12px] font-medium">{{ kpi.label | e }}</p>
+              <p class="text-slate-500 text-[11px] font-medium sm:text-[12px]">{{ kpi.label | e }}</p>
               <i data-lucide="{{ kpi.icon | e }}" class="w-3.5 h-3.5 {{ kpi.icon_class | e }}"></i>
             </div>
-            <p data-live-kpi-value class="text-[28px] font-display font-bold {{ (kpi.value_class or kpi.accent_class) | e }} leading-none tracking-tight">{{ kpi.value }}</p>
-            <p data-live-kpi-accent class="text-[11px] font-semibold {{ (kpi.accent_class or kpi.value_class) | e }} mt-2.5">{{ kpi.accent | e }}</p>
+            <p data-live-kpi-value class="text-[22px] font-display font-bold leading-none tracking-tight sm:text-[28px] {{ (kpi.value_class or kpi.accent_class) | e }}">{{ kpi.value }}</p>
+            <p data-live-kpi-accent class="mt-2 text-[10px] font-semibold sm:mt-2.5 sm:text-[11px] {{ (kpi.accent_class or kpi.value_class) | e }}">{{ kpi.accent | e }}</p>
             <div data-live-kpi-bar class="absolute bottom-0 left-1/2 -translate-x-1/2 w-12 h-[3px] rounded-full {{ kpi.bar_class | e }}"></div>
           </div>
           {% endfor %}
@@ -986,6 +1007,7 @@
       </div>
     </div>
   </main>
+  {% include "_app_shell_mobile_drawer.html" %}
   <div id="toastStack" class="toast-stack" aria-live="polite" aria-atomic="false"></div>
   <div id="liveStopModal" class="fixed inset-0 z-[120] hidden" aria-hidden="true">
     <div class="absolute inset-0 bg-slate-950/45" data-live-stop-close></div>
@@ -1069,6 +1091,7 @@
     </div>
   </div>
 
+  <script defer src="{{ request.app.url_path_for('static', path='js/mobile_shell.js') }}"></script>
   <script>
     if (window.lucide) window.lucide.createIcons();
     const dismissTransientNode = (node) => {
