@@ -4,6 +4,7 @@ import os
 import shutil
 import subprocess
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -18,7 +19,7 @@ from .control_plane import (
     update_live_stream_progress,
 )
 from .downloader import download_remote_asset
-from .ffmpeg_pipeline import probe_media
+from .ffmpeg_pipeline import MediaInfo, probe_media
 
 
 def _env_float(name: str, default: float, *, minimum: float = 0.0) -> float:
@@ -30,6 +31,19 @@ def _env_float(name: str, default: float, *, minimum: float = 0.0) -> float:
     return max(minimum, parsed)
 LIVE_RUNTIME_GUARD_INTERVAL_SECONDS = _env_float("WORKER_LIVE_RUNTIME_GUARD_INTERVAL_SECONDS", 1.0, minimum=0.2)
 LIVE_FFMPEG_PROGRESS_INTERVAL_SECONDS = _env_float("WORKER_LIVE_FFMPEG_PROGRESS_INTERVAL_SECONDS", 0.5, minimum=0.2)
+LIVE_COPY_SUPPORTED_VIDEO_CODECS = {"h264"}
+LIVE_COPY_SUPPORTED_AUDIO_CODECS = {"aac", "mp3"}
+
+
+@dataclass(slots=True)
+class LiveVideoNormalizePlan:
+    normalize_required: bool
+    profile_height: int
+    scale_height: int | None
+    maxrate_kbps: int
+    crf: int
+    reason: str
+    source_bitrate_kbps: int | None
 
 
 def _app_timezone() -> ZoneInfo:
@@ -249,6 +263,170 @@ def _download_live_assets(
     return video_path, audio_path
 
 
+def _resolve_live_video_normalize_plan(
+    config: WorkerConfig,
+    media_info: MediaInfo,
+    *,
+    has_external_audio: bool,
+) -> LiveVideoNormalizePlan:
+    source_height = int(media_info.height or 0)
+    source_width = int(media_info.width or 0)
+    inferred_height = source_height or source_width or 1080
+    scale_height = config.live_normalize_max_height if source_height > config.live_normalize_max_height else None
+    profile_height = 1440 if max(inferred_height, scale_height or 0) > 1080 else 1080
+    maxrate_kbps = (
+        config.live_normalize_1440_maxrate_kbps
+        if profile_height > 1080
+        else config.live_normalize_1080_maxrate_kbps
+    )
+    crf = config.live_normalize_1440_crf if profile_height > 1080 else config.live_normalize_1080_crf
+    source_bitrate_kbps = (
+        int(round(float(media_info.bit_rate_bps or 0) / 1000.0))
+        if media_info.bit_rate_bps
+        else None
+    )
+    video_codec = str(media_info.video_codec or "").strip().lower()
+    audio_codec = str(media_info.audio_codec or "").strip().lower()
+    audio_compatible = (
+        has_external_audio
+        or not media_info.has_audio
+        or audio_codec in LIVE_COPY_SUPPORTED_AUDIO_CODECS
+    )
+
+    reasons: list[str] = []
+    if scale_height is not None:
+        reasons.append(f"nguon {source_height}p vuot tran {config.live_normalize_max_height}p")
+    if source_bitrate_kbps and source_bitrate_kbps > maxrate_kbps:
+        reasons.append(f"bitrate {source_bitrate_kbps} kbps vuot muc {maxrate_kbps} kbps")
+    if video_codec not in LIVE_COPY_SUPPORTED_VIDEO_CODECS:
+        reasons.append(f"codec video {video_codec or 'unknown'} khong hop fast-path")
+    if not audio_compatible:
+        reasons.append(f"codec audio {audio_codec or 'unknown'} khong hop fast-path")
+
+    normalize_required = bool(config.live_normalize_enabled and reasons)
+    if not config.live_normalize_enabled:
+        reasons = []
+    reason = "; ".join(reasons) if reasons else "giu nguyen media goc"
+    return LiveVideoNormalizePlan(
+        normalize_required=normalize_required,
+        profile_height=profile_height,
+        scale_height=scale_height,
+        maxrate_kbps=maxrate_kbps,
+        crf=crf,
+        reason=reason,
+        source_bitrate_kbps=source_bitrate_kbps,
+    )
+
+
+def _maybe_normalize_live_video(
+    config: WorkerConfig,
+    *,
+    video_path: Path,
+    audio_path: Path | None,
+    normalized_dir: Path,
+    report_progress,
+    lifecycle_guard=None,
+) -> tuple[Path, bool]:
+    media_info = probe_media(config.ffprobe_bin, video_path)
+    plan = _resolve_live_video_normalize_plan(
+        config,
+        media_info,
+        has_external_audio=audio_path is not None,
+    )
+    source_height = int(media_info.height or 0)
+
+    if not plan.normalize_required:
+        print(
+            (
+                "[live] skip normalize "
+                f"path={video_path.name} "
+                f"height={source_height or 'unknown'} "
+                f"bitrate_kbps={plan.source_bitrate_kbps or 'unknown'} "
+                f"reason={plan.reason}"
+            ),
+            flush=True,
+        )
+        return video_path, False
+
+    normalized_dir.mkdir(parents=True, exist_ok=True)
+    normalized_path = normalized_dir / "video-normalized.mp4"
+    filter_chain: list[str] = []
+    if plan.scale_height is not None:
+        filter_chain.append(f"scale=-2:{plan.scale_height}:flags=lanczos")
+
+    arguments = ["-y", "-i", str(video_path), "-map", "0:v:0"]
+    if audio_path is None:
+        arguments.extend(["-map", "0:a:0?"])
+    else:
+        arguments.append("-an")
+    if filter_chain:
+        arguments.extend(["-vf", ",".join(filter_chain)])
+    arguments.extend(
+        [
+            "-c:v",
+            "libx264",
+            "-preset",
+            config.live_normalize_preset,
+            "-crf",
+            str(plan.crf),
+            "-maxrate",
+            f"{plan.maxrate_kbps}k",
+            "-bufsize",
+            f"{plan.maxrate_kbps * 2}k",
+            "-pix_fmt",
+            "yuv420p",
+            "-threads",
+            str(config.live_normalize_threads),
+        ]
+    )
+    if audio_path is None:
+        arguments.extend(
+            [
+                "-c:a",
+                "aac",
+                "-b:a",
+                f"{config.live_normalize_audio_bitrate_kbps}k",
+            ]
+        )
+    arguments.extend(["-movflags", "+faststart", str(normalized_path)])
+
+    def _on_progress(ratio: float, _current_seconds: float) -> None:
+        report_progress(
+            "preparing",
+            max(0, min(95, int(ratio * 95))),
+            f"Äang tá»‘i Æ°u nguá»“n live {plan.profile_height}p ({int(ratio * 100)}%)",
+        )
+
+    print(
+        (
+            "[live] normalize video "
+            f"path={video_path.name} "
+            f"target={plan.profile_height}p "
+            f"scale_height={plan.scale_height or 'copy'} "
+            f"maxrate_kbps={plan.maxrate_kbps} "
+            f"crf={plan.crf} "
+            f"threads={config.live_normalize_threads} "
+            f"reason={plan.reason}"
+        ),
+        flush=True,
+    )
+    report_progress(
+        "preparing",
+        0,
+        f"Äang tá»‘i Æ°u nguá»“n live: {plan.reason}",
+        force=True,
+    )
+    _run_ffmpeg_with_progress(
+        config,
+        arguments,
+        working_dir=normalized_dir,
+        total_duration_seconds=max(1.0, float(media_info.duration_seconds or 1.0)),
+        progress_callback=_on_progress,
+        lifecycle_guard=lifecycle_guard,
+    )
+    return normalized_path, True
+
+
 def _run_ffmpeg_with_progress(
     config: WorkerConfig,
     arguments: list[str],
@@ -367,6 +545,7 @@ def _prepare_rendered_media(
     render_dir: Path,
     report_progress,
     lifecycle_guard=None,
+    progress_floor: int = 0,
 ) -> Path:
     render_dir.mkdir(parents=True, exist_ok=True)
     rendered_path = render_dir / "rendered.flv"
@@ -377,7 +556,7 @@ def _prepare_rendered_media(
     def _on_progress(ratio: float, _current_seconds: float) -> None:
         report_progress(
             "preparing",
-            max(0, min(100, int(ratio * 100))),
+            max(progress_floor, min(100, progress_floor + int(ratio * (100 - progress_floor)))),
             "Đang chuẩn bị luồng RTMP",
         )
 
@@ -566,6 +745,7 @@ def run_live_stream(client: httpx.Client, config: WorkerConfig, stream: dict) ->
     live_root = config.work_root / "live-streams"
     work_dir = live_root / stream_id
     downloads_dir = work_dir / "downloads"
+    normalized_dir = work_dir / "normalized"
     render_dir = work_dir / "render"
     activity_path = work_dir / "activity.touch"
     rendered_path: Path | None = None
@@ -585,6 +765,14 @@ def run_live_stream(client: httpx.Client, config: WorkerConfig, stream: dict) ->
             report_progress,
             lifecycle_guard=lifecycle_guard,
         )
+        video_path, normalized_video = _maybe_normalize_live_video(
+            config,
+            video_path=video_path,
+            audio_path=audio_path,
+            normalized_dir=normalized_dir,
+            report_progress=report_progress,
+            lifecycle_guard=lifecycle_guard,
+        )
         rendered_path = _prepare_rendered_media(
             config,
             video_path=video_path,
@@ -592,6 +780,7 @@ def run_live_stream(client: httpx.Client, config: WorkerConfig, stream: dict) ->
             render_dir=render_dir,
             report_progress=report_progress,
             lifecycle_guard=lifecycle_guard,
+            progress_floor=96 if normalized_video else 0,
         )
         shutil.rmtree(downloads_dir, ignore_errors=True)
 

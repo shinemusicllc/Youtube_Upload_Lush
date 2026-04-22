@@ -24,6 +24,10 @@ class MediaInfo:
     width: int | None
     height: int | None
     frame_rate: float | None
+    bit_rate_bps: int | None
+    format_name: str | None
+    video_codec: str | None
+    audio_codec: str | None
 
 
 @dataclass
@@ -77,6 +81,19 @@ def probe_media(ffprobe_bin: str, path: Path) -> MediaInfo:
     if duration <= 0:
         raise ValueError(f"Không đọc được duration của file {path.name}.")
 
+    bit_rate_bps: int | None = None
+    try:
+        parsed_bit_rate = int(float(format_info.get("bit_rate") or 0.0))
+        if parsed_bit_rate > 0:
+            bit_rate_bps = parsed_bit_rate
+    except (TypeError, ValueError):
+        bit_rate_bps = None
+    if bit_rate_bps is None:
+        try:
+            bit_rate_bps = int((path.stat().st_size * 8) / duration)
+        except OSError:
+            bit_rate_bps = None
+
     return MediaInfo(
         path=path,
         duration_seconds=duration,
@@ -85,6 +102,10 @@ def probe_media(ffprobe_bin: str, path: Path) -> MediaInfo:
         width=int(video_stream.get("width")) if video_stream and video_stream.get("width") else None,
         height=int(video_stream.get("height")) if video_stream and video_stream.get("height") else None,
         frame_rate=_parse_frame_rate((video_stream or {}).get("r_frame_rate")),
+        bit_rate_bps=bit_rate_bps,
+        format_name=str(format_info.get("format_name") or "").strip() or None,
+        video_codec=str((video_stream or {}).get("codec_name") or "").strip() or None,
+        audio_codec=str((audio_stream or {}).get("codec_name") or "").strip() or None,
     )
 
 
