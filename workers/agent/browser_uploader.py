@@ -23,6 +23,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from .browser_runtime import BrowserRuntimeManager, _build_browser_env
 from .config import WorkerConfig
 from .control_plane import YouTubeUploadTarget
+from .ffmpeg_pipeline import probe_media
 
 
 UploadProgressCallback = Callable[[float, str | None], None]
@@ -44,6 +45,14 @@ class BrowserUploadResult:
     output_url: str | None = None
     cleanup_safe: bool = False
     completion_message: str | None = None
+
+
+class RefreshRequiredUploadError(RuntimeError):
+    pass
+
+
+class UploadTransferTimeoutError(RuntimeError):
+    pass
 
 
 def _read_visible_page_text(driver: webdriver.Chrome) -> str:
@@ -148,6 +157,44 @@ def _detect_blocking_upload_error_safe(driver: webdriver.Chrome) -> str | None:
     return None
 
 
+def _detect_refresh_required_upload_gate(driver: webdriver.Chrome) -> str | None:
+    folded_text = _fold_text(
+        " ".join(
+            part
+            for part in (
+                _read_upload_dialog_text(driver),
+                _read_visible_page_text(driver),
+            )
+            if part
+        )
+    )
+    if not folded_text:
+        return None
+
+    has_access_message = (
+        "you already have access to this feature" in folded_text
+        or "ban da co quyen su dung tinh nang nay roi" in folded_text
+    )
+    refresh_message = (
+        "try refreshing the page" in folded_text
+        or "refresh the page" in folded_text
+        or "hay thu lam moi trang" in folded_text
+    )
+    completion_message = (
+        "you are all set" in folded_text
+        or "ban da hoan tat" in folded_text
+    )
+    if refresh_message and (has_access_message or completion_message):
+        return "YouTube Studio yeu cau lam moi trang truoc khi mo lai form upload."
+    return None
+
+
+def _raise_if_refresh_required_upload_gate(driver: webdriver.Chrome) -> None:
+    detected_message = _detect_refresh_required_upload_gate(driver)
+    if detected_message:
+        raise RefreshRequiredUploadError(detected_message)
+
+
 def _detect_blocking_upload_error(driver: webdriver.Chrome) -> str | None:
     current_url = (driver.current_url or "").lower()
     page_text = _read_visible_page_text(driver).lower()
@@ -207,6 +254,7 @@ def _detect_blocking_upload_error(driver: webdriver.Chrome) -> str | None:
 
 
 def _raise_if_upload_blocked(driver: webdriver.Chrome) -> None:
+    _raise_if_refresh_required_upload_gate(driver)
     detected_message = _detect_blocking_upload_error_safe(driver) or _detect_blocking_upload_error(driver)
     if detected_message:
         raise RuntimeError(detected_message)
@@ -406,6 +454,7 @@ def _fill_upload_metadata(
 
 def _find_title_and_description_boxes(driver: webdriver.Chrome, wait: WebDriverWait) -> tuple[object, object | None]:
     def _locate(drv: webdriver.Chrome):
+        _raise_if_refresh_required_upload_gate(drv)
         visible = _collect_upload_dialog_editors(drv)
         if not visible:
             return False
@@ -665,6 +714,40 @@ def _attach_file_to_upload_dialog(
     raise RuntimeError(detail) from last_exc
 
 
+def _dismiss_refresh_required_upload_gate(driver: webdriver.Chrome) -> bool:
+    script = """
+    const fold = (value) =>
+      (value || '')
+        .normalize('NFD')
+        .replace(/[\\u0300-\\u036f]/g, '')
+        .replace(/\\s+/g, ' ')
+        .trim()
+        .toLowerCase();
+    const labels = ['da hieu', 'got it', 'ok', 'okay'];
+    const elements = Array.from(document.querySelectorAll('button, [role="button"]'));
+    for (const element of elements) {
+      const text = fold(
+        [
+          element.innerText || '',
+          element.textContent || '',
+          element.getAttribute('aria-label') || '',
+          element.getAttribute('title') || '',
+        ].join(' ')
+      );
+      if (!labels.some((label) => text.includes(label))) continue;
+      const rect = element.getBoundingClientRect();
+      if (!rect || rect.width < 6 || rect.height < 6) continue;
+      element.click();
+      return true;
+    }
+    return false;
+    """
+    try:
+        return bool(driver.execute_script(script))
+    except Exception:
+        return False
+
+
 def _click_when_available(driver: webdriver.Chrome, wait: WebDriverWait, xpath: str) -> bool:
     try:
         element = wait.until(EC.element_to_be_clickable((By.XPATH, xpath)))
@@ -863,7 +946,9 @@ def _wait_for_legacy_draft_upload_completion(
 
         time.sleep(0.5)
 
-    raise RuntimeError("Khong xac nhan duoc YouTube da hoan tat pha upload transfer.")
+    raise UploadTransferTimeoutError(
+        f"Khong xac nhan duoc YouTube da hoan tat pha upload transfer sau {max(1, int(timeout_seconds // 60))} phut."
+    )
 
 
 def _emit_upload_progress(
@@ -893,6 +978,32 @@ def _emit_upload_progress(
         state["last_message"] = message
         state["last_emit_at"] = now
         progress_callback(clamped_ratio, message)
+
+
+def _estimate_upload_completion_timeout_seconds(config: WorkerConfig, file_path: Path) -> int:
+    base_timeout_seconds = 3600
+    max_timeout_seconds = 12 * 3600
+    duration_seconds = 0.0
+    size_gb = 0.0
+
+    try:
+        duration_seconds = max(0.0, float(probe_media(config.ffprobe_bin, file_path).duration_seconds or 0.0))
+    except Exception:
+        duration_seconds = 0.0
+
+    try:
+        size_gb = max(0.0, float(file_path.stat().st_size) / float(1024 ** 3))
+    except OSError:
+        size_gb = 0.0
+
+    duration_budget_seconds = int(duration_seconds * 0.25)
+    size_budget_seconds = int(size_gb * 7200)
+    timeout_seconds = max(
+        base_timeout_seconds,
+        1800 + duration_budget_seconds,
+        1800 + size_budget_seconds,
+    )
+    return max(base_timeout_seconds, min(max_timeout_seconds, timeout_seconds))
 
 
 def upload_video_via_browser(
@@ -931,6 +1042,7 @@ def upload_video_via_browser(
     upload_committed = False
     transfer_confirmed = False
     uploaded_video_url: str | None = None
+    upload_timeout_seconds = _estimate_upload_completion_timeout_seconds(config, file_path)
     runtime_dir = config.work_root / "browser-upload-runtime" / target.job_id
     try:
         xvfb_process = subprocess.Popen(
@@ -1001,32 +1113,58 @@ def upload_video_via_browser(
         if "studio.youtube.com" not in (driver.current_url or ""):
             driver.get(studio_url)
 
-        _attach_file_to_upload_dialog(
-            driver,
-            wait=WebDriverWait(driver, 45),
-            studio_url=studio_url,
-            file_path=file_path,
-            debug_root=config.work_root,
-            job_id=target.job_id,
-        )
-        _raise_if_upload_blocked(driver)
-        if progress_callback:
-            progress_callback(0.03, "Da gan file output vao Studio upload")
-        uploaded_video_url = _wait_for_uploaded_video_url(driver)
+        editor_boxes: tuple[object, object | None] | None = None
+        for editor_attempt in range(2):
+            if editor_attempt:
+                if progress_callback:
+                    progress_callback(0.02, "YouTube yeu cau lam moi trang, dang thu lai upload lan 2")
+                _dismiss_refresh_required_upload_gate(driver)
+                driver.get(studio_url)
+                time.sleep(2.0)
 
-        try:
-            title_box, description_box = _find_title_and_description_boxes(driver, wait)
-        except TimeoutException as exc:
-            debug_dir = _capture_upload_debug_artifacts(
-                driver,
-                debug_root=config.work_root,
-                job_id=target.job_id,
-                stage="editor-timeout",
-            )
-            detail = "Khong tim thay title/description editor tren YouTube Studio."
-            if debug_dir is not None:
-                detail = f"{detail} Debug: {debug_dir}"
-            raise RuntimeError(detail) from exc
+            try:
+                _attach_file_to_upload_dialog(
+                    driver,
+                    wait=WebDriverWait(driver, 45),
+                    studio_url=studio_url,
+                    file_path=file_path,
+                    debug_root=config.work_root,
+                    job_id=target.job_id,
+                )
+                _raise_if_upload_blocked(driver)
+                if progress_callback:
+                    progress_callback(0.03, "Da gan file output vao Studio upload")
+                uploaded_video_url = _wait_for_uploaded_video_url(driver)
+                editor_boxes = _find_title_and_description_boxes(driver, wait)
+                break
+            except RefreshRequiredUploadError as exc:
+                stage = "editor-refresh-required" if editor_attempt == 0 else "editor-refresh-required-final"
+                debug_dir = _capture_upload_debug_artifacts(
+                    driver,
+                    debug_root=config.work_root,
+                    job_id=target.job_id,
+                    stage=stage,
+                )
+                if editor_attempt >= 1:
+                    detail = str(exc)
+                    if debug_dir is not None:
+                        detail = f"{detail} Debug: {debug_dir}"
+                    raise RuntimeError(detail) from exc
+                continue
+            except TimeoutException as exc:
+                debug_dir = _capture_upload_debug_artifacts(
+                    driver,
+                    debug_root=config.work_root,
+                    job_id=target.job_id,
+                    stage="editor-timeout",
+                )
+                detail = "Khong tim thay title/description editor tren YouTube Studio."
+                if debug_dir is not None:
+                    detail = f"{detail} Debug: {debug_dir}"
+                raise RuntimeError(detail) from exc
+
+        if editor_boxes is None:
+            raise RuntimeError("Khong the mo lai form upload YouTube Studio sau khi lam moi trang.")
         _fill_upload_metadata(
             driver,
             wait,
@@ -1045,10 +1183,23 @@ def upload_video_via_browser(
         )
         if progress_callback:
             progress_callback(0.08, "Da vao buoc Chi tiet, dang theo doi upload ban nhap")
-        _wait_for_legacy_draft_upload_completion(
-            driver,
-            progress_callback=progress_callback,
-        )
+        try:
+            _wait_for_legacy_draft_upload_completion(
+                driver,
+                progress_callback=progress_callback,
+                timeout_seconds=upload_timeout_seconds,
+            )
+        except UploadTransferTimeoutError as exc:
+            debug_dir = _capture_upload_debug_artifacts(
+                driver,
+                debug_root=config.work_root,
+                job_id=target.job_id,
+                stage="transfer-timeout",
+            )
+            detail = str(exc)
+            if debug_dir is not None:
+                detail = f"{detail} Debug: {debug_dir}"
+            raise RuntimeError(detail) from exc
         transfer_confirmed = True
         time.sleep(2.0)
         return BrowserUploadResult(
