@@ -970,7 +970,12 @@
                     </div>
                   </td>
                   <td class="px-5 py-5 align-top">
-                    <span class="live-table-chip border-rose-200 bg-rose-50 text-rose-700">{{ stream.log_label | default('Kết thúc', true) | e }}</span>
+                    <div class="max-w-[220px]">
+                      <span class="live-table-chip border-rose-200 bg-rose-50 text-rose-700">{{ ('Lỗi' if stream.error_message else (stream.log_label | default('Kết thúc', true))) | e }}</span>
+                      {% if stream.error_message %}
+                      <p class="mt-2 text-[12px] font-medium leading-5 text-rose-600 break-words whitespace-normal">{{ stream.error_message | e }}</p>
+                      {% endif %}
+                    </div>
                   </td>
                   <td class="px-5 py-5 align-top">
                     <span class="{{ stream.status_class | default('border-rose-200 bg-rose-50 text-rose-700', true) | e }} live-table-chip">{{ stream.status_label | default('Đã dừng', true) | e }}</span>
@@ -2147,7 +2152,10 @@
           </div>
         </td>
         <td class="px-5 py-5 align-top">
-          <span class="live-table-chip border-rose-200 bg-rose-50 text-rose-700">${escapeHtml(stream.log_label || 'Kết thúc')}</span>
+          <div class="max-w-[220px]">
+            <span class="live-table-chip border-rose-200 bg-rose-50 text-rose-700">${escapeHtml(stream.error_message ? 'Lỗi' : (stream.log_label || 'Kết thúc'))}</span>
+            ${stream.error_message ? `<p class="mt-2 text-[12px] font-medium leading-5 text-rose-600 break-words whitespace-normal">${escapeHtml(stream.error_message)}</p>` : ''}
+          </div>
         </td>
         <td class="px-5 py-5 align-top">
           <span class="${escapeHtml(stream.status_class || 'border-rose-200 bg-rose-50 text-rose-700')} live-table-chip">${escapeHtml(stream.status_label || 'Đã dừng')}</span>
@@ -2181,6 +2189,7 @@
             item.id,
             item.index,
             item.log_label,
+            item.error_message,
             item.status_label,
             item.status_class,
             item.can_stop,
