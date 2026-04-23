@@ -34,6 +34,8 @@ LIVE_RUNTIME_GUARD_INTERVAL_SECONDS = _env_float("WORKER_LIVE_RUNTIME_GUARD_INTE
 LIVE_FFMPEG_PROGRESS_INTERVAL_SECONDS = _env_float("WORKER_LIVE_FFMPEG_PROGRESS_INTERVAL_SECONDS", 0.5, minimum=0.2)
 LIVE_COPY_SUPPORTED_VIDEO_CODECS = {"h264"}
 LIVE_COPY_SUPPORTED_AUDIO_CODECS = {"aac", "mp3"}
+LIVE_NORMALIZE_TARGET_GOP_SECONDS = 2.0
+LIVE_NORMALIZE_DEFAULT_FRAME_RATE = 25.0
 _LIVE_NORMALIZE_SLOT_LOCK = Lock()
 _LIVE_NORMALIZE_SLOT: Semaphore | None = None
 _LIVE_NORMALIZE_SLOT_LIMIT = 0
@@ -44,6 +46,8 @@ class LiveVideoNormalizePlan:
     normalize_required: bool
     profile_height: int
     scale_height: int | None
+    frame_rate: float
+    gop_frames: int
     maxrate_kbps: int
     crf: int
     reason: str
@@ -337,6 +341,10 @@ def _resolve_live_video_normalize_plan(
     inferred_height = source_height or source_width or 1080
     scale_height = config.live_normalize_max_height if source_height > config.live_normalize_max_height else None
     profile_height = 1440 if max(inferred_height, scale_height or 0) > 1080 else 1080
+    frame_rate = float(media_info.frame_rate or LIVE_NORMALIZE_DEFAULT_FRAME_RATE)
+    if frame_rate <= 0:
+        frame_rate = LIVE_NORMALIZE_DEFAULT_FRAME_RATE
+    gop_frames = max(1, int(round(frame_rate * LIVE_NORMALIZE_TARGET_GOP_SECONDS)))
     maxrate_kbps = (
         config.live_normalize_1440_maxrate_kbps
         if profile_height > 1080
@@ -374,6 +382,8 @@ def _resolve_live_video_normalize_plan(
         normalize_required=normalize_required,
         profile_height=profile_height,
         scale_height=scale_height,
+        frame_rate=frame_rate,
+        gop_frames=gop_frames,
         maxrate_kbps=maxrate_kbps,
         crf=crf,
         reason=reason,
@@ -441,6 +451,12 @@ def _maybe_normalize_live_video(
                 config.live_normalize_preset,
                 "-crf",
                 str(plan.crf),
+                "-g",
+                str(plan.gop_frames),
+                "-keyint_min",
+                str(plan.gop_frames),
+                "-sc_threshold",
+                "0",
                 "-maxrate",
                 f"{plan.maxrate_kbps}k",
                 "-bufsize",
@@ -476,6 +492,9 @@ def _maybe_normalize_live_video(
                 f"path={video_path.name} "
                 f"target={plan.profile_height}p "
                 f"scale_height={plan.scale_height or 'copy'} "
+                f"fps={plan.frame_rate:.3f} "
+                f"gop_frames={plan.gop_frames} "
+                f"gop_seconds={LIVE_NORMALIZE_TARGET_GOP_SECONDS:.1f} "
                 f"maxrate_kbps={plan.maxrate_kbps} "
                 f"crf={plan.crf} "
                 f"threads={config.live_normalize_threads} "
