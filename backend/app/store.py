@@ -2614,7 +2614,7 @@ class AppStore:
 
         lowered = normalized.casefold()
         if "stream map '0:v:0' matches no streams" in lowered:
-            return "Lỗi sai định dạng file"
+            return "Lỗi sai định dạng video"
         if "stream map '1:a:0' matches no streams" in lowered:
             return "Lỗi audio đầu vào"
         if (
