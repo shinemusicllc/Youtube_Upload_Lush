@@ -595,7 +595,7 @@ def _prepare_rendered_media(
             str(rendered_path),
         ]
 
-    report_progress("preparing", 0, "Bắt đầu ghép media", force=True)
+    report_progress("preparing", progress_floor, "Bắt đầu ghép media", force=True)
     _run_ffmpeg_with_progress(
         config,
         arguments,
