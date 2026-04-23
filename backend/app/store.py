@@ -2560,13 +2560,61 @@ class AppStore:
             ]
         )
 
+    def _summarize_live_error_message(self, error_message: str | None) -> str | None:
+        normalized = self._normalize_live_optional_text(error_message)
+        if not normalized:
+            return None
+
+        lowered = normalized.casefold()
+        if "stream map '0:v:0' matches no streams" in lowered:
+            if "input #0, mp3" in lowered or "audio: mp3" in lowered:
+                return "Link video đang trỏ tới file audio-only (MP3), không có video stream để live."
+            return "Link video không có video stream hợp lệ để live."
+        if "stream map '1:a:0' matches no streams" in lowered:
+            return "Link audio ngoài không có audio stream hợp lệ."
+        if (
+            ("could not write header for output file" in lowered or "incorrect codec parameters" in lowered)
+            and any(codec in lowered for codec in {"opus", "vorbis", "webm"})
+        ):
+            return "Audio ngoài chưa tương thích live FLV/YouTube; hãy dùng MP3 hoặc AAC."
+        if "invalid data found when processing input" in lowered:
+            return "Nguồn media không hợp lệ hoặc file bị hỏng."
+        if "permission denied" in lowered or "403 forbidden" in lowered:
+            return "Không tải được nguồn media do bị từ chối truy cập."
+        if "404 not found" in lowered:
+            return "Không tìm thấy file nguồn media."
+        if "timed out" in lowered or "timeout" in lowered:
+            return "Tải hoặc xử lý media bị timeout."
+
+        lines = [line.strip() for line in normalized.splitlines() if line.strip()]
+        skip_prefixes = (
+            "ffmpeg version",
+            "built with",
+            "configuration:",
+            "libav",
+            "input #",
+            "metadata:",
+            "duration:",
+            "stream #",
+            "encoder         :",
+            "date            :",
+            "id3v2_priv.",
+            "ffmpeg stats and -progress period set to",
+        )
+        for line in reversed(lines):
+            if line.casefold().startswith(skip_prefixes):
+                continue
+            return line[:240]
+        return normalized.splitlines()[-1][:240]
+
     def _live_stream_error_message(self, stream: LiveStreamRecord, *, error_message: str) -> str:
         visible_stream = self._visible_live_stream_for_notification(stream)
+        summary = self._summarize_live_error_message(error_message) or "Không rõ nguyên nhân."
         return "\n".join(
             [
                 "[LIVE] Luồng live gặp lỗi",
                 *self._live_notification_base_lines(visible_stream),
-                f"Lỗi: {error_message or 'Không rõ nguyên nhân.'}",
+                f"Lỗi: {summary}",
             ]
         )
 
@@ -2621,7 +2669,7 @@ class AppStore:
             f"Mất kết nối lúc: {self._format_full_datetime(now)}",
             status_line,
         ]
-        normalized_reason = str(reason or "").strip()
+        normalized_reason = self._summarize_live_error_message(reason)
         if normalized_reason:
             lines.append(f"Chi tiết: {normalized_reason}")
         return "\n".join(lines)
@@ -2711,6 +2759,11 @@ class AppStore:
     def _live_stream_recipient_chat_ids(self, stream: LiveStreamRecord) -> list[str]:
         visible_stream = self._visible_live_stream_for_notification(stream)
         chat_id = self._user_telegram_live_chat_id(visible_stream.owner_user_id)
+        return [chat_id] if chat_id else []
+
+    def _live_stream_fallback_alert_chat_ids(self, stream: LiveStreamRecord) -> list[str]:
+        visible_stream = self._visible_live_stream_for_notification(stream)
+        chat_id = self._user_telegram_chat_id(visible_stream.owner_user_id)
         return [chat_id] if chat_id else []
 
     def _telegram_recipient_chat_ids_for_users(self, users: list[UserSummary]) -> list[str]:
@@ -5786,6 +5839,7 @@ class AppStore:
     ) -> LiveStreamRecord:
         notification_chat_ids: list[str] = []
         notification_message = ""
+        fallback_notification_chat_ids: list[str] = []
         with self._worker_state_lock:
             worker = self._authenticate_live_worker(worker_id, shared_secret)
             stream = self._find_claimed_live_stream(stream_id, worker_id)
@@ -5807,12 +5861,14 @@ class AppStore:
                 stream.disconnected_at = now
                 if should_notify_disconnect:
                     notification_chat_ids = self._live_stream_recipient_chat_ids(stream)
+                    fallback_notification_chat_ids = self._live_stream_fallback_alert_chat_ids(stream)
                     notification_message = self._live_stream_disconnected_message(stream, now=now, reason=message)
             else:
                 stream.status = "error"
                 stream.log_label = "Lỗi"
                 if self._is_visible_live_stream(stream):
                     notification_chat_ids = self._live_stream_recipient_chat_ids(stream)
+                    fallback_notification_chat_ids = self._live_stream_fallback_alert_chat_ids(stream)
                     notification_message = self._live_stream_error_message(stream, error_message=message)
             stream.status_message = None
             stream.error_message = message
@@ -5833,8 +5889,10 @@ class AppStore:
             self._sync_live_worker_runtime_status(worker)
             self._save_state()
             snapshot = deepcopy(stream)
-        if notification_message and notification_chat_ids:
-            self._notify_live_telegram_chat_ids(notification_chat_ids, notification_message)
+        if notification_message:
+            delivered = self._notify_live_telegram_chat_ids(notification_chat_ids, notification_message)
+            if not delivered and fallback_notification_chat_ids:
+                self._notify_telegram_chat_ids(fallback_notification_chat_ids, notification_message)
         return snapshot
 
     def _find_channel(self, channel_id: str) -> ChannelRecord:
@@ -7875,6 +7933,7 @@ class AppStore:
             "status_label": self._live_status_presentation(stream.status)[0],
             "status_class": self._live_status_presentation(stream.status)[1],
             "log_label": stream.log_label,
+            "error_message": self._summarize_live_error_message(stream.error_message),
             "start_at": self._format_full_datetime(stream.start_time_live) if stream.start_time_live else "-",
             "end_at": self._format_full_datetime(stream.end_time_live) if stream.end_time_live else ("Live 24/7" if stream.is_forever else "-"),
             "backup_delay_minutes": stream.backup_delay_minutes,
@@ -9097,6 +9156,7 @@ class AppStore:
         primary_name = stream.primary_worker_name or self._resolve_live_worker_display_name(stream.primary_worker_id)
         backup_name = self._live_backup_worker_display_name(stream.backup_worker_id, stream.backup_worker_name)
         effective_log_label = effective_runtime.log_label or stream.log_label
+        effective_error_message = self._summarize_live_error_message(effective_runtime.error_message or stream.error_message)
         can_delete = effective_runtime.status != "streaming"
         can_edit = not self._is_live_stream_runtime_locked(stream)
         return {
@@ -9125,6 +9185,7 @@ class AppStore:
             "duration_text": self._live_duration_text(stream),
             "duration_meta": "",
             "log_label": effective_log_label,
+            "error_message": effective_error_message,
             "log_class": "border-rose-200 bg-rose-50 text-rose-700" if effective_log_label == "Kết thúc" else "border-slate-200 bg-slate-50 text-slate-700",
             "status_label": status_label,
             "status_class": status_class,

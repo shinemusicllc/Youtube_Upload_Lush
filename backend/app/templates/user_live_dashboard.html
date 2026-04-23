@@ -620,6 +620,9 @@
                 <span class="live-table-chip {{ dashboard.detail_stream.status_class | e }}">{{ dashboard.detail_stream.status_label | e }}</span>
                 <span class="text-[12px] text-slate-500">{{ dashboard.detail_stream.log_label | e }}</span>
               </div>
+              {% if dashboard.detail_stream.error_message %}
+              <p class="mt-2 text-[12px] font-medium leading-5 text-rose-600">{{ dashboard.detail_stream.error_message | e }}</p>
+              {% endif %}
             </div>
             <div class="rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3">
               <p class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Backup mode</p>
