@@ -7,6 +7,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from threading import Lock, Semaphore
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -33,6 +34,9 @@ LIVE_RUNTIME_GUARD_INTERVAL_SECONDS = _env_float("WORKER_LIVE_RUNTIME_GUARD_INTE
 LIVE_FFMPEG_PROGRESS_INTERVAL_SECONDS = _env_float("WORKER_LIVE_FFMPEG_PROGRESS_INTERVAL_SECONDS", 0.5, minimum=0.2)
 LIVE_COPY_SUPPORTED_VIDEO_CODECS = {"h264"}
 LIVE_COPY_SUPPORTED_AUDIO_CODECS = {"aac", "mp3"}
+_LIVE_NORMALIZE_SLOT_LOCK = Lock()
+_LIVE_NORMALIZE_SLOT: Semaphore | None = None
+_LIVE_NORMALIZE_SLOT_LIMIT = 0
 
 
 @dataclass(slots=True)
@@ -44,6 +48,65 @@ class LiveVideoNormalizePlan:
     crf: int
     reason: str
     source_bitrate_kbps: int | None
+
+
+def _live_normalize_slot(limit: int) -> Semaphore:
+    global _LIVE_NORMALIZE_SLOT, _LIVE_NORMALIZE_SLOT_LIMIT
+    normalized_limit = max(1, int(limit or 1))
+    with _LIVE_NORMALIZE_SLOT_LOCK:
+        if _LIVE_NORMALIZE_SLOT is None or _LIVE_NORMALIZE_SLOT_LIMIT != normalized_limit:
+            _LIVE_NORMALIZE_SLOT = Semaphore(normalized_limit)
+            _LIVE_NORMALIZE_SLOT_LIMIT = normalized_limit
+        return _LIVE_NORMALIZE_SLOT
+
+
+def _acquire_live_normalize_slot(
+    config: WorkerConfig,
+    *,
+    stream_id: str,
+    report_progress,
+    lifecycle_guard=None,
+) -> Semaphore:
+    slot = _live_normalize_slot(config.live_normalize_concurrency)
+    wait_started_at: float | None = None
+    last_report_second = -1
+    while True:
+        if slot.acquire(blocking=False):
+            if wait_started_at is not None:
+                waited_seconds = time.monotonic() - wait_started_at
+                print(
+                    (
+                        "[live] normalize slot acquired "
+                        f"stream_id={stream_id} "
+                        f"limit={config.live_normalize_concurrency} "
+                        f"waited_seconds={waited_seconds:.1f}"
+                    ),
+                    flush=True,
+                )
+            return slot
+        if lifecycle_guard:
+            lifecycle_guard(force=True)
+        if wait_started_at is None:
+            wait_started_at = time.monotonic()
+            print(
+                (
+                    "[live] normalize slot busy "
+                    f"stream_id={stream_id} "
+                    f"limit={config.live_normalize_concurrency}"
+                ),
+                flush=True,
+            )
+        waited_seconds = int(time.monotonic() - wait_started_at)
+        should_report = waited_seconds == 0 or waited_seconds - last_report_second >= 5
+        if should_report:
+            report_progress(
+                "preparing",
+                0,
+                f"Đang chờ lượt tối ưu nguồn trên VPS ({waited_seconds}s)",
+                force=True,
+            )
+            last_report_second = waited_seconds
+        time.sleep(0.5 if waited_seconds < 10 else 1.0)
 
 
 def _app_timezone() -> ZoneInfo:
@@ -321,6 +384,7 @@ def _resolve_live_video_normalize_plan(
 def _maybe_normalize_live_video(
     config: WorkerConfig,
     *,
+    stream_id: str,
     video_path: Path,
     audio_path: Path | None,
     normalized_dir: Path,
@@ -339,6 +403,7 @@ def _maybe_normalize_live_video(
         print(
             (
                 "[live] skip normalize "
+                f"stream_id={stream_id} "
                 f"path={video_path.name} "
                 f"height={source_height or 'unknown'} "
                 f"bitrate_kbps={plan.source_bitrate_kbps or 'unknown'} "
@@ -348,83 +413,94 @@ def _maybe_normalize_live_video(
         )
         return video_path, False
 
-    normalized_dir.mkdir(parents=True, exist_ok=True)
-    normalized_path = normalized_dir / "video-normalized.mp4"
-    filter_chain: list[str] = []
-    if plan.scale_height is not None:
-        filter_chain.append(f"scale=-2:{plan.scale_height}:flags=lanczos")
-
-    arguments = ["-y", "-i", str(video_path), "-map", "0:v:0"]
-    if audio_path is None:
-        arguments.extend(["-map", "0:a:0?"])
-    else:
-        arguments.append("-an")
-    if filter_chain:
-        arguments.extend(["-vf", ",".join(filter_chain)])
-    arguments.extend(
-        [
-            "-c:v",
-            "libx264",
-            "-preset",
-            config.live_normalize_preset,
-            "-crf",
-            str(plan.crf),
-            "-maxrate",
-            f"{plan.maxrate_kbps}k",
-            "-bufsize",
-            f"{plan.maxrate_kbps * 2}k",
-            "-pix_fmt",
-            "yuv420p",
-            "-threads",
-            str(config.live_normalize_threads),
-        ]
-    )
-    if audio_path is None:
-        arguments.extend(
-            [
-                "-c:a",
-                "aac",
-                "-b:a",
-                f"{config.live_normalize_audio_bitrate_kbps}k",
-            ]
-        )
-    arguments.extend(["-movflags", "+faststart", str(normalized_path)])
-
-    def _on_progress(ratio: float, _current_seconds: float) -> None:
-        report_progress(
-            "preparing",
-            max(0, min(95, int(ratio * 95))),
-            f"Äang tá»‘i Æ°u nguá»“n live {plan.profile_height}p ({int(ratio * 100)}%)",
-        )
-
-    print(
-        (
-            "[live] normalize video "
-            f"path={video_path.name} "
-            f"target={plan.profile_height}p "
-            f"scale_height={plan.scale_height or 'copy'} "
-            f"maxrate_kbps={plan.maxrate_kbps} "
-            f"crf={plan.crf} "
-            f"threads={config.live_normalize_threads} "
-            f"reason={plan.reason}"
-        ),
-        flush=True,
-    )
-    report_progress(
-        "preparing",
-        0,
-        f"Äang tá»‘i Æ°u nguá»“n live: {plan.reason}",
-        force=True,
-    )
-    _run_ffmpeg_with_progress(
+    normalize_slot = _acquire_live_normalize_slot(
         config,
-        arguments,
-        working_dir=normalized_dir,
-        total_duration_seconds=max(1.0, float(media_info.duration_seconds or 1.0)),
-        progress_callback=_on_progress,
+        stream_id=stream_id,
+        report_progress=report_progress,
         lifecycle_guard=lifecycle_guard,
     )
-    return normalized_path, True
+    try:
+        normalized_dir.mkdir(parents=True, exist_ok=True)
+        normalized_path = normalized_dir / "video-normalized.mp4"
+        filter_chain: list[str] = []
+        if plan.scale_height is not None:
+            filter_chain.append(f"scale=-2:{plan.scale_height}:flags=lanczos")
+
+        arguments = ["-y", "-i", str(video_path), "-map", "0:v:0"]
+        if audio_path is None:
+            arguments.extend(["-map", "0:a:0?"])
+        else:
+            arguments.append("-an")
+        if filter_chain:
+            arguments.extend(["-vf", ",".join(filter_chain)])
+        arguments.extend(
+            [
+                "-c:v",
+                "libx264",
+                "-preset",
+                config.live_normalize_preset,
+                "-crf",
+                str(plan.crf),
+                "-maxrate",
+                f"{plan.maxrate_kbps}k",
+                "-bufsize",
+                f"{plan.maxrate_kbps * 2}k",
+                "-pix_fmt",
+                "yuv420p",
+                "-threads",
+                str(config.live_normalize_threads),
+            ]
+        )
+        if audio_path is None:
+            arguments.extend(
+                [
+                    "-c:a",
+                    "aac",
+                    "-b:a",
+                    f"{config.live_normalize_audio_bitrate_kbps}k",
+                ]
+            )
+        arguments.extend(["-movflags", "+faststart", str(normalized_path)])
+
+        def _on_progress(ratio: float, _current_seconds: float) -> None:
+            report_progress(
+                "preparing",
+                max(0, min(95, int(ratio * 95))),
+                f"Đang tối ưu nguồn live {plan.profile_height}p ({int(ratio * 100)}%)",
+            )
+
+        print(
+            (
+                "[live] normalize video "
+                f"stream_id={stream_id} "
+                f"path={video_path.name} "
+                f"target={plan.profile_height}p "
+                f"scale_height={plan.scale_height or 'copy'} "
+                f"maxrate_kbps={plan.maxrate_kbps} "
+                f"crf={plan.crf} "
+                f"threads={config.live_normalize_threads} "
+                f"concurrency={config.live_normalize_concurrency} "
+                f"reason={plan.reason}"
+            ),
+            flush=True,
+        )
+        report_progress(
+            "preparing",
+            0,
+            f"Đang tối ưu nguồn live: {plan.reason}",
+            force=True,
+        )
+        _run_ffmpeg_with_progress(
+            config,
+            arguments,
+            working_dir=normalized_dir,
+            total_duration_seconds=max(1.0, float(media_info.duration_seconds or 1.0)),
+            progress_callback=_on_progress,
+            lifecycle_guard=lifecycle_guard,
+        )
+        return normalized_path, True
+    finally:
+        normalize_slot.release()
 
 
 def _run_ffmpeg_with_progress(
@@ -767,6 +843,7 @@ def run_live_stream(client: httpx.Client, config: WorkerConfig, stream: dict) ->
         )
         video_path, normalized_video = _maybe_normalize_live_video(
             config,
+            stream_id=stream_id,
             video_path=video_path,
             audio_path=audio_path,
             normalized_dir=normalized_dir,

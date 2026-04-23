@@ -53,6 +53,7 @@ class WorkerConfig:
     browser_web_port_base: int
     browser_debug_port_base: int
     live_normalize_enabled: bool
+    live_normalize_concurrency: int
     live_normalize_threads: int
     live_normalize_preset: str
     live_normalize_max_height: int
@@ -99,6 +100,7 @@ def load_config() -> WorkerConfig:
         browser_web_port_base=int(os.getenv("BROWSER_SESSION_WEB_PORT_BASE", "6090")),
         browser_debug_port_base=int(os.getenv("BROWSER_SESSION_DEBUG_PORT_BASE", "9222")),
         live_normalize_enabled=os.getenv("WORKER_LIVE_NORMALIZE_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"},
+        live_normalize_concurrency=max(1, int(os.getenv("WORKER_LIVE_NORMALIZE_CONCURRENCY", "1"))),
         live_normalize_threads=max(1, int(os.getenv("WORKER_LIVE_NORMALIZE_THREADS", "2"))),
         live_normalize_preset=os.getenv("WORKER_LIVE_NORMALIZE_PRESET", "veryfast").strip() or "veryfast",
         live_normalize_max_height=max(720, int(os.getenv("WORKER_LIVE_NORMALIZE_MAX_HEIGHT", "1440"))),
