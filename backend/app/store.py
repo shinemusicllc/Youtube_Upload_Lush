@@ -2568,23 +2568,23 @@ class AppStore:
         lowered = normalized.casefold()
         if "stream map '0:v:0' matches no streams" in lowered:
             if "input #0, mp3" in lowered or "audio: mp3" in lowered:
-                return "Link video đang trỏ tới file audio-only (MP3), không có video stream để live."
-            return "Link video không có video stream hợp lệ để live."
+                return "Link video đang nhập là link file MP3, vui lòng sửa lại link file thành video."
+            return "Link video không có video stream hợp lệ, vui lòng đổi sang file video."
         if "stream map '1:a:0' matches no streams" in lowered:
-            return "Link audio ngoài không có audio stream hợp lệ."
+            return "Link audio đang nhập không có audio stream hợp lệ."
         if (
             ("could not write header for output file" in lowered or "incorrect codec parameters" in lowered)
             and any(codec in lowered for codec in {"opus", "vorbis", "webm"})
         ):
-            return "Audio ngoài chưa tương thích live FLV/YouTube; hãy dùng MP3 hoặc AAC."
+            return "Link audio đang nhập chưa đúng định dạng, vui lòng dùng MP3 hoặc AAC."
         if "invalid data found when processing input" in lowered:
-            return "Nguồn media không hợp lệ hoặc file bị hỏng."
+            return "File nguồn không hợp lệ hoặc đã bị hỏng."
         if "permission denied" in lowered or "403 forbidden" in lowered:
-            return "Không tải được nguồn media do bị từ chối truy cập."
+            return "Không tải được file nguồn do link đang bị chặn truy cập."
         if "404 not found" in lowered:
-            return "Không tìm thấy file nguồn media."
+            return "Không tìm thấy file nguồn từ link đã nhập."
         if "timed out" in lowered or "timeout" in lowered:
-            return "Tải hoặc xử lý media bị timeout."
+            return "Tải hoặc xử lý file nguồn bị timeout."
 
         lines = [line.strip() for line in normalized.splitlines() if line.strip()]
         skip_prefixes = (
@@ -2606,6 +2606,31 @@ class AppStore:
                 continue
             return line[:240]
         return normalized.splitlines()[-1][:240]
+
+    def _live_stream_error_log_label(self, error_message: str | None) -> str:
+        normalized = self._normalize_live_optional_text(error_message)
+        if not normalized:
+            return "Lỗi"
+
+        lowered = normalized.casefold()
+        if "stream map '0:v:0' matches no streams" in lowered:
+            return "Lỗi sai định dạng file"
+        if "stream map '1:a:0' matches no streams" in lowered:
+            return "Lỗi audio đầu vào"
+        if (
+            ("could not write header for output file" in lowered or "incorrect codec parameters" in lowered)
+            and any(codec in lowered for codec in {"opus", "vorbis", "webm"})
+        ):
+            return "Lỗi sai định dạng audio"
+        if "invalid data found when processing input" in lowered:
+            return "Lỗi file nguồn"
+        if "permission denied" in lowered or "403 forbidden" in lowered:
+            return "Lỗi quyền truy cập"
+        if "404 not found" in lowered:
+            return "Lỗi không tìm thấy file"
+        if "timed out" in lowered or "timeout" in lowered:
+            return "Lỗi timeout"
+        return "Lỗi xử lý media"
 
     def _live_stream_error_message(self, stream: LiveStreamRecord, *, error_message: str) -> str:
         visible_stream = self._visible_live_stream_for_notification(stream)
@@ -5865,7 +5890,7 @@ class AppStore:
                     notification_message = self._live_stream_disconnected_message(stream, now=now, reason=message)
             else:
                 stream.status = "error"
-                stream.log_label = "Lỗi"
+                stream.log_label = self._live_stream_error_log_label(message)
                 if self._is_visible_live_stream(stream):
                     notification_chat_ids = self._live_stream_recipient_chat_ids(stream)
                     fallback_notification_chat_ids = self._live_stream_fallback_alert_chat_ids(stream)
