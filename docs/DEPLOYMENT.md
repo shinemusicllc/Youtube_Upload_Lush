@@ -52,6 +52,17 @@ bash /opt/youtube-upload-lush/scripts/bootstrap_worker.sh
 2. Tren control-plane: chay `bootstrap_host.sh` de `fetch/reset` ve branch dich, giu nguyen runtime, render lai unit systemd theo env deploy, va restart dung service dich.
 3. Tren tung worker: chay `bootstrap_worker.sh` de `fetch/reset` ve `origin/main`, giu nguyen runtime va restart service.
 
+## VPS Migration
+
+Dung `scripts/migrate_control_plane_vps.sh` de chuyen control-plane sang VPS moi theo kieu:
+
+- cai moi code tu GitHub
+- copy runtime `.env`
+- copy `backend-data`
+- render/start lai `youtube-upload-web.service`
+
+Runbook chi tiet nam o `docs/VPS_MIGRATION.md`. Script nay khong tu dong be toan bo BOT worker sang VPS moi; BOT worker nen duoc them/bootstrap lai sau khi control-plane moi da verify.
+
 ## Safety Rules
 - Khong commit `.env`, `.venv`, `backend/data`, `worker-data`, `.backup`.
 - Truoc khi migrate layout, dam bao job dang chay da ve `completed` hoac `idle`.

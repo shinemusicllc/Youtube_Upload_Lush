@@ -1,5 +1,12 @@
 ﻿# Changelog
 
+### 2026-05-04 00:00 - VPS migration runbook
+- Added: `scripts/migrate_control_plane_vps.sh` to install a fresh control-plane checkout on a new VPS and copy runtime `.env` plus `backend-data` from a source VPS.
+- Added: `docs/VPS_MIGRATION.md` with the operator runbook and post-migration checks.
+- Changed: `docs/DEPLOYMENT.md` now links the migration flow and clarifies that BOT workers are handled separately from control-plane migration.
+- Affected files: `scripts/migrate_control_plane_vps.sh`, `docs/VPS_MIGRATION.md`, `docs/DEPLOYMENT.md`, `docs/DECISIONS.md`, `docs/DECISIONS_INDEX.md`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`
+- Impact/Risk: Low for runtime code; script is opt-in and should be run on a new VPS after SSH access to the source host is prepared.
+
 ### 2026-03-25 15:10 - Backend Shell Contract Scaffold
 - Added: Scaffold `backend/app/schemas.py`, `backend/app/store.py`, `backend/app/routers/api_user.py`, `backend/app/routers/api_admin.py` va `backend/AGENTS.md`.
 - Changed: Chot seed contract in-memory JSON-friendly cho `user`, `worker`, `channel`, `channel grant`, `render job`, `oauth summary`.

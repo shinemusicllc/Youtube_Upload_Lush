@@ -1,5 +1,10 @@
 ﻿# Worklog
 
+### 2026-05-04
+- [x] Added `scripts/migrate_control_plane_vps.sh` for future VPS moves using fresh Git checkout plus runtime data copy.
+- [x] Added `docs/VPS_MIGRATION.md` and linked it from `docs/DEPLOYMENT.md`.
+- [x] Recorded `DEC-043`: migrate the control-plane separately from BOT workers, then bootstrap/add workers after the new control-plane is verified.
+
 ### 2026-03-25
 - [x] Khoi tao lai `docs/` va root `AGENTS.md` sau khi workspace bi don sach.
 - [x] Xac nhan huong moi: bo React/Vite cu, rebuild UI theo `BaseSource.AppUI` va `final_user_ui.html`.
